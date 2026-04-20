@@ -185,6 +185,10 @@ class SecretShopGUI:
         self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
         self.bookmark_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
         
+        ttk.Label(stats_grid, text="경과 시간:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
+        self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="blue", font=("Arial", 10, "bold"))
+        self.elapsed_time_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
+        
         # === 로그 섹션 ===
         log_frame = ttk.LabelFrame(self.root, text="로그", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -453,6 +457,21 @@ class SecretShopGUI:
         self.total_refresh_label.config(text=str(stats.get("total_refreshes", 0)))
         self.mystic_label.config(text=str(stats.get("mystic_medal_bought", 0)))
         self.bookmark_label.config(text=str(stats.get("covenant_bookmark_bought", 0)))
+        
+        # 경과 시간 업데이트
+        import time
+        if stats.get("start_time"):
+            if stats.get("end_time"):
+                elapsed = int(stats["end_time"] - stats["start_time"])
+            else:
+                elapsed = int(time.time() - stats["start_time"])
+            
+            hours = elapsed // 3600
+            minutes = (elapsed % 3600) // 60
+            seconds = elapsed % 60
+            self.elapsed_time_label.config(text=f"{hours:02d}:{minutes:02d}:{seconds:02d}")
+        else:
+            self.elapsed_time_label.config(text="00:00:00")
         
     def _disconnect_adb(self):
         """ADB 연결 해제"""
