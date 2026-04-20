@@ -261,3 +261,38 @@ class ADBController:
         except Exception as e:
             logger.error(f"화면 크기 조회 중 오류: {e}")
             return 1920, 1080  # 기본값
+    
+    def disconnect(self) -> bool:
+        """
+        ADB 연결 해제
+        
+        Returns:
+            해제 성공 여부
+        """
+        try:
+            if self.device_id:
+                # 특정 디바이스만 연결 해제
+                result = self._run_adb(["disconnect", self.device_id], text=True)
+                logger.info(f"디바이스 연결 해제: {self.device_id}")
+                logger.debug(result.stdout)
+            return True
+        except Exception as e:
+            logger.error(f"연결 해제 중 오류: {e}")
+            return False
+    
+    def kill_server(self) -> bool:
+        """
+        ADB 서버 종료
+        
+        Returns:
+            종료 성공 여부
+        """
+        try:
+            result = self._run_adb(["kill-server"], text=True)
+            logger.info("ADB 서버 종료됨")
+            if result.stdout:
+                logger.debug(result.stdout)
+            return True
+        except Exception as e:
+            logger.error(f"ADB 서버 종료 중 오류: {e}")
+            return False

@@ -52,6 +52,9 @@ class SecretShopGUI:
         self.root.geometry("900x750")
         self.root.resizable(True, True)
         
+        # 윈도우 종료 시 ADB 정리
+        self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        
         # 변수
         self.adb_controller = None
         self.bot = None
@@ -490,6 +493,8 @@ class SecretShopGUI:
             return
         
         if self.adb_controller:
+            # ADB 서버 종료
+            self.adb_controller.kill_server()
             self.adb_controller = None
         
         self.connection_status.config(text="● 연결 안됨", foreground="red")
@@ -498,6 +503,24 @@ class SecretShopGUI:
         self.connect_btn.config(state=tk.NORMAL)
         self.disconnect_btn.config(state=tk.DISABLED)
         self.log("✅ ADB 연결이 해제되었습니다.")
+    
+    def _on_closing(self):
+        """프로그램 종료 시 처리"""
+        if self.is_running:
+            if messagebox.askokcancel("종료", "매크로가 실행 중입니다. 정말로 종료하시겠습니까?"):
+                # 봇 중지
+                if self.bot:
+                    self.bot.set_user_action('stop')
+                self.is_running = False
+            else:
+                return
+        
+        # ADB 서버 종료
+        if self.adb_controller:
+            logger.info("프로그램 종료 - ADB 서버 종료 중...")
+            self.adb_controller.kill_server()
+        
+        self.root.destroy()
     
     def _reset_ui(self):
         """상태 복귀"""
