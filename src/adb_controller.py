@@ -29,9 +29,65 @@ class ADBController:
             self.adb_path = str(adb_path)
             logger.info(f"프로젝트 내부 ADB 사용: {self.adb_path}")
         else:
-            # 시스템 PATH의 ADB 사용
-            self.adb_path = "adb"
-            logger.info("시스템 PATH의 ADB 사용")
+            # ADB가 없으면 자동 다운로드
+            logger.warning("ADB를 찾을 수 없습니다. 자동으로 다운로드합니다...")
+            if self._download_adb(project_root):
+                self.adb_path = str(adb_path)
+                logger.info(f"ADB 다운로드 완료: {self.adb_path}")
+            else:
+                # 실패 시 시스템 PATH의 ADB 사용 시도
+                self.adb_path = "adb"
+                logger.warning("ADB 다운로드 실패. 시스템 PATH의 ADB를 사용합니다.")
+    
+    def _download_adb(self, project_root: Path) -> bool:
+        """
+        ADB 자동 다운로드
+        
+        Args:
+            project_root: 프로젝트 루트 경로
+            
+        Returns:
+            다운로드 성공 여부
+        """
+        import urllib.request
+        import zipfile
+        import shutil
+        
+        try:
+            adb_dir = project_root / "tools" / "adb"
+            adb_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Google Platform Tools 다운로드 URL
+            url = "https://dl.google.com/android/repository/platform-tools-latest-windows.zip"
+            zip_path = project_root / "platform-tools.zip"
+            
+            logger.info(f"다운로드 중: {url}")
+            urllib.request.urlretrieve(url, zip_path)
+            logger.info("다운로드 완료!")
+            
+            # 압축 해제
+            logger.info("압축 해제 중...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(project_root)
+            
+            # 필요한 파일만 복사
+            logger.info("파일 복사 중...")
+            platform_tools_dir = project_root / "platform-tools"
+            
+            for file in platform_tools_dir.glob("*"):
+                if file.is_file():
+                    shutil.copy2(file, adb_dir)
+            
+            # 임시 파일 삭제
+            zip_path.unlink()
+            shutil.rmtree(platform_tools_dir)
+            
+            logger.info("✅ ADB 설치 완료!")
+            return True
+            
+        except Exception as e:
+            logger.error(f"ADB 다운로드 중 오류: {e}")
+            return False
         
     def connect(self, ip: str = "127.0.0.1", port: int = 5555) -> bool:
         """
