@@ -6,10 +6,26 @@ import os
 import sys
 import logging
 from pathlib import Path
+import warnings
 
 # libpng 경고 메시지 숨기기 (가장 먼저 설정)
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 os.environ['OPENCV_VIDEOIO_DEBUG'] = '0'
+
+# stderr의 libpng 경고 필터링
+class StderrFilter:
+    def __init__(self, stream):
+        self.stream = stream
+        
+    def write(self, data):
+        # libpng 경고 메시지 필터링
+        if 'libpng warning' not in data and 'sBIT: invalid' not in data:
+            self.stream.write(data)
+            
+    def flush(self):
+        self.stream.flush()
+
+sys.stderr = StderrFilter(sys.stderr)
 
 # 프로젝트 루트를 Python 경로에 추가
 project_root = Path(__file__).parent
