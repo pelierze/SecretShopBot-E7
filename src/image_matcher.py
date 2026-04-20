@@ -2,10 +2,14 @@
 이미지 매칭을 위한 모듈
 OpenCV를 사용하여 화면에서 이미지 찾기
 """
+import os
 import cv2
 import numpy as np
 from typing import Optional, Tuple, List
 import logging
+
+# libpng 경고 메시지 숨기기
+os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 
 logger = logging.getLogger(__name__)
 
