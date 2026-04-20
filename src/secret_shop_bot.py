@@ -111,6 +111,11 @@ class SecretShopBot:
         Returns:
             통계 정보 딕셔너리
         """
+        import time as time_module
+        
+        # 시작 시간 기록
+        self.stats["start_time"] = time_module.time()
+        
         logger.info(f"비밀상점 자동화 시작 - 최대 리프레시: {max_refresh_count}회")
         
         for refresh_num in range(max_refresh_count):
@@ -172,6 +177,11 @@ class SecretShopBot:
                 else:
                     logger.error("⚠️  상점 갱신에 실패했습니다. 다시 시도합니다...")
                     time.sleep(2)  # 실패 시 조금 더 대기
+        
+        # 종료 시간 기록
+        import time as time_module
+        self.stats["end_time"] = time_module.time()
+        self.stats["elapsed_time"] = int(self.stats["end_time"] - self.stats["start_time"])
         
         logger.info("비밀상점 자동화 완료")
         logger.info(f"통계: {self.stats}")
@@ -447,14 +457,18 @@ class SecretShopBot:
     
     def _scroll_down(self):
         """화면을 아래로 스크롤 (두 번째 페이지로 이동)"""
-        logger.debug(f"드래그 시작: ({self.swipe_x}, {self.swipe_start_y}) → ({self.swipe_x}, {self.swipe_end_y})")
+        if self.debug_mode:
+            logger.debug(f"드래그 시작: ({self.swipe_x}, {self.swipe_start_y}) → ({self.swipe_x}, {self.swipe_end_y})")
+        
         self.adb.swipe(
             self.swipe_x, self.swipe_start_y,
             self.swipe_x, self.swipe_end_y,
             duration=800,  # 300ms → 800ms로 증가하여 확실한 드래그
             delay=0.8
         )
-        logger.debug("화면 스크롤 완료 (하단으로)")
+        
+        if self.debug_mode:
+            logger.debug("화면 스크롤 완료 (하단으로)")
     
     def set_user_action(self, action: str):
         """

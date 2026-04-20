@@ -106,6 +106,11 @@ class SecretShopGUI:
             self.threshold_label.config(text=f"{threshold_percent}%")
         self.threshold_scale.config(command=update_threshold_label)
         
+        # 디버그 모드 체크박스
+        self.debug_mode_var = tk.BooleanVar(value=False)
+        self.debug_checkbox = ttk.Checkbutton(settings_frame, text="디버그 모드 (상세 로그)", variable=self.debug_mode_var)
+        self.debug_checkbox.grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        
         # === 제어 섹션 ===
         control_frame = ttk.Frame(self.root, padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -224,8 +229,9 @@ class SecretShopGUI:
             messagebox.showerror("오류", "설정값이 올바르지 않습니다.\n리프레시 횟수와 구매 횟수는 양수여야 하며,\n매칭 정확도는 0~1 사이여야 합니다.")
             return
         
-        # 봇 생성 (매칭 임계값 전달)
-        self.bot = SecretShopBot(self.adb_controller, match_threshold=match_threshold)
+        # 봇 생성 (매칭 임계값 및 디버그 모드 전달)
+        debug_mode = self.debug_mode_var.get()
+        self.bot = SecretShopBot(self.adb_controller, match_threshold=match_threshold, debug_mode=debug_mode)
         
         # UI 상태 변경
         self.is_running = True
@@ -275,13 +281,28 @@ class SecretShopGUI:
             # 최종 통계 업데이트
             self._update_stats(final_stats)
             
+            # 동작 시간 계산
+            elapsed_seconds = final_stats.get('elapsed_time', 0)
+            hours = elapsed_seconds // 3600
+            minutes = (elapsed_seconds % 3600) // 60
+            seconds = elapsed_seconds % 60
+            
+            time_str = ""
+            if hours > 0:
+                time_str = f"{hours}시간 {minutes}분 {seconds}초"
+            elif minutes > 0:
+                time_str = f"{minutes}분 {seconds}초"
+            else:
+                time_str = f"{seconds}초"
+            
             # 완료 메시지
             self.root.after(0, lambda: messagebox.showinfo(
                 "완료",
                 f"자동화가 완료되었습니다!\n\n"
                 f"총 리프레시: {final_stats['total_refreshes']}회\n"
                 f"신비의 메달: {final_stats['mystic_medal_bought']}개\n"
-                f"성약의 책갈피: {final_stats['covenant_bookmark_bought']}개"
+                f"성약의 책갈피: {final_stats['covenant_bookmark_bought']}개\n\n"
+                f"⏱️ 동작 시간: {time_str}"
             ))
             
         except Exception as e:
@@ -311,7 +332,39 @@ class SecretShopGUI:
             self.bot.set_user_action('stop')
         
         self.is_running = False
-        messagebox.showinfo("중지", "봇이 중지됩니다.")
+        
+        # 현재 통계 가져오기
+        if self.bot:
+            import time as time_module
+            stats = self.bot.get_stats()
+            
+            # 동작 시간 계산
+            if stats.get('start_time'):
+                elapsed_seconds = int(time_module.time() - stats['start_time'])
+                hours = elapsed_seconds // 3600
+                minutes = (elapsed_seconds % 3600) // 60
+                seconds = elapsed_seconds % 60
+                
+                time_str = ""
+                if hours > 0:
+                    time_str = f"{hours}시간 {minutes}분 {seconds}초"
+                elif minutes > 0:
+                    time_str = f"{minutes}분 {seconds}초"
+                else:
+                    time_str = f"{seconds}초"
+                
+                messagebox.showinfo(
+                    "중지", 
+                    f"봇이 중지됩니다.\n\n"
+                    f"총 리프레시: {stats.get('total_refreshes', 0)}회\n"
+                    f"신비의 메달: {stats.get('mystic_medal_bought', 0)}개\n"
+                    f"성약의 책갈피: {stats.get('covenant_bookmark_bought', 0)}개\n\n"
+                    f"⏱️ 동작 시간: {time_str}"
+                )
+            else:
+                messagebox.showinfo("중지", "봇이 중지됩니다.")
+        else:
+            messagebox.showinfo("중지", "봇이 중지됩니다.")
         
     def _update_stats(self, stats):
         """통계 업데이트"""
