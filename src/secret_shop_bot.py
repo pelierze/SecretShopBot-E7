@@ -63,19 +63,37 @@ class SecretShopBot:
         
         return None
     
-    def __init__(self, adb_controller: ADBController, base_dir: str = ".", match_threshold: float = 0.92, debug_mode: bool = False):
+    def __init__(self, adb_controller: ADBController, base_dir: str = ".", thresholds: dict = None, debug_mode: bool = False):
         """
         Args:
             adb_controller: ADB 컨트롤러 인스턴스
             base_dir: 프로젝트 기본 디렉토리
-            match_threshold: 이미지 매칭 임계값 (0.0 ~ 1.0, 기본값 0.92)
+            thresholds: 이미지별 매칭 임계값 딕셔너리 (기본값: 모두 0.92)
+                {
+                    "mystic_medal": 0.92,
+                    "covenant_bookmark": 0.92,
+                    "purchase_button": 0.92,
+                    "buy_button": 0.92,
+                    "refresh_button": 0.92,
+                }
             debug_mode: 디버그 모드 (상세 로그 출력)
         """
         self.adb = adb_controller
-        self.matcher = ImageMatcher(threshold=match_threshold)
         self.base_dir = Path(base_dir)
-        self.match_threshold = match_threshold
         self.debug_mode = debug_mode
+        
+        # 이미지별 임계값 설정
+        default_thresholds = {
+            "mystic_medal": 0.92,
+            "covenant_bookmark": 0.92,
+            "purchase_button": 0.92,
+            "buy_button": 0.92,
+            "refresh_button": 0.92,
+        }
+        self.thresholds = thresholds if thresholds else default_thresholds
+        
+        # 기본 매칭 객체 (범용)
+        self.matcher = ImageMatcher(threshold=0.92)
         
         # 스크린샷 임시 저장 경로
         self.screenshot_path = self.base_dir / "logs" / "current_screen.png"
@@ -232,7 +250,7 @@ class SecretShopBot:
         # 신비의 메달 검색
         mystic_medal_path = self._find_image_file(self.base_dir / self.ITEMS_DIR, self.MYSTIC_MEDAL)
         if mystic_medal_path:
-            result = self.matcher.find_image(str(self.screenshot_path), str(mystic_medal_path))
+            result = self.matcher.find_image(str(self.screenshot_path), str(mystic_medal_path), threshold=self.thresholds.get("mystic_medal", 0.92))
             if result:
                 found_items["mystic_medal"] = result
                 logger.info(f"💠 신비의 메달 발견: {result}")
@@ -240,7 +258,7 @@ class SecretShopBot:
         # 성약의 책갈피 검색
         covenant_bookmark_path = self._find_image_file(self.base_dir / self.ITEMS_DIR, self.COVENANT_BOOKMARK)
         if covenant_bookmark_path:
-            result = self.matcher.find_image(str(self.screenshot_path), str(covenant_bookmark_path))
+            result = self.matcher.find_image(str(self.screenshot_path), str(covenant_bookmark_path), threshold=self.thresholds.get("covenant_bookmark", 0.92))
             if result:
                 found_items["covenant_bookmark"] = result
                 logger.info(f"📖 성약의 책갈피 발견: {result}")
@@ -380,7 +398,7 @@ class SecretShopBot:
         purchase_button_disabled_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
         
         # 화면에서 모든 활성화된 구입 버튼 찾기
-        all_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path))
+        all_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path), threshold=self.thresholds.get("purchase_button", 0.92))
         
         if not all_buttons:
             logger.debug("구입 버튼을 찾을 수 없음")
@@ -501,7 +519,10 @@ class SecretShopBot:
             return False
         
         # 버튼 찾기
-        result = self.matcher.find_image(str(self.screenshot_path), str(button_path))
+        # 버튼 타입에 따라 임계값 선택
+        threshold_key = "refresh_button" if "refresh" in button_type else "buy_button"
+        threshold = self.thresholds.get(threshold_key, 0.92)
+        result = self.matcher.find_image(str(self.screenshot_path), str(button_path), threshold=threshold)
         
         if result:
             # 버튼 중심 클릭

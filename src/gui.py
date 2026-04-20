@@ -93,23 +93,45 @@ class SecretShopGUI:
         self.buy_count_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(settings_frame, text="회 (비활성화 버튼 확인 반복, 권장: 3회)").grid(row=1, column=2, sticky=tk.W)
         
-        ttk.Label(settings_frame, text="이미지 매칭 정확도:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-        self.threshold_scale = ttk.Scale(settings_frame, from_=0.7, to=0.99, orient=tk.HORIZONTAL, length=150)
-        self.threshold_scale.set(0.92)  # 기본값 92%
-        self.threshold_scale.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
-        self.threshold_label = ttk.Label(settings_frame, text="92%")
-        self.threshold_label.grid(row=2, column=2, sticky=tk.W, padx=5)
+        # 이미지별 매칭 임계값 설정
+        ttk.Label(settings_frame, text="=== 이미지 매칭 정확도 (70-99) ===", font=("Arial", 9, "bold")).grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(10, 5))
         
-        # 슬라이더 값 변경 시 레이블 업데이트
-        def update_threshold_label(val):
-            threshold_percent = int(float(val) * 100)
-            self.threshold_label.config(text=f"{threshold_percent}%")
-        self.threshold_scale.config(command=update_threshold_label)
+        # 아이템 임계값
+        ttk.Label(settings_frame, text="신비의 메달:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+        self.mystic_medal_threshold = ttk.Entry(settings_frame, width=8)
+        self.mystic_medal_threshold.insert(0, "92")
+        self.mystic_medal_threshold.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(settings_frame, text="%").grid(row=3, column=2, sticky=tk.W)
+        
+        ttk.Label(settings_frame, text="성약의 책갈피:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
+        self.covenant_bookmark_threshold = ttk.Entry(settings_frame, width=8)
+        self.covenant_bookmark_threshold.insert(0, "92")
+        self.covenant_bookmark_threshold.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(settings_frame, text="%").grid(row=4, column=2, sticky=tk.W)
+        
+        # 버튼 임계값
+        ttk.Label(settings_frame, text="구입 버튼:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=2)
+        self.purchase_button_threshold = ttk.Entry(settings_frame, width=8)
+        self.purchase_button_threshold.insert(0, "92")
+        self.purchase_button_threshold.grid(row=5, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(settings_frame, text="%").grid(row=5, column=2, sticky=tk.W)
+        
+        ttk.Label(settings_frame, text="구매 버튼:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=2)
+        self.buy_button_threshold = ttk.Entry(settings_frame, width=8)
+        self.buy_button_threshold.insert(0, "92")
+        self.buy_button_threshold.grid(row=6, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
+        
+        ttk.Label(settings_frame, text="갱신 버튼:").grid(row=7, column=0, sticky=tk.W, padx=5, pady=2)
+        self.refresh_button_threshold = ttk.Entry(settings_frame, width=8)
+        self.refresh_button_threshold.insert(0, "92")
+        self.refresh_button_threshold.grid(row=7, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(settings_frame, text="%").grid(row=7, column=2, sticky=tk.W)
         
         # 디버그 모드 체크박스
         self.debug_mode_var = tk.BooleanVar(value=False)
         self.debug_checkbox = ttk.Checkbutton(settings_frame, text="디버그 모드 (상세 로그)", variable=self.debug_mode_var)
-        self.debug_checkbox.grid(row=3, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        self.debug_checkbox.grid(row=8, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
         # === 제어 섹션 ===
         control_frame = ttk.Frame(self.root, padding=10)
@@ -219,19 +241,28 @@ class SecretShopGUI:
         try:
             refresh_count = int(self.refresh_count_entry.get())
             buy_count = int(self.buy_count_entry.get())
-            match_threshold = float(self.threshold_scale.get())
+            
+            # 이미지별 임계값 가져오기
+            thresholds = {
+                "mystic_medal": int(self.mystic_medal_threshold.get()) / 100.0,
+                "covenant_bookmark": int(self.covenant_bookmark_threshold.get()) / 100.0,
+                "purchase_button": int(self.purchase_button_threshold.get()) / 100.0,
+                "buy_button": int(self.buy_button_threshold.get()) / 100.0,
+                "refresh_button": int(self.refresh_button_threshold.get()) / 100.0,
+            }
             
             if refresh_count <= 0 or buy_count <= 0:
                 raise ValueError()
-            if not 0.0 <= match_threshold <= 1.0:
-                raise ValueError()
-        except ValueError:
-            messagebox.showerror("오류", "설정값이 올바르지 않습니다.\n리프레시 횟수와 구매 횟수는 양수여야 하며,\n매칭 정확도는 0~1 사이여야 합니다.")
+            for key, val in thresholds.items():
+                if not 0.7 <= val <= 0.99:
+                    raise ValueError(f"{key} 임계값은 70~99 사이여야 합니다.")
+        except ValueError as e:
+            messagebox.showerror("오류", f"설정값이 올바르지 않습니다.\n{str(e)}\n리프레시 횟수와 구매 횟수는 양수여야 하며,\n매칭 정확도는 70~99 사이여야 합니다.")
             return
         
-        # 봇 생성 (매칭 임계값 및 디버그 모드 전달)
+        # 봇 생성 (이미지별 임계값 및 디버그 모드 전달)
         debug_mode = self.debug_mode_var.get()
-        self.bot = SecretShopBot(self.adb_controller, match_threshold=match_threshold, debug_mode=debug_mode)
+        self.bot = SecretShopBot(self.adb_controller, thresholds=thresholds, debug_mode=debug_mode)
         
         # UI 상태 변경
         self.is_running = True
