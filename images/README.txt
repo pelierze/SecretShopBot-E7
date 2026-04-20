@@ -6,9 +6,13 @@
 - covenant_bookmark.png: 성약의 책갈피 이미지
 
 ## 버튼 이미지 (images/buttons/)
-- refresh_button.png: 상점 리프레시 버튼 이미지
-- confirm_button.png: 확인 버튼 이미지
-- buy_button.png: 구매 버튼 이미지
+### 상점 갱신 프로세스 (갱신 -> 확인 2단계)
+- refresh_button.png: 갱신 버튼 (상점 리프레시 시작)
+- confirm_button.png: 확인 버튼 (갱신 확인)
+
+### 아이템 구매 프로세스 (구입 -> 구매 2단계)
+- purchase_button.png: 구입 버튼 (1단계)
+- buy_button.png: 구매 버튼 (2단계, 최종 구매)
 
 ## 이미지 준비 방법
 1. 게임 실행 후 비밀상점 화면에서 각 요소를 스크린샷으로 캡처

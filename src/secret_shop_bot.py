@@ -1,5 +1,10 @@
 """
 에픽세븐 비밀상점 자동화 매크로 핵심 로직
+
+ADB 사용 이유:
+- 비활성 매크로 구현 (매크로 동작 중 키보드/마우스 자유롭게 사용 가능)
+- 앱플레이어와 독립적으로 동작
+- 안정적인 화면 캡처 및 입력 제어
 """
 import os
 import time
@@ -25,9 +30,13 @@ class SecretShopBot:
     COVENANT_BOOKMARK = "covenant_bookmark.png"  # 성약의 책갈피
     
     # 버튼 이미지 파일명
-    REFRESH_BUTTON = "refresh_button.png"  # 리프레시 버튼
-    CONFIRM_BUTTON = "confirm_button.png"  # 확인 버튼
-    BUY_BUTTON = "buy_button.png"  # 구매 버튼
+    # 상점 갱신 프로세스: 갱신 버튼 -> 확인 버튼
+    REFRESH_BUTTON = "refresh_button.png"  # 갱신 버튼 (상점 리프레시)
+    REFRESH_CONFIRM_BUTTON = "confirm_button.png"  # 갱신 확인 버튼
+    
+    # 아이템 구매 프로세스: 구입 버튼 -> 구매 버튼
+    PURCHASE_BUTTON = "purchase_button.png"  # 구입 버튼 (첫 번째 단계)
+    BUY_BUTTON = "buy_button.png"  # 구매 버튼 (두 번째 단계, 최종 구매)
     
     def __init__(self, adb_controller: ADBController, base_dir: str = "."):
         """
@@ -140,7 +149,7 @@ class SecretShopBot:
     
     def _purchase_item(self, item_location: tuple, count: int):
         """
-        아이템 구매
+        아이템 구매 (구입 -> 구매 2단계 프로세스)
         
         Args:
             item_location: 아이템 위치 (x, y, w, h)
@@ -155,46 +164,50 @@ class SecretShopBot:
             # 아이템 클릭
             self.adb.tap(center_x, center_y, delay=0.5)
             
-            # 구매 버튼 찾기 및 클릭
-            if self._click_button("buy"):
+            # 1단계: 구입 버튼 클릭
+            if self._click_button("purchase"):
                 time.sleep(0.3)
                 
-                # 구매 확인 버튼 클릭
-                if self._click_button("confirm"):
+                # 2단계: 구매 버튼 클릭 (최종 구매)
+                if self._click_button("buy"):
                     logger.info(f"구매 완료 ({i + 1}/{count})")
                     time.sleep(0.5)
                 else:
-                    logger.warning("구매 확인 버튼을 찾을 수 없음")
+                    logger.warning("구매 버튼(2단계)을 찾을 수 없음")
                     # 취소 또는 뒤로가기 처리 필요 시 추가
                     self.adb.tap(center_x // 2, center_y, delay=0.3)  # 화면 왼쪽 클릭 (취소)
             else:
-                logger.warning("구매 버튼을 찾을 수 없음")
+                logger.warning("구입 버튼(1단계)을 찾을 수 없음")
             
             time.sleep(0.5)  # 구매 간 대기
     
     def _refresh_shop(self):
-        """상점 리프레시"""
-        logger.debug("상점 리프레시 시작")
+        """상점 리프레시 (갱신 -> 확인 2단계 프로세스)"""
+        logger.debug("상점 갱신 시작")
         
-        # 리프레시 버튼 찾기 및 클릭
+        # 1단계: 갱신 버튼 찾기 및 클릭
         if self._click_button("refresh"):
             time.sleep(0.5)
             
-            # 리프레시 확인 버튼 클릭
-            if self._click_button("confirm"):
-                logger.info("상점 리프레시 완료")
+            # 2단계: 확인 버튼 클릭
+            if self._click_button("refresh_confirm"):
+                logger.info("상점 갱신 완료")
                 time.sleep(0.8)
             else:
-                logger.warning("리프레시 확인 버튼을 찾을 수 없음")
+                logger.warning("갱신 확인 버튼을 찾을 수 없음")
         else:
-            logger.error("리프레시 버튼을 찾을 수 없음")
+            logger.error("갱신 버튼을 찾을 수 없음")
     
     def _click_button(self, button_type: str) -> bool:
         """
         버튼 찾기 및 클릭
         
         Args:
-            button_type: 버튼 타입 ("refresh", "confirm", "buy")
+            button_type: 버튼 타입
+                - "refresh": 갱신 버튼 (상점 리프레시 시작)
+                - "refresh_confirm": 갱신 확인 버튼 (상점 리프레시 확인)
+                - "purchase": 구입 버튼 (아이템 구매 1단계)
+                - "buy": 구매 버튼 (아이템 구매 2단계, 최종 구매)
             
         Returns:
             클릭 성공 여부
@@ -206,7 +219,8 @@ class SecretShopBot:
         # 버튼 이미지 경로 선택
         button_filename = {
             "refresh": self.REFRESH_BUTTON,
-            "confirm": self.CONFIRM_BUTTON,
+            "refresh_confirm": self.REFRESH_CONFIRM_BUTTON,
+            "purchase": self.PURCHASE_BUTTON,
             "buy": self.BUY_BUTTON
         }.get(button_type)
         
