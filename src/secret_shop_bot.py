@@ -39,15 +39,17 @@ class SecretShopBot:
     BUY_BUTTON = "buy_button.png"  # 구매 버튼 (두 번째 단계, 최종 구매)
     PURCHASE_BUTTON_DISABLED = "purchase_button_disabled.png"  # 구매 완료 후 비활성화된 구입 버튼
     
-    def __init__(self, adb_controller: ADBController, base_dir: str = "."):
+    def __init__(self, adb_controller: ADBController, base_dir: str = ".", match_threshold: float = 0.92):
         """
         Args:
             adb_controller: ADB 컨트롤러 인스턴스
             base_dir: 프로젝트 기본 디렉토리
+            match_threshold: 이미지 매칭 임계값 (0.0 ~ 1.0, 기본값 0.92)
         """
         self.adb = adb_controller
-        self.matcher = ImageMatcher(threshold=0.8)
+        self.matcher = ImageMatcher(threshold=match_threshold)
         self.base_dir = Path(base_dir)
+        self.match_threshold = match_threshold
         
         # 스크린샷 임시 저장 경로
         self.screenshot_path = self.base_dir / "logs" / "current_screen.png"
@@ -178,50 +180,91 @@ class SecretShopBot:
         Returns:
             구매 성공 여부 (모든 구매가 성공했는지)
         """
-        # 아이템 위치의 중심점 계산
-        center_x, center_y = self.matcher.get_center(item_location)
-        
         all_success = True
         
         for i in range(count):
             logger.info(f"구매 시도 {i + 1}/{count}")
             
-            # 아이템 클릭
-            self.adb.tap(center_x, center_y, delay=0.5)
-            
-            # 1단계: 구입 버튼 클릭
-            if self._click_button("purchase"):
-                time.sleep(0.3)
-                
-                # 2단계: 구매 버튼 클릭 (최종 구매)
-                if self._click_button("buy"):
-                    time.sleep(0.5)
-                    
-                    # 구매 완료 검증: 비활성화된 구입 버튼 확인
-                    if self._verify_purchase_complete():
-                        logger.info(f"✅ 구매 완료 검증 성공 ({i + 1}/{count})")
-                    else:
-                        logger.warning(f"⚠️  구매 완료 검증 실패 ({i + 1}/{count}) - 골드 부족 또는 구매 실패 가능성")
-                        all_success = False
-                        # 화면 왼쪽 클릭하여 창 닫기
-                        self.adb.tap(center_x // 2, center_y, delay=0.3)
-                        break
-                else:
-                    logger.warning("구매 버튼(2단계)을 찾을 수 없음")
-                    all_success = False
-                    # 취소 또는 뒤로가기 처리
-                    self.adb.tap(center_x // 2, center_y, delay=0.3)  # 화면 왼쪽 클릭 (취소)
-                    break
-            else:
+            # 1단계: 아이템과 같은 라인의 오른쪽에 있는 구입 버튼 찾기 및 클릭
+            purchase_btn = self._find_purchase_button_on_item_line(item_location)
+            if not purchase_btn:
                 logger.warning("구입 버튼(1단계)을 찾을 수 없음")
                 all_success = False
                 break
             
+            # 구입 버튼 클릭
+            btn_center_x, btn_center_y = self.matcher.get_center(purchase_btn)
+            self.adb.tap(btn_center_x, btn_center_y, delay=0.5)
+            time.sleep(0.3)
+            
+            # 2단계: 구매 버튼 클릭 (최종 구매)
+            if self._click_button("buy"):
+                time.sleep(0.5)
+                
+                # 구매 완료 검증: 비활성화된 구입 버튼 확인
+                if self._verify_purchase_complete():
+                    logger.info(f"✅ 구매 완료 검증 성공 ({i + 1}/{count})")
+                else:
+                    logger.warning(f"⚠️  구매 완료 검증 실패 ({i + 1}/{count}) - 골드 부족 또는 구매 실패 가능성")
+                    all_success = False
+                    # 화면 왼쪽 클릭하여 창 닫기
+                    self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+                    break
+            else:
+                logger.warning("구매 버튼(2단계)을 찾을 수 없음")
+                all_success = False
+                # 취소 또는 뒤로가기 처리
+                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+                break
+            
             # 화면 닫기 (다음 구매를 위해)
-            self.adb.tap(center_x // 2, center_y, delay=0.3)
+            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
             time.sleep(0.5)  # 구매 간 대기
         
         return all_success
+    
+    def _find_purchase_button_on_item_line(self, item_location: tuple) -> Optional[tuple]:
+        """
+        아이템과 같은 라인(비슷한 Y 좌표)의 오른쪽에 있는 구입 버튼 찾기
+        
+        Args:
+            item_location: 아이템 위치 (x, y, w, h)
+            
+        Returns:
+            구입 버튼 위치 (x, y, w, h) 또는 None
+        """
+        # 스크린샷 촬영
+        self.adb.screenshot(str(self.screenshot_path))
+        time.sleep(0.2)
+        
+        # 구입 버튼 이미지 경로
+        purchase_button_path = self.base_dir / self.BUTTONS_DIR / self.PURCHASE_BUTTON
+        
+        # 화면에서 모든 구입 버튼 찾기
+        all_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path))
+        
+        if not all_buttons:
+            logger.debug("구입 버튼을 찾을 수 없음")
+            return None
+        
+        # 아이템의 Y 좌표
+        item_x, item_y, item_w, item_h = item_location
+        item_center_y = item_y + item_h // 2
+        
+        # 같은 라인에 있는 버튼 찾기 (약간의 여유 있게 ±50 픽셀)
+        y_tolerance = 50
+        
+        for button in all_buttons:
+            btn_x, btn_y, btn_w, btn_h = button
+            btn_center_y = btn_y + btn_h // 2
+            
+            # Y 좌표가 비슷하고, 아이템보다 오른쪽에 있는 버튼
+            if abs(btn_center_y - item_center_y) <= y_tolerance and btn_x > item_x:
+                logger.debug(f"같은 라인의 구입 버튼 발견: ({btn_x}, {btn_y})")
+                return button
+        
+        logger.warning("아이템과 같은 라인의 구입 버튼을 찾을 수 없음")
+        return None
     
     def _refresh_shop(self):
         """상점 리프레시 (갱신 -> 확인 2단계 프로세스)"""
@@ -296,9 +339,9 @@ class SecretShopBot:
         self.adb.screenshot(str(self.screenshot_path))
         time.sleep(0.2)
         
-        # 비활성화된 구입 버튼 찾기
+        # 비활성화된 구입 버튼 찾기 (약간 낮은 임계값 사용)
         disabled_button_path = self.base_dir / self.BUTTONS_DIR / self.PURCHASE_BUTTON_DISABLED
-        result = self.matcher.find_image(str(self.screenshot_path), str(disabled_button_path), threshold=0.75)
+        result = self.matcher.find_image(str(self.screenshot_path), str(disabled_button_path), threshold=0.85)
         
         if result:
             logger.debug("구매 완료: 비활성화된 구입 버튼 확인됨")

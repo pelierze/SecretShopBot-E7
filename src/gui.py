@@ -90,6 +90,19 @@ class SecretShopGUI:
         self.buy_count_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(settings_frame, text="개").grid(row=1, column=2, sticky=tk.W)
         
+        ttk.Label(settings_frame, text="이미지 매칭 정확도:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.threshold_scale = ttk.Scale(settings_frame, from_=0.7, to=0.99, orient=tk.HORIZONTAL, length=150)
+        self.threshold_scale.set(0.92)  # 기본값 92%
+        self.threshold_scale.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
+        self.threshold_label = ttk.Label(settings_frame, text="92%")
+        self.threshold_label.grid(row=2, column=2, sticky=tk.W, padx=5)
+        
+        # 슬라이더 값 변경 시 레이블 업데이트
+        def update_threshold_label(val):
+            threshold_percent = int(float(val) * 100)
+            self.threshold_label.config(text=f"{threshold_percent}%")
+        self.threshold_scale.config(command=update_threshold_label)
+        
         # === 제어 섹션 ===
         control_frame = ttk.Frame(self.root, padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -191,15 +204,18 @@ class SecretShopGUI:
         try:
             refresh_count = int(self.refresh_count_entry.get())
             buy_count = int(self.buy_count_entry.get())
+            match_threshold = float(self.threshold_scale.get())
             
             if refresh_count <= 0 or buy_count <= 0:
                 raise ValueError()
+            if not 0.0 <= match_threshold <= 1.0:
+                raise ValueError()
         except ValueError:
-            messagebox.showerror("오류", "리프레시 횟수와 구매 횟수는 양수여야 합니다.")
+            messagebox.showerror("오류", "설정값이 올바르지 않습니다.\n리프레시 횟수와 구매 횟수는 양수여야 하며,\n매칭 정확도는 0~1 사이여야 합니다.")
             return
         
-        # 봇 생성
-        self.bot = SecretShopBot(self.adb_controller)
+        # 봇 생성 (매칭 임계값 전달)
+        self.bot = SecretShopBot(self.adb_controller, match_threshold=match_threshold)
         
         # UI 상태 변경
         self.is_running = True
