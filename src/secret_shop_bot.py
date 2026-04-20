@@ -165,9 +165,12 @@ class SecretShopBot:
             
             # 상점 리프레시
             if refresh_num < max_refresh_count - 1:  # 마지막 회차가 아니면
-                self._refresh_shop()
-                self.stats["total_refreshes"] += 1
-                time.sleep(1)  # 리프레시 후 대기
+                if self._refresh_shop():
+                    self.stats["total_refreshes"] += 1
+                    time.sleep(1)  # 리프레시 후 대기
+                else:
+                    logger.error("⚠️  상점 갱신에 실패했습니다. 다시 시도합니다...")
+                    time.sleep(2)  # 실패 시 조금 더 대기
         
         logger.info("비밀상점 자동화 완료")
         logger.info(f"통계: {self.stats}")
@@ -306,8 +309,12 @@ class SecretShopBot:
         logger.warning("아이템과 같은 라인의 구입 버튼을 찾을 수 없음")
         return None
     
-    def _refresh_shop(self):
-        """상점 리프레시 (갱신 -> 확인 2단계 프로세스)"""
+    def _refresh_shop(self) -> bool:
+        """상점 리프레시 (갱신 -> 확인 2단계 프로세스)
+        
+        Returns:
+            성공 여부
+        """
         logger.debug("상점 갱신 시작")
         
         # 1단계: 갱신 버튼 찾기 및 클릭
@@ -316,12 +323,14 @@ class SecretShopBot:
             
             # 2단계: 확인 버튼 클릭
             if self._click_button("refresh_confirm"):
-                logger.info("상점 갱신 완료")
+                logger.info("✅ 상점 갱신 성공")
                 time.sleep(0.8)
+                return True
             else:
-                logger.warning("갱신 확인 버튼을 찾을 수 없음")
+                logger.warning("⚠️  갱신 확인 버튼을 찾을 수 없음 - 갱신 실패")
+                return False
         else:
-            logger.error("❌ 갱신 버튼을 찾을 수 없음")
+            logger.error("❌ 갱신 버튼을 찾을 수 없음 - 갱신 실패")
             logger.error(f"💡 디버깅: 스크린샷이 {self.screenshot_path}에 저장되었습니다.")
             logger.error(f"💡 버튼 이미지: {self.base_dir / self.BUTTONS_DIR / self.REFRESH_BUTTON}")
             logger.error(f"💡 이미지 매칭 정확도를 낮춰보세요 (현재: {int(self.matcher.threshold*100)}%)")
@@ -332,6 +341,7 @@ class SecretShopBot:
             import shutil
             shutil.copy(self.screenshot_path, debug_path)
             logger.error(f"💡 디버그 스크린샷: {debug_path}")
+            return False
     
     def _click_button(self, button_type: str) -> bool:
         """
