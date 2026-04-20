@@ -487,8 +487,8 @@ class SecretShopBot:
         self.adb.swipe(
             self.swipe_x, self.swipe_start_y,
             self.swipe_x, self.swipe_end_y,
-            duration=800,  # 300ms → 800ms로 증가하여 확실한 드래그
-            delay=0.8
+            duration=500,  # 800ms → 500ms로 감소하여 빠른 드래그
+            delay=0.5
         )
         
         if self.debug_mode:
