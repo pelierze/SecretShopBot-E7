@@ -447,13 +447,14 @@ class SecretShopBot:
     
     def _scroll_down(self):
         """화면을 아래로 스크롤 (두 번째 페이지로 이동)"""
+        logger.debug(f"드래그 시작: ({self.swipe_x}, {self.swipe_start_y}) → ({self.swipe_x}, {self.swipe_end_y})")
         self.adb.swipe(
             self.swipe_x, self.swipe_start_y,
             self.swipe_x, self.swipe_end_y,
-            duration=300,
-            delay=0.5
+            duration=800,  # 300ms → 800ms로 증가하여 확실한 드래그
+            delay=0.8
         )
-        logger.debug("화면 스크롤 (하단으로)")
+        logger.debug("화면 스크롤 완료 (하단으로)")
     
     def set_user_action(self, action: str):
         """
