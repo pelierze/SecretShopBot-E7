@@ -235,7 +235,7 @@ class SecretShopBot:
             result = self.matcher.find_image(str(self.screenshot_path), str(mystic_medal_path))
             if result:
                 found_items["mystic_medal"] = result
-                logger.debug(f"신비의 메달 발견: {result}")
+                logger.info(f"💠 신비의 메달 발견: {result}")
         
         # 성약의 책갈피 검색
         covenant_bookmark_path = self._find_image_file(self.base_dir / self.ITEMS_DIR, self.COVENANT_BOOKMARK)
@@ -243,7 +243,12 @@ class SecretShopBot:
             result = self.matcher.find_image(str(self.screenshot_path), str(covenant_bookmark_path))
             if result:
                 found_items["covenant_bookmark"] = result
-                logger.debug(f"성약의 책갈피 발견: {result}")
+                logger.info(f"📖 성약의 책갈피 발견: {result}")")
+        
+        if found_items:
+            logger.info(f"🔍 스캔 완료 - 발견한 아이템: {list(found_items.keys())}")
+        else:
+            logger.info("🔍 스캔 완료 - 아이템 없음")
         
         return found_items
     
