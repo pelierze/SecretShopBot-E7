@@ -59,6 +59,9 @@ class SecretShopGUI:
         self.adb_controller = None
         self.bot = None
         self.is_running = False
+        self.is_closing = False
+        self.bot_thread = None
+        self.adb_server_started = False
         
         # UI 생성
         self._create_widgets()
@@ -239,7 +242,12 @@ class SecretShopGUI:
             
             # 임시 ADB 컨트롤러 생성
             temp_adb = ADBController()
-            devices = temp_adb.get_devices()
+            self.adb_server_started = True
+            try:
+                devices = temp_adb.get_devices()
+            finally:
+                if self.adb_controller is None:
+                    temp_adb.kill_server()
             
             if not devices:
                 logger.warning("⚠️ 연결된 장치가 없습니다. ADB 디버깅이 활성화되어 있는지 확인하세요.")
@@ -296,6 +304,7 @@ class SecretShopGUI:
         self.adb_controller = ADBController()
         
         if self.adb_controller.connect(ip, port):
+            self.adb_server_started = True
             self.connection_status.config(text="● 연결됨", foreground="green")
             self.start_btn.config(state=tk.NORMAL)
             self.test_btn.config(state=tk.NORMAL)
@@ -365,8 +374,8 @@ class SecretShopGUI:
         })
         
         # 별도 스레드에서 봇 실행
-        bot_thread = threading.Thread(target=self._run_bot, args=(refresh_count, buy_count), daemon=True)
-        bot_thread.start()
+        self.bot_thread = threading.Thread(target=self._run_bot, args=(refresh_count, buy_count), daemon=True)
+        self.bot_thread.start()
         
     def _run_bot(self, refresh_count, buy_count):
         """봇 실행 (별도 스레드)"""
@@ -410,11 +419,13 @@ class SecretShopGUI:
             
         except Exception as e:
             logging.error(f"봇 실행 중 오류: {e}", exc_info=True)
-            self.root.after(0, lambda: messagebox.showerror("오류", f"실행 중 오류 발생:\n{str(e)}"))
+            if not self.is_closing:
+                self.root.after(0, lambda: messagebox.showerror("오류", f"실행 중 오류 발생:\n{str(e)}"))
         
         finally:
             self.is_running = False
-            self.root.after(0, self._reset_ui)
+            if not self.is_closing:
+                self.root.after(0, self._reset_ui)
             
     def _pause_bot(self):
         """봇 일시정지"""
@@ -493,8 +504,8 @@ class SecretShopGUI:
             return
         
         if self.adb_controller:
-            # ADB 서버 종료
-            self.adb_controller.kill_server()
+            # 현재 디바이스 연결만 해제하고, 서버 종료는 프로그램 종료 시 처리
+            self.adb_controller.disconnect()
             self.adb_controller = None
         
         self.connection_status.config(text="● 연결 안됨", foreground="red")
@@ -506,6 +517,9 @@ class SecretShopGUI:
     
     def _on_closing(self):
         """프로그램 종료 시 처리"""
+        if self.is_closing:
+            return
+
         if self.is_running:
             if messagebox.askokcancel("종료", "매크로가 실행 중입니다. 정말로 종료하시겠습니까?"):
                 # 봇 중지
@@ -515,12 +529,30 @@ class SecretShopGUI:
             else:
                 return
         
-        # ADB 서버 종료
+        self.is_closing = True
+        self._finish_closing()
+
+    def _finish_closing(self):
+        """봇 스레드가 정리될 시간을 조금 준 뒤 프로그램을 종료합니다."""
+        if self.bot_thread and self.bot_thread.is_alive():
+            self.root.after(300, self._finish_closing)
+            return
+
+        self._cleanup_adb_server()
+        self.root.destroy()
+
+    def _cleanup_adb_server(self):
+        """이 앱이 사용한 ADB 서버를 종료합니다."""
         if self.adb_controller:
             logger.info("프로그램 종료 - ADB 서버 종료 중...")
             self.adb_controller.kill_server()
-        
-        self.root.destroy()
+            self.adb_controller = None
+        elif self.adb_server_started:
+            try:
+                cleanup_adb = ADBController()
+                cleanup_adb.kill_server()
+            except Exception as e:
+                logger.error(f"ADB 서버 종료 중 오류: {e}")
     
     def _reset_ui(self):
         """상태 복귀"""
