@@ -39,6 +39,30 @@ class SecretShopBot:
     BUY_BUTTON = "buy_button.png"  # 구매 버튼 (두 번째 단계, 최종 구매)
     PURCHASE_BUTTON_DISABLED = "purchase_button_disabled.png"  # 구매 완료 후 비활성화된 구입 버튼
     
+    def _find_image_file(self, directory: Path, base_name: str) -> Optional[Path]:
+        """
+        대소문자 구분 없이 이미지 파일 찾기
+        
+        Args:
+            directory: 디렉토리 경로
+            base_name: 파일명 (확장자 포함)
+            
+        Returns:
+            찾은 파일 경로 또는 None
+        """
+        # 정확한 파일명으로 먼저 찾기
+        exact_path = directory / base_name
+        if exact_path.exists():
+            return exact_path
+        
+        # 대소문자 구분 없이 찾기
+        base_name_lower = base_name.lower()
+        for file in directory.iterdir():
+            if file.is_file() and file.name.lower() == base_name_lower:
+                return file
+        
+        return None
+    
     def __init__(self, adb_controller: ADBController, base_dir: str = ".", match_threshold: float = 0.92):
         """
         Args:
@@ -154,18 +178,20 @@ class SecretShopBot:
         found_items = {}
         
         # 신비의 메달 검색
-        mystic_medal_path = self.base_dir / self.ITEMS_DIR / self.MYSTIC_MEDAL
-        result = self.matcher.find_image(str(self.screenshot_path), str(mystic_medal_path))
-        if result:
-            found_items["mystic_medal"] = result
-            logger.debug(f"신비의 메달 발견: {result}")
+        mystic_medal_path = self._find_image_file(self.base_dir / self.ITEMS_DIR, self.MYSTIC_MEDAL)
+        if mystic_medal_path:
+            result = self.matcher.find_image(str(self.screenshot_path), str(mystic_medal_path))
+            if result:
+                found_items["mystic_medal"] = result
+                logger.debug(f"신비의 메달 발견: {result}")
         
         # 성약의 책갈피 검색
-        covenant_bookmark_path = self.base_dir / self.ITEMS_DIR / self.COVENANT_BOOKMARK
-        result = self.matcher.find_image(str(self.screenshot_path), str(covenant_bookmark_path))
-        if result:
-            found_items["covenant_bookmark"] = result
-            logger.debug(f"성약의 책갈피 발견: {result}")
+        covenant_bookmark_path = self._find_image_file(self.base_dir / self.ITEMS_DIR, self.COVENANT_BOOKMARK)
+        if covenant_bookmark_path:
+            result = self.matcher.find_image(str(self.screenshot_path), str(covenant_bookmark_path))
+            if result:
+                found_items["covenant_bookmark"] = result
+                logger.debug(f"성약의 책갈피 발견: {result}")
         
         return found_items
     
@@ -238,7 +264,11 @@ class SecretShopBot:
         time.sleep(0.2)
         
         # 구입 버튼 이미지 경로
-        purchase_button_path = self.base_dir / self.BUTTONS_DIR / self.PURCHASE_BUTTON
+        purchase_button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON)
+        
+        if not purchase_button_path:
+            logger.debug("구입 버튼 이미지 파일을 찾을 수 없음")
+            return None
         
         # 화면에서 모든 구입 버튼 찾기
         all_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path))
@@ -313,7 +343,11 @@ class SecretShopBot:
             logger.error(f"알 수 없는 버튼 타입: {button_type}")
             return False
         
-        button_path = self.base_dir / self.BUTTONS_DIR / button_filename
+        button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, button_filename)
+        
+        if not button_path:
+            logger.error(f"버튼 이미지 파일을 찾을 수 없음: {button_filename}")
+            return False
         
         # 버튼 찾기
         result = self.matcher.find_image(str(self.screenshot_path), str(button_path))
@@ -340,7 +374,12 @@ class SecretShopBot:
         time.sleep(0.2)
         
         # 비활성화된 구입 버튼 찾기 (약간 낮은 임계값 사용)
-        disabled_button_path = self.base_dir / self.BUTTONS_DIR / self.PURCHASE_BUTTON_DISABLED
+        disabled_button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
+        
+        if not disabled_button_path:
+            logger.warning("비활성화된 구입 버튼 이미지 파일을 찾을 수 없음")
+            return False
+        
         result = self.matcher.find_image(str(self.screenshot_path), str(disabled_button_path), threshold=0.85)
         
         if result:
