@@ -342,6 +342,17 @@ class SecretShopGUI:
         self.resume_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         self.connect_btn.config(state=tk.DISABLED)
+        self.disconnect_btn.config(state=tk.DISABLED)
+        
+        # 설정 필드 비활성화
+        self.refresh_count_entry.config(state=tk.DISABLED)
+        self.buy_count_entry.config(state=tk.DISABLED)
+        self.mystic_medal_threshold.config(state=tk.DISABLED)
+        self.covenant_bookmark_threshold.config(state=tk.DISABLED)
+        self.purchase_button_threshold.config(state=tk.DISABLED)
+        self.buy_button_threshold.config(state=tk.DISABLED)
+        self.refresh_button_threshold.config(state=tk.DISABLED)
+        self.debug_checkbox.config(state=tk.DISABLED)
         
         # 통계 초기화
         self._update_stats({
@@ -498,6 +509,16 @@ class SecretShopGUI:
         self.connect_btn.config(state=tk.DISABLED if self.adb_controller else tk.NORMAL)
         self.disconnect_btn.config(state=tk.NORMAL if self.adb_controller else tk.DISABLED)
         self.pause_label.config(text="")
+        
+        # 설정 필드 활성화
+        self.refresh_count_entry.config(state=tk.NORMAL)
+        self.buy_count_entry.config(state=tk.NORMAL)
+        self.mystic_medal_threshold.config(state=tk.NORMAL)
+        self.covenant_bookmark_threshold.config(state=tk.NORMAL)
+        self.purchase_button_threshold.config(state=tk.NORMAL)
+        self.buy_button_threshold.config(state=tk.NORMAL)
+        self.refresh_button_threshold.config(state=tk.NORMAL)
+        self.debug_checkbox.config(state=tk.NORMAL)
     
     def _test_image_matching(self):
         """이미지 매칭 테스트"""
