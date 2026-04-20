@@ -47,6 +47,22 @@ class ADBController:
                 self.adb_path = "adb"
                 logger.warning("ADB 다운로드 실패. 시스템 PATH의 ADB를 사용합니다.")
     
+    def _run_adb(self, args: list[str], text: bool = False) -> subprocess.CompletedProcess:
+        """Run adb without flashing a console window on Windows."""
+        kwargs = {
+            "capture_output": True,
+            "text": text,
+        }
+
+        if os.name == "nt":
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = startupinfo
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+        return subprocess.run([self.adb_path, *args], **kwargs)
+
     def _download_adb(self, project_root: Path) -> bool:
         """
         ADB 자동 다운로드
@@ -109,11 +125,7 @@ class ADBController:
             연결 성공 여부
         """
         try:
-            result = subprocess.run(
-                [self.adb_path, "connect", f"{ip}:{port}"],
-                capture_output=True,
-                text=True
-            )
+            result = self._run_adb(["connect", f"{ip}:{port}"], text=True)
             
             output = f"{result.stdout}\n{result.stderr}".lower()
             if "connected" in output or "already connected" in output:
@@ -135,11 +147,7 @@ class ADBController:
             디바이스 정보 리스트 [{'id': 'device_id', 'status': 'device'}, ...]
         """
         try:
-            result = subprocess.run(
-                [self.adb_path, "devices"],
-                capture_output=True,
-                text=True
-            )
+            result = self._run_adb(["devices"], text=True)
             
             devices = []
             lines = result.stdout.strip().split('\n')[1:]  # 첫 줄(헤더) 제외
@@ -171,10 +179,7 @@ class ADBController:
             실행 성공 여부
         """
         try:
-            subprocess.run(
-                [self.adb_path, "-s", self.device_id, "shell", "input", "tap", str(x), str(y)],
-                capture_output=True
-            )
+            self._run_adb(["-s", self.device_id, "shell", "input", "tap", str(x), str(y)])
             logger.debug(f"터치: ({x}, {y})")
             time.sleep(delay)
             return True
@@ -198,13 +203,10 @@ class ADBController:
             실행 성공 여부
         """
         try:
-            subprocess.run(
-                [
-                    self.adb_path, "-s", self.device_id, "shell", "input", "swipe",
-                    str(x1), str(y1), str(x2), str(y2), str(duration)
-                ],
-                capture_output=True
-            )
+            self._run_adb([
+                "-s", self.device_id, "shell", "input", "swipe",
+                str(x1), str(y1), str(x2), str(y2), str(duration)
+            ])
             logger.debug(f"스와이프: ({x1}, {y1}) -> ({x2}, {y2})")
             time.sleep(delay)
             return True
@@ -225,17 +227,10 @@ class ADBController:
         try:
             # 디바이스에서 스크린샷 촬영
             screenshot_path = "/sdcard/screenshot.png"
-            subprocess.run(
-                [self.adb_path, "-s", self.device_id, "shell", "screencap", "-p", screenshot_path],
-                capture_output=True
-            )
+            self._run_adb(["-s", self.device_id, "shell", "screencap", "-p", screenshot_path])
             
             # PC로 파일 전송
-            result = subprocess.run(
-                [self.adb_path, "-s", self.device_id, "pull", screenshot_path, save_path],
-                capture_output=True,
-                text=True
-            )
+            result = self._run_adb(["-s", self.device_id, "pull", screenshot_path, save_path], text=True)
             
             if "pulled" in result.stdout.lower() or result.returncode == 0:
                 logger.debug(f"스크린샷 저장: {save_path}")
@@ -255,11 +250,7 @@ class ADBController:
             (width, height) 튜플
         """
         try:
-            result = subprocess.run(
-                [self.adb_path, "-s", self.device_id, "shell", "wm", "size"],
-                capture_output=True,
-                text=True
-            )
+            result = self._run_adb(["-s", self.device_id, "shell", "wm", "size"], text=True)
             
             # "Physical size: 1920x1080" 형식의 출력 파싱
             size_str = result.stdout.strip().split(': ')[-1]
