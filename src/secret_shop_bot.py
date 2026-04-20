@@ -275,7 +275,11 @@ class SecretShopBot:
             
             # 1단계: 아이템과 같은 라인의 오른쪽에 있는 구입 버튼 찾기 및 클릭
             purchase_btn = self._find_purchase_button_on_item_line(item_location)
-            if not purchase_btn:
+            if purchase_btn is False:
+                # 비활성화된 버튼 (이미 구매한 아이템) - 조용히 건너뛰기
+                logger.debug("비활성화된 버튼이므로 구매 건너뜀")
+                return True  # 성공으로 처리 (이미 구매했으므로)
+            elif purchase_btn is None:
                 logger.warning("구입 버튼(1단계)을 찾을 수 없음")
                 all_success = False
                 break
@@ -347,7 +351,7 @@ class SecretShopBot:
         
         return all_success
     
-    def _find_purchase_button_on_item_line(self, item_location: tuple) -> Optional[tuple]:
+    def _find_purchase_button_on_item_line(self, item_location: tuple):
         """
         아이템과 같은 라인(비슷한 Y 좌표)의 오른쪽에 있는 구입 버튼 찾기
         비활성화된 버튼(이미 구매한 아이템)은 제외
@@ -356,7 +360,9 @@ class SecretShopBot:
             item_location: 아이템 위치 (x, y, w, h)
             
         Returns:
-            구입 버튼 위치 (x, y, w, h) 또는 None
+            tuple: 구입 버튼 위치 (x, y, w, h) - 활성화된 버튼
+            False: 비활성화된 버튼 (이미 구매한 아이템)
+            None: 버튼을 찾을 수 없음
         """
         # 스크린샷 촬영
         self.adb.screenshot(str(self.screenshot_path))
@@ -412,8 +418,11 @@ class SecretShopBot:
                 if not is_disabled:
                     logger.debug(f"같은 라인의 활성화된 구입 버튼 발견: ({btn_x}, {btn_y})")
                     return button
+                else:
+                    # 비활성화된 버튼만 있음 (이미 구매한 아이템)
+                    return False
         
-        logger.warning("아이템과 같은 라인의 활성화된 구입 버튼을 찾을 수 없음")
+        logger.warning("아이템과 같은 라인의 구입 버튼을 찾을 수 없음")
         return None
     
     def _refresh_shop(self) -> bool:
