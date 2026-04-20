@@ -161,37 +161,37 @@ class SecretShopBot:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
                         return self.stats
+            
+            # 첫 페이지 처리 완료 → 드래그하여 두 번째 페이지로 이동
+            logger.debug("두 번째 페이지로 이동")
+            self._scroll_down()
+            time.sleep(0.5)
+            
+            # 두 번째 페이지 스캔
+            found_items = self._scan_shop_page()
+            
+            # 두 번째 페이지에서 아이템 발견 시 구매
+            if found_items:
+                logger.info(f"두 번째 페이지에서 아이템 발견: {list(found_items.keys())}")
+                for item_name, item_location in found_items.items():
+                    # 중지 요청 확인
+                    if self.user_action == 'stop':
+                        logger.info("⛔ 사용자가 중지를 선택했습니다.")
+                        return self.stats
+                    
+                    logger.info(f"⭐ 아이템 발견: {item_name}")
+                    if self._purchase_item(item_location, buy_count_per_item):
+                        # 통계 업데이트
+                        if item_name == "mystic_medal":
+                            self.stats["mystic_medal_bought"] += buy_count_per_item
+                        elif item_name == "covenant_bookmark":
+                            self.stats["covenant_bookmark_bought"] += buy_count_per_item
+                    else:
+                        # 구매 실패 (골드 부족 등) - 중지
+                        logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
+                        return self.stats
             else:
-                # 첫 페이지에 아이템 없음 → 드래그하여 두 번째 페이지로 이동
-                logger.debug("첫 페이지에서 아이템 없음, 두 번째 페이지로 이동")
-                self._scroll_down()
-                time.sleep(0.5)
-                
-                # 두 번째 페이지 스캔
-                found_items = self._scan_shop_page()
-                
-                # 두 번째 페이지에서 아이템 발견 시 구매
-                if found_items:
-                    logger.info(f"두 번째 페이지에서 아이템 발견: {list(found_items.keys())}")
-                    for item_name, item_location in found_items.items():
-                        # 중지 요청 확인
-                        if self.user_action == 'stop':
-                            logger.info("⛔ 사용자가 중지를 선택했습니다.")
-                            return self.stats
-                        
-                        logger.info(f"⭐ 아이템 발견: {item_name}")
-                        if self._purchase_item(item_location, buy_count_per_item):
-                            # 통계 업데이트
-                            if item_name == "mystic_medal":
-                                self.stats["mystic_medal_bought"] += buy_count_per_item
-                            elif item_name == "covenant_bookmark":
-                                self.stats["covenant_bookmark_bought"] += buy_count_per_item
-                        else:
-                            # 구매 실패 (골드 부족 등) - 중지
-                            logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
-                            return self.stats
-                else:
-                    logger.debug("두 번째 페이지에도 아이템 없음")
+                logger.debug("두 번째 페이지에도 아이템 없음")
             
             # 상점 리프레시
             if refresh_num < max_refresh_count - 1:  # 마지막 회차가 아니면
