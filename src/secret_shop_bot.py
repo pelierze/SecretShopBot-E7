@@ -63,17 +63,19 @@ class SecretShopBot:
         
         return None
     
-    def __init__(self, adb_controller: ADBController, base_dir: str = ".", match_threshold: float = 0.92):
+    def __init__(self, adb_controller: ADBController, base_dir: str = ".", match_threshold: float = 0.92, debug_mode: bool = False):
         """
         Args:
             adb_controller: ADB 컨트롤러 인스턴스
             base_dir: 프로젝트 기본 디렉토리
             match_threshold: 이미지 매칭 임계값 (0.0 ~ 1.0, 기본값 0.92)
+            debug_mode: 디버그 모드 (상세 로그 출력)
         """
         self.adb = adb_controller
         self.matcher = ImageMatcher(threshold=match_threshold)
         self.base_dir = Path(base_dir)
         self.match_threshold = match_threshold
+        self.debug_mode = debug_mode
         
         # 스크린샷 임시 저장 경로
         self.screenshot_path = self.base_dir / "logs" / "current_screen.png"
@@ -83,7 +85,10 @@ class SecretShopBot:
             "total_refreshes": 0,
             "mystic_medal_bought": 0,
             "covenant_bookmark_bought": 0,
-            "total_cost": 0
+            "total_cost": 0,
+            "start_time": None,
+            "end_time": None,
+            "elapsed_time": 0
         }
         
         # 일시정지 제어
@@ -92,12 +97,12 @@ class SecretShopBot:
         
         # 화면 스와이프 좌표 (화면 크기에 따라 조정 필요)
         # 기본 해상도: 1280x720 (240dpi)
-        # 1번 구역(왼쪽 위)에서 아래로 드래그
+        # 2번 구역(오른쪽 위) 중앙에서 아래로 드래그
         self.screen_width, self.screen_height = self.adb.get_screen_size()
         logger.info(f"화면 해상도: {self.screen_width}x{self.screen_height}")
         
-        self.swipe_x = int(self.screen_width * 0.25)  # 1번 구역 (X: 25%)
-        self.swipe_start_y = int(self.screen_height * 0.25)  # 1번 구역 (Y: 25%)
+        self.swipe_x = int(self.screen_width * 0.75)  # 2번 구역 중앙 (X: 75%)
+        self.swipe_start_y = int(self.screen_height * 0.25)  # 2번 구역 상단 (Y: 25%)
         self.swipe_end_y = int(self.screen_height * 0.75)  # 아래로 드래그
         
     def run(self, max_refresh_count: int, buy_count_per_item: int) -> Dict:
