@@ -271,6 +271,10 @@ class SecretShopGUI:
                 self.port_entry.delete(0, tk.END)
                 self.port_entry.insert(0, parts[1])
     
+    def log(self, message):
+        """로그 메시지 출력 (logging을 통해)"""
+        logger.info(message)
+    
     def _connect_adb(self):
         """ADB 연결"""
         ip = self.ip_entry.get().strip()
