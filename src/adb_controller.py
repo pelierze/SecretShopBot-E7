@@ -1,0 +1,169 @@
+"""
+ADB 통신을 위한 컨트롤러 모듈
+"""
+import subprocess
+import time
+from typing import Tuple, Optional
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class ADBController:
+    """ADB를 통해 앱플레이어와 통신하는 클래스"""
+    
+    def __init__(self, device_id: Optional[str] = None):
+        """
+        Args:
+            device_id: ADB 디바이스 ID (None일 경우 자동 감지)
+        """
+        self.device_id = device_id
+        self.adb_path = "adb"  # PATH에 등록된 경우
+        
+    def connect(self, ip: str = "127.0.0.1", port: int = 5555) -> bool:
+        """
+        ADB 디바이스에 연결
+        
+        Args:
+            ip: 연결할 IP 주소
+            port: 연결할 포트 번호
+            
+        Returns:
+            연결 성공 여부
+        """
+        try:
+            cmd = f"{self.adb_path} connect {ip}:{port}"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            if "connected" in result.stdout.lower():
+                self.device_id = f"{ip}:{port}"
+                logger.info(f"ADB 연결 성공: {self.device_id}")
+                return True
+            else:
+                logger.error(f"ADB 연결 실패: {result.stdout}")
+                return False
+        except Exception as e:
+            logger.error(f"ADB 연결 중 오류: {e}")
+            return False
+    
+    def get_devices(self) -> list:
+        """
+        연결된 ADB 디바이스 목록 가져오기
+        
+        Returns:
+            디바이스 ID 리스트
+        """
+        try:
+            cmd = f"{self.adb_path} devices"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            devices = []
+            lines = result.stdout.strip().split('\n')[1:]  # 첫 줄(헤더) 제외
+            
+            for line in lines:
+                if '\tdevice' in line:
+                    device_id = line.split('\t')[0]
+                    devices.append(device_id)
+                    
+            return devices
+        except Exception as e:
+            logger.error(f"디바이스 목록 조회 중 오류: {e}")
+            return []
+    
+    def tap(self, x: int, y: int, delay: float = 0.5) -> bool:
+        """
+        화면의 특정 좌표 터치
+        
+        Args:
+            x: X 좌표
+            y: Y 좌표
+            delay: 터치 후 대기 시간 (초)
+            
+        Returns:
+            실행 성공 여부
+        """
+        try:
+            cmd = f"{self.adb_path} -s {self.device_id} shell input tap {x} {y}"
+            subprocess.run(cmd, shell=True, capture_output=True)
+            logger.debug(f"터치: ({x}, {y})")
+            time.sleep(delay)
+            return True
+        except Exception as e:
+            logger.error(f"터치 실행 중 오류: {e}")
+            return False
+    
+    def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: int = 300, delay: float = 0.5) -> bool:
+        """
+        화면 스와이프 (드래그)
+        
+        Args:
+            x1: 시작 X 좌표
+            y1: 시작 Y 좌표
+            x2: 종료 X 좌표
+            y2: 종료 Y 좌표
+            duration: 스와이프 지속 시간 (밀리초)
+            delay: 스와이프 후 대기 시간 (초)
+            
+        Returns:
+            실행 성공 여부
+        """
+        try:
+            cmd = f"{self.adb_path} -s {self.device_id} shell input swipe {x1} {y1} {x2} {y2} {duration}"
+            subprocess.run(cmd, shell=True, capture_output=True)
+            logger.debug(f"스와이프: ({x1}, {y1}) -> ({x2}, {y2})")
+            time.sleep(delay)
+            return True
+        except Exception as e:
+            logger.error(f"스와이프 실행 중 오류: {e}")
+            return False
+    
+    def screenshot(self, save_path: str) -> bool:
+        """
+        화면 캡처
+        
+        Args:
+            save_path: 저장할 파일 경로
+            
+        Returns:
+            캡처 성공 여부
+        """
+        try:
+            # 디바이스에서 스크린샷 촬영
+            screenshot_path = "/sdcard/screenshot.png"
+            cmd1 = f"{self.adb_path} -s {self.device_id} shell screencap -p {screenshot_path}"
+            subprocess.run(cmd1, shell=True, capture_output=True)
+            
+            # PC로 파일 전송
+            cmd2 = f"{self.adb_path} -s {self.device_id} pull {screenshot_path} {save_path}"
+            result = subprocess.run(cmd2, shell=True, capture_output=True, text=True)
+            
+            if "pulled" in result.stdout.lower() or result.returncode == 0:
+                logger.debug(f"스크린샷 저장: {save_path}")
+                return True
+            else:
+                logger.error(f"스크린샷 저장 실패: {result.stdout}")
+                return False
+        except Exception as e:
+            logger.error(f"스크린샷 촬영 중 오류: {e}")
+            return False
+    
+    def get_screen_size(self) -> Tuple[int, int]:
+        """
+        화면 크기 가져오기
+        
+        Returns:
+            (width, height) 튜플
+        """
+        try:
+            cmd = f"{self.adb_path} -s {self.device_id} shell wm size"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            # "Physical size: 1920x1080" 형식의 출력 파싱
+            size_str = result.stdout.strip().split(': ')[-1]
+            width, height = map(int, size_str.split('x'))
+            
+            logger.info(f"화면 크기: {width}x{height}")
+            return width, height
+        except Exception as e:
+            logger.error(f"화면 크기 조회 중 오류: {e}")
+            return 1920, 1080  # 기본값
