@@ -41,3 +41,7 @@ Thumbs.db
 screenshots/
 *.png
 !images/**/*.png
+
+# ADB tools (사용자가 직접 다운로드)
+tools/adb/*.exe
+tools/adb/*.dll

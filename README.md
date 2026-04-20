@@ -26,14 +26,22 @@
 - [Python 공식 홈페이지](https://www.python.org/downloads/)에서 다운로드
 
 ### 2. ADB (Android Debug Bridge)
-- Android SDK Platform Tools 필요
+
+**자동 설치 (권장):**
+```bash
+python setup_adb.py
+```
+
+**수동 설치:**
 - [다운로드 링크](https://developer.android.com/studio/releases/platform-tools)
-- 다운로드 후 압축 해제하고 `adb.exe` 경로를 시스템 환경 변수 PATH에 추가
+- 다운로드 후 압축 해제하고 `adb.exe`, `AdbWinApi.dll`, `AdbWinUsbApi.dll` 파일을 `tools/adb/` 폴더에 복사
 
 **🔑 ADB를 사용하는 이유:**
-- **비활성 매크로**: 매크로가 동작하는 동안 사용자가 키보드와 마우스를 자유롭게 사용할 수 있습니다.
+- **비활성 매크로**: 매크로 동작 중 키보드/마우스 자유롭게 사용 가능
 - 앱플레이어와 독립적으로 동작하여 다른 작업 방해 없음
 - 안정적인 화면 캡처 및 입력 제어
+
+**📝 참고**: 이 프로젝트는 ADB를 내장하여 별도 설치가 필요 없도록 설계되었습니다.
 
 ### 3. 앱플레이어 (에뮬레이터)
 - 블루스택, LDPlayer, 녹스 등 ADB 연결을 지원하는 앱플레이어
@@ -48,7 +56,12 @@ git clone https://github.com/yourusername/SecretShopBot-E7.git
 cd SecretShopBot-E7
 ```
 
-### 2. 필요한 패키지 설치
+### 2. ADB 설치 (자동)
+```bash
+python setup_adb.py
+```
+
+### 3. 필요한 패키지 설치
 ```bash
 pip install -r requirements.txt
 ```
@@ -161,6 +174,7 @@ adb connect 127.0.0.1:62001
 ```
 SecretShopBot-E7/
 ├── main.py                 # 메인 실행 파일
+├── setup_adb.py           # ADB 자동 설치 스크립트
 ├── requirements.txt        # Python 패키지 의존성
 ├── README.md              # 프로젝트 문서
 ├── .gitignore             # Git 제외 파일
@@ -170,6 +184,13 @@ SecretShopBot-E7/
 │   ├── image_matcher.py   # 이미지 매칭 모듈
 │   ├── secret_shop_bot.py # 비밀상점 봇 핵심 로직
 │   └── gui.py             # GUI 인터페이스
+├── tools/                 # 도구 폴더
+│   ├── adb/              # ADB 실행 파일 (자동 설치)
+│   │   ├── adb.exe
+│   │   ├── AdbWinApi.dll
+│   │   ├── AdbWinUsbApi.dll
+│   │   └── README.txt
+│   └── INSTALL_ADB.md    # ADB 설치 가이드
 ├── images/                # 이미지 파일
 │   ├── items/            # 아이템 이미지
 │   │   ├── mystic_medal.png
@@ -238,6 +259,7 @@ SecretShopBot-E7/
 - 앱플레이어가 실행 중인지 확인
 - 방화벽이 연결을 차단하는지 확인
 - 앱플레이어를 재시작 후 다시 시도
+- `setup_adb.py`를 다시 실행하여 ADB 재설치
 
 ### 이미지 인식이 안될 때
 - 이미지 파일이 올바른 경로에 있는지 확인

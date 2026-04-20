@@ -3,7 +3,9 @@ ADB 통신을 위한 컨트롤러 모듈
 """
 import subprocess
 import time
+import os
 from typing import Tuple, Optional
+from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,7 +20,18 @@ class ADBController:
             device_id: ADB 디바이스 ID (None일 경우 자동 감지)
         """
         self.device_id = device_id
-        self.adb_path = "adb"  # PATH에 등록된 경우
+        
+        # 프로젝트 내부의 ADB 경로 확인
+        project_root = Path(__file__).parent.parent
+        adb_path = project_root / "tools" / "adb" / "adb.exe"
+        
+        if adb_path.exists():
+            self.adb_path = str(adb_path)
+            logger.info(f"프로젝트 내부 ADB 사용: {self.adb_path}")
+        else:
+            # 시스템 PATH의 ADB 사용
+            self.adb_path = "adb"
+            logger.info("시스템 PATH의 ADB 사용")
         
     def connect(self, ip: str = "127.0.0.1", port: int = 5555) -> bool:
         """
