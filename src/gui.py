@@ -580,10 +580,29 @@ class SecretShopGUI:
             logging.info(f"✅ 템플릿 크기: {template.shape}")
             logging.info("")
             
-            # 현재 설정된 임계값
-            current_threshold = float(self.threshold_scale.get())
+            # 이미지 파일명에 따른 임계값 가져오기
+            image_filename = Path(image_path).stem.lower()
+            current_threshold = 0.8  # 기본값
             
-            logging.info(f"📊 현재 임계값: {int(current_threshold*100)}%")
+            if "mystic_medal" in image_filename:
+                current_threshold = float(self.mystic_medal_threshold.get()) / 100.0
+                threshold_name = "신비의 메달"
+            elif "covenant_bookmark" in image_filename:
+                current_threshold = float(self.covenant_bookmark_threshold.get()) / 100.0
+                threshold_name = "성약의 책갈피"
+            elif "purchase_button" in image_filename and "disabled" not in image_filename:
+                current_threshold = float(self.purchase_button_threshold.get()) / 100.0
+                threshold_name = "구입 버튼"
+            elif "buy_button" in image_filename:
+                current_threshold = float(self.buy_button_threshold.get()) / 100.0
+                threshold_name = "구매 버튼"
+            elif "refresh_button" in image_filename or "confirm_button" in image_filename:
+                current_threshold = float(self.refresh_button_threshold.get()) / 100.0
+                threshold_name = "갱신 버튼"
+            else:
+                threshold_name = "기본"
+            
+            logging.info(f"📊 현재 임계값 ({threshold_name}): {int(current_threshold*100)}%")
             logging.info("")
             
             # 다양한 임계값으로 테스트
