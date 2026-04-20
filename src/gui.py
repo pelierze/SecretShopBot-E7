@@ -13,6 +13,7 @@ from pathlib import Path
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 
 from .adb_controller import ADBController
+from .auto_update import SettingsUpdater
 from .secret_shop_bot import SecretShopBot
 
 logger = logging.getLogger(__name__)
@@ -62,12 +63,14 @@ class SecretShopGUI:
         self.is_closing = False
         self.bot_thread = None
         self.adb_server_started = False
+        self.remote_settings = {}
         
         # UI 생성
         self._create_widgets()
         
         # 로깅 설정
         self._setup_logging()
+        self._start_settings_update()
         
     def _create_widgets(self):
         """UI 위젯 생성"""
@@ -234,6 +237,51 @@ class SecretShopGUI:
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
+
+    def _start_settings_update(self):
+        """원격 설정 업데이트를 백그라운드에서 확인합니다."""
+        thread = threading.Thread(target=self._load_settings_update, daemon=True)
+        thread.start()
+
+    def _load_settings_update(self):
+        updater = SettingsUpdater()
+        config, source = updater.load()
+        if not config:
+            logger.info("자동 설정 업데이트: 기본 내장값을 사용합니다.")
+            return
+        self.root.after(0, lambda: self._apply_settings_update(config, source))
+
+    def _apply_settings_update(self, config, source):
+        """검증된 데이터 설정만 UI 기본값과 실행 설정에 반영합니다."""
+        if self.is_running or self.is_closing:
+            return
+
+        self.remote_settings = config
+        defaults = config.get("defaults", {})
+        thresholds = config.get("thresholds", {})
+
+        def replace_entry(entry, value):
+            entry.delete(0, tk.END)
+            entry.insert(0, str(value))
+
+        if "refresh_count" in defaults:
+            replace_entry(self.refresh_count_entry, defaults["refresh_count"])
+        if "purchase_verification_count" in defaults:
+            replace_entry(self.buy_count_entry, defaults["purchase_verification_count"])
+
+        threshold_entries = {
+            "mystic_medal": self.mystic_medal_threshold,
+            "covenant_bookmark": self.covenant_bookmark_threshold,
+            "purchase_button": self.purchase_button_threshold,
+            "buy_button": self.buy_button_threshold,
+            "refresh_button": self.refresh_button_threshold,
+        }
+        for key, entry in threshold_entries.items():
+            if key in thresholds:
+                replace_entry(entry, thresholds[key])
+
+        version = config.get("config_version", "unknown")
+        logger.info(f"자동 설정 업데이트 적용 완료 ({source}, 버전: {version})")
         
     def _scan_devices(self):
         """장치 검색"""
@@ -345,7 +393,12 @@ class SecretShopGUI:
         
         # 봇 생성 (이미지별 임계값 및 디버그 모드 전달)
         debug_mode = self.debug_mode_var.get()
-        self.bot = SecretShopBot(self.adb_controller, thresholds=thresholds, debug_mode=debug_mode)
+        self.bot = SecretShopBot(
+            self.adb_controller,
+            thresholds=thresholds,
+            debug_mode=debug_mode,
+            automation_settings=self.remote_settings,
+        )
         
         # UI 상태 변경
         self.is_running = True

@@ -82,7 +82,14 @@ class SecretShopBot:
         
         return None
     
-    def __init__(self, adb_controller: ADBController, base_dir: str = None, thresholds: dict = None, debug_mode: bool = False):
+    def __init__(
+        self,
+        adb_controller: ADBController,
+        base_dir: str = None,
+        thresholds: dict = None,
+        debug_mode: bool = False,
+        automation_settings: dict = None,
+    ):
         """
         Args:
             adb_controller: ADB 컨트롤러 인스턴스
@@ -101,6 +108,7 @@ class SecretShopBot:
         self.resource_dir = Path(base_dir) if base_dir else get_resource_root()
         self.runtime_dir = get_runtime_root()
         self.debug_mode = debug_mode
+        self.automation_settings = automation_settings or {}
         
         # 이미지별 임계값 설정
         default_thresholds = {
@@ -139,9 +147,11 @@ class SecretShopBot:
         self.screen_width, self.screen_height = self.adb.get_screen_size()
         logger.info(f"화면 해상도: {self.screen_width}x{self.screen_height}")
         
-        self.swipe_x = int(self.screen_width * 0.75)  # 2번 구역 중앙 (X: 75%)
-        self.swipe_start_y = int(self.screen_height * 0.75)  # 아래에서 시작 (Y: 75%)
-        self.swipe_end_y = int(self.screen_height * 0.25)  # 위로 드래그 (Y: 25%)
+        swipe_settings = self.automation_settings.get("swipe", {})
+        self.swipe_duration = int(swipe_settings.get("duration_ms", 500))
+        self.swipe_x = int(self.screen_width * float(swipe_settings.get("x_ratio", 0.75)))
+        self.swipe_start_y = int(self.screen_height * float(swipe_settings.get("start_y_ratio", 0.75)))
+        self.swipe_end_y = int(self.screen_height * float(swipe_settings.get("end_y_ratio", 0.25)))
         
     def run(self, max_refresh_count: int, buy_count_per_item: int) -> Dict:
         """
@@ -626,7 +636,7 @@ class SecretShopBot:
         self.adb.swipe(
             self.swipe_x, self.swipe_start_y,
             self.swipe_x, self.swipe_end_y,
-            duration=500,  # 800ms → 500ms로 감소하여 빠른 드래그
+            duration=self.swipe_duration,
             delay=0.5
         )
         
