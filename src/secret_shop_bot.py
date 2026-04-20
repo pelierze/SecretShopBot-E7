@@ -170,11 +170,11 @@ class SecretShopBot:
                     
                     logger.info(f"⭐ 아이템 발견: {item_name}")
                     if self._purchase_item(item_location, buy_count_per_item):
-                        # 통계 업데이트
+                        # 통계 업데이트 (실제 구매 개수는 1개)
                         if item_name == "mystic_medal":
-                            self.stats["mystic_medal_bought"] += buy_count_per_item
+                            self.stats["mystic_medal_bought"] += 1
                         elif item_name == "covenant_bookmark":
-                            self.stats["covenant_bookmark_bought"] += buy_count_per_item
+                            self.stats["covenant_bookmark_bought"] += 1
                     else:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
@@ -199,11 +199,11 @@ class SecretShopBot:
                     
                     logger.info(f"⭐ 아이템 발견: {item_name}")
                     if self._purchase_item(item_location, buy_count_per_item):
-                        # 통계 업데이트
+                        # 통계 업데이트 (실제 구매 개수는 1개)
                         if item_name == "mystic_medal":
-                            self.stats["mystic_medal_bought"] += buy_count_per_item
+                            self.stats["mystic_medal_bought"] += 1
                         elif item_name == "covenant_bookmark":
-                            self.stats["covenant_bookmark_bought"] += buy_count_per_item
+                            self.stats["covenant_bookmark_bought"] += 1
                     else:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
