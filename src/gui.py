@@ -405,11 +405,21 @@ class SecretShopGUI:
         """봇 일시정지"""
         if self.bot:
             self.bot.set_user_action('pause')
+            self.log("⏸️ 일시정지 요청됨")
+            # 즉시 UI 업데이트
+            self.pause_label.config(text="⏸️  일시정지 중")
+            self.pause_btn.config(state=tk.DISABLED)
+            self.resume_btn.config(state=tk.NORMAL)
     
     def _resume_bot(self):
         """봇 재개"""
         if self.bot:
             self.bot.set_user_action('resume')
+            self.log("▶️ 재개 요청됨")
+            # 즉시 UI 업데이트
+            self.pause_label.config(text="")
+            self.pause_btn.config(state=tk.NORMAL)
+            self.resume_btn.config(state=tk.DISABLED)
     
     def _stop_bot(self):
         """봇 중지"""
