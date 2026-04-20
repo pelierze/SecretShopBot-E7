@@ -113,13 +113,18 @@ class SecretShopBot:
         logger.info(f"비밀상점 자동화 시작 - 최대 리프레시: {max_refresh_count}회")
         
         for refresh_num in range(max_refresh_count):
+            # 중지 요청 확인 (최우선)
+            if self.user_action == 'stop':
+                logger.info("⛔ 사용자가 중지를 선택했습니다.")
+                return self.stats
+            
             logger.info(f"=== 리프레시 {refresh_num + 1}/{max_refresh_count} ===")
             
             # 일시정지 상태 확인
             while self.paused:
                 time.sleep(0.5)
                 if self.user_action == 'stop':
-                    logger.info("사용자가 중지를 선택했습니다.")
+                    logger.info("⛔ 사용자가 중지를 선택했습니다.")
                     return self.stats
             
             # 상점 첫 페이지 스캔
@@ -138,6 +143,11 @@ class SecretShopBot:
             if found_items:
                 purchase_success = False
                 for item_name, item_location in found_items.items():
+                    # 중지 요청 확인
+                    if self.user_action == 'stop':
+                        logger.info("⛔ 사용자가 중지를 선택했습니다.")
+                        return self.stats
+                    
                     logger.info(f"⭐ 아이템 발견: {item_name}")
                     if self._purchase_item(item_location, buy_count_per_item):
                         # 통계 업데이트
@@ -311,7 +321,17 @@ class SecretShopBot:
             else:
                 logger.warning("갱신 확인 버튼을 찾을 수 없음")
         else:
-            logger.error("갱신 버튼을 찾을 수 없음")
+            logger.error("❌ 갱신 버튼을 찾을 수 없음")
+            logger.error(f"💡 디버깅: 스크린샷이 {self.screenshot_path}에 저장되었습니다.")
+            logger.error(f"💡 버튼 이미지: {self.base_dir / self.BUTTONS_DIR / self.REFRESH_BUTTON}")
+            logger.error(f"💡 이미지 매칭 정확도를 낮춰보세요 (현재: {int(self.matcher.threshold*100)}%)")
+            
+            # 디버깅용 스크린샷 저장
+            debug_path = self.base_dir / "logs" / "debug_refresh_button.png"
+            debug_path.parent.mkdir(exist_ok=True)
+            import shutil
+            shutil.copy(self.screenshot_path, debug_path)
+            logger.error(f"💡 디버그 스크린샷: {debug_path}")
     
     def _click_button(self, button_type: str) -> bool:
         """
