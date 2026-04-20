@@ -288,7 +288,7 @@ class SecretShopBot:
             # 구입 버튼 클릭
             btn_center_x, btn_center_y = self.matcher.get_center(purchase_btn)
             self.adb.tap(btn_center_x, btn_center_y, delay=0.5)
-            time.sleep(0.3)
+            time.sleep(0.5)  # 구매 팝업이 뜰 때까지 대기
             
             # 중지 확인
             if self.user_action == 'stop':
@@ -296,6 +296,30 @@ class SecretShopBot:
                 # 화면 닫기
                 self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
                 return False
+            
+            # 구매 버튼이 나타날 때까지 대기 (최대 2초)
+            buy_button_found = False
+            for wait_attempt in range(4):  # 0.5초씩 4번 = 최대 2초
+                self.adb.screenshot(str(self.screenshot_path))
+                time.sleep(0.2)
+                
+                buy_button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.BUY_BUTTON)
+                if buy_button_path:
+                    result = self.matcher.find_image(str(self.screenshot_path), str(buy_button_path))
+                    if result:
+                        buy_button_found = True
+                        logger.debug(f"구매 버튼 발견 (대기 시간: {wait_attempt * 0.5}초)")
+                        break
+                
+                if wait_attempt < 3:  # 마지막 시도가 아니면 대기
+                    time.sleep(0.5)
+            
+            if not buy_button_found:
+                logger.warning("⚠️ 구매 버튼이 나타나지 않음 - 구매 팝업 로딩 실패")
+                # 화면 닫기
+                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+                all_success = False
+                break
             
             # 2단계: 구매 버튼 클릭 (최종 구매)
             if self._click_button("buy"):
