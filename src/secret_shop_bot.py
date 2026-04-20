@@ -97,7 +97,7 @@ class SecretShopBot:
         
         self.swipe_start_y = int(self.screen_height * 0.6)
         self.swipe_end_y = int(self.screen_height * 0.3)
-        self.swipe_x = int(self.screen_width * 0.5)
+        self.swipe_x = int(self.screen_width * 0.3)  # 왼쪽으로 이동하여 불필요한 클릭 방지
         
     def run(self, max_refresh_count: int, buy_count_per_item: int) -> Dict:
         """

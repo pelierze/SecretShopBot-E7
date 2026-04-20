@@ -122,6 +122,10 @@ class SecretShopGUI:
         self.stop_btn = ttk.Button(control_frame, text="■ 중지", command=self._stop_bot, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
         
+        # 이미지 매칭 테스트 버튼
+        self.test_btn = ttk.Button(control_frame, text="💡 이미지 테스트", command=self._test_image_matching, state=tk.DISABLED)
+        self.test_btn.pack(side=tk.LEFT, padx=5)
+        
         # 일시정지 상태 표시
         self.pause_label = ttk.Label(control_frame, text="", foreground="orange", font=("Arial", 10, "bold"))
         self.pause_label.pack(side=tk.LEFT, padx=10)
@@ -193,6 +197,7 @@ class SecretShopGUI:
         if self.adb_controller.connect(ip, port):
             self.connection_status.config(text="● 연결됨", foreground="green")
             self.start_btn.config(state=tk.NORMAL)
+            self.test_btn.config(state=tk.NORMAL)
             self.connect_btn.config(state=tk.DISABLED)
             self.disconnect_btn.config(state=tk.NORMAL)
             messagebox.showinfo("성공", f"ADB 연결 성공: {ip}:{port}")
@@ -325,19 +330,119 @@ class SecretShopGUI:
         
         self.connection_status.config(text="● 연결 안됨", foreground="red")
         self.start_btn.config(state=tk.DISABLED)
+        self.test_btn.config(state=tk.DISABLED)
         self.connect_btn.config(state=tk.NORMAL)
         self.disconnect_btn.config(state=tk.DISABLED)
         messagebox.showinfo("성공", "ADB 연결이 해제되었습니다.")
     
     def _reset_ui(self):
-        """UI 초기 상태로 복귀"""
+        """상태 복귀"""
         self.start_btn.config(state=tk.NORMAL if self.adb_controller else tk.DISABLED)
+        self.test_btn.config(state=tk.NORMAL if self.adb_controller else tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED)
         self.resume_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.DISABLED)
         self.connect_btn.config(state=tk.DISABLED if self.adb_controller else tk.NORMAL)
         self.disconnect_btn.config(state=tk.NORMAL if self.adb_controller else tk.DISABLED)
         self.pause_label.config(text="")
+    
+    def _test_image_matching(self):
+        """이미지 매칭 테스트"""
+        if not self.adb_controller:
+            messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+            return
+        
+        if self.is_running:
+            messagebox.showwarning("경고", "봇이 실행 중일 때는 테스트할 수 없습니다.")
+            return
+        
+        # 별도 스레드에서 테스트 실행
+        test_thread = threading.Thread(target=self._run_image_test, daemon=True)
+        test_thread.start()
+    
+    def _run_image_test(self):
+        """이미지 매칭 테스트 실행"""
+        import cv2
+        import numpy as np
+        
+        try:
+            logging.info("="*60)
+            logging.info("🔍 이미지 매칭 테스트 시작")
+            logging.info("="*60)
+            
+            # 현재 화면 스크린샷
+            base_dir = Path(__file__).parent.parent
+            screenshot_path = base_dir / "logs" / "test_screenshot.png"
+            screenshot_path.parent.mkdir(exist_ok=True)
+            
+            self.adb_controller.screenshot(str(screenshot_path))
+            logging.info(f"📸 스크린샷 저장: {screenshot_path}")
+            
+            screenshot = cv2.imread(str(screenshot_path))
+            if screenshot is None:
+                logging.error("❌ 스크린샷을 로드할 수 없습니다.")
+                return
+            
+            # 테스트할 이미지 목록
+            items_dir = base_dir / "images" / "items"
+            buttons_dir = base_dir / "images" / "buttons"
+            
+            test_images = []
+            
+            # 아이템 이미지
+            if items_dir.exists():
+                for img_file in items_dir.glob("*.png"):
+                    test_images.append(("아이템", img_file))
+                for img_file in items_dir.glob("*.PNG"):
+                    test_images.append(("아이템", img_file))
+            
+            # 버튼 이미지
+            if buttons_dir.exists():
+                for img_file in buttons_dir.glob("*.png"):
+                    test_images.append(("버튼", img_file))
+                for img_file in buttons_dir.glob("*.PNG"):
+                    test_images.append(("버튼", img_file))
+            
+            if not test_images:
+                logging.warning("⚠️  테스트할 이미지가 없습니다.")
+                return
+            
+            # 현재 설정된 임계값
+            current_threshold = float(self.threshold_scale.get())
+            
+            logging.info(f"📊 현재 임계값: {int(current_threshold*100)}%")
+            logging.info(f"🔍 테스트 이미지 개수: {len(test_images)}")
+            logging.info("")
+            
+            # 각 이미지 테스트
+            for img_type, img_path in test_images:
+                template = cv2.imread(str(img_path))
+                if template is None:
+                    logging.warning(f"⚠️  [{img_type}] {img_path.name}: 이미지 로드 실패")
+                    continue
+                
+                # 매칭 수행
+                result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                
+                # 결과 출력
+                confidence_percent = int(max_val * 100)
+                
+                if max_val >= current_threshold:
+                    logging.info(f"✅ [{img_type}] {img_path.name}: {confidence_percent}% (위치: {max_loc})")
+                else:
+                    # 권장 임계값 계산
+                    recommended = int(max_val * 0.95 * 100)
+                    logging.warning(f"❌ [{img_type}] {img_path.name}: {confidence_percent}% (현재 임계값: {int(current_threshold*100)}%, 권장: {recommended}%)")
+            
+            logging.info("")
+            logging.info("="*60)
+            logging.info("✅ 이미지 매칭 테스트 완료")
+            logging.info("💡 매칭 실패한 이미지는 임계값을 낮추거나 이미지를 다시 캡처하세요.")
+            logging.info("="*60)
+            
+        except Exception as e:
+            logging.error(f"테스트 중 오류 발생: {e}", exc_info=True)
 
 
 def run_gui():
