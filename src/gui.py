@@ -87,11 +87,11 @@ class SecretShopGUI:
         self.refresh_count_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(settings_frame, text="회").grid(row=0, column=2, sticky=tk.W)
         
-        ttk.Label(settings_frame, text="발견된 아이템 구매 개수:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(settings_frame, text="구매 완료 검증 횟수:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.buy_count_entry = ttk.Entry(settings_frame, width=10)
-        self.buy_count_entry.insert(0, "1")
+        self.buy_count_entry.insert(0, "3")
         self.buy_count_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(settings_frame, text="개 (같은 아이템을 여러 번 구매)").grid(row=1, column=2, sticky=tk.W)
+        ttk.Label(settings_frame, text="회 (비활성화 버튼 확인 반복, 권장: 3회)").grid(row=1, column=2, sticky=tk.W)
         
         ttk.Label(settings_frame, text="이미지 매칭 정확도:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.threshold_scale = ttk.Scale(settings_frame, from_=0.7, to=0.99, orient=tk.HORIZONTAL, length=150)

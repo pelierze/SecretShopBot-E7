@@ -252,104 +252,105 @@ class SecretShopBot:
         
         return found_items
     
-    def _purchase_item(self, item_location: tuple, count: int) -> bool:
+    def _purchase_item(self, item_location: tuple, verification_count: int) -> bool:
         """
         아이템 구매 (구입 -> 구매 2단계 프로세스) 및 구매 완료 검증
         
         Args:
             item_location: 아이템 위치 (x, y, w, h)
-            count: 구매 횟수
+            verification_count: 구매 완료 검증 횟수 (비활성화 버튼 확인 반복 횟수)
             
         Returns:
-            구매 성공 여부 (모든 구매가 성공했는지)
+            구매 성공 여부
         """
-        all_success = True
+        # 중지 확인
+        if self.user_action == 'stop':
+            logger.info("⛔ 중지 요청 - 구매 중단")
+            return False
         
-        for i in range(count):
-            # 중지 확인
-            if self.user_action == 'stop':
-                logger.info("⛔ 중지 요청 - 구매 중단")
-                return False
+        # 1단계: 아이템과 같은 라인의 오른쪽에 있는 구입 버튼 찾기 및 클릭
+        purchase_btn = self._find_purchase_button_on_item_line(item_location)
+        if purchase_btn is False:
+            # 비활성화된 버튼 (이미 구매한 아이템) - 조용히 건너뛰기
+            logger.debug("비활성화된 버튼이므로 구매 건너뜀")
+            return True  # 성공으로 처리 (이미 구매했으므로)
+        elif purchase_btn is None:
+            logger.warning("구입 버튼(1단계)을 찾을 수 없음")
+            return False
             
-            logger.info(f"구매 시도 {i + 1}/{count}")
-            
-            # 1단계: 아이템과 같은 라인의 오른쪽에 있는 구입 버튼 찾기 및 클릭
-            purchase_btn = self._find_purchase_button_on_item_line(item_location)
-            if purchase_btn is False:
-                # 비활성화된 버튼 (이미 구매한 아이템) - 조용히 건너뛰기
-                logger.debug("비활성화된 버튼이므로 구매 건너뜀")
-                return True  # 성공으로 처리 (이미 구매했으므로)
-            elif purchase_btn is None:
-                logger.warning("구입 버튼(1단계)을 찾을 수 없음")
-                all_success = False
-                break
-            
-            # 중지 확인
-            if self.user_action == 'stop':
-                logger.info("⛔ 중지 요청 - 구매 중단")
-                return False
-            
-            # 구입 버튼 클릭
-            btn_center_x, btn_center_y = self.matcher.get_center(purchase_btn)
-            self.adb.tap(btn_center_x, btn_center_y, delay=0.5)
-            time.sleep(0.5)  # 구매 팝업이 뜰 때까지 대기
-            
-            # 중지 확인
-            if self.user_action == 'stop':
-                logger.info("⛔ 중지 요청 - 구매 중단")
-                # 화면 닫기
-                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
-                return False
-            
-            # 구매 버튼이 나타날 때까지 대기 (최대 2초)
-            buy_button_found = False
-            for wait_attempt in range(4):  # 0.5초씩 4번 = 최대 2초
-                self.adb.screenshot(str(self.screenshot_path))
-                time.sleep(0.2)
-                
-                buy_button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.BUY_BUTTON)
-                if buy_button_path:
-                    result = self.matcher.find_image(str(self.screenshot_path), str(buy_button_path))
-                    if result:
-                        buy_button_found = True
-                        logger.debug(f"구매 버튼 발견 (대기 시간: {wait_attempt * 0.5}초)")
-                        break
-                
-                if wait_attempt < 3:  # 마지막 시도가 아니면 대기
-                    time.sleep(0.5)
-            
-            if not buy_button_found:
-                logger.warning("⚠️ 구매 버튼이 나타나지 않음 - 구매 팝업 로딩 실패")
-                # 화면 닫기
-                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
-                all_success = False
-                break
-            
-            # 2단계: 구매 버튼 클릭 (최종 구매)
-            if self._click_button("buy"):
-                time.sleep(0.5)
-                
-                # 구매 완료 검증: 비활성화된 구입 버튼 확인
-                if self._verify_purchase_complete():
-                    logger.info(f"✅ 구매 완료 검증 성공 ({i + 1}/{count})")
-                else:
-                    logger.warning(f"⚠️  구매 완료 검증 실패 ({i + 1}/{count}) - 골드 부족 또는 구매 실패 가능성")
-                    all_success = False
-                    # 화면 왼쪽 클릭하여 창 닫기
-                    self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
-                    break
-            else:
-                logger.warning("구매 버튼(2단계)을 찾을 수 없음")
-                all_success = False
-                # 취소 또는 뒤로가기 처리
-                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
-                break
-            
-            # 화면 닫기 (다음 구매를 위해)
+        # 중지 확인
+        if self.user_action == 'stop':
+            logger.info("⛔ 중지 요청 - 구매 중단")
+            return False
+        
+        # 구입 버튼 클릭
+        btn_center_x, btn_center_y = self.matcher.get_center(purchase_btn)
+        self.adb.tap(btn_center_x, btn_center_y, delay=0.5)
+        time.sleep(0.5)  # 구매 팝업이 뜰 때까지 대기
+        
+        # 중지 확인
+        if self.user_action == 'stop':
+            logger.info("⛔ 중지 요청 - 구매 중단")
+            # 화면 닫기
             self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
-            time.sleep(0.5)  # 구매 간 대기
+            return False
         
-        return all_success
+        # 구매 버튼이 나타날 때까지 대기 (최대 2초)
+        buy_button_found = False
+        for wait_attempt in range(4):  # 0.5초씩 4번 = 최대 2초
+            self.adb.screenshot(str(self.screenshot_path))
+            time.sleep(0.2)
+            
+            buy_button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.BUY_BUTTON)
+            if buy_button_path:
+                result = self.matcher.find_image(str(self.screenshot_path), str(buy_button_path))
+                if result:
+                    buy_button_found = True
+                    logger.debug(f"구매 버튼 발견 (대기 시간: {wait_attempt * 0.5}초)")
+                    break
+            
+            if wait_attempt < 3:  # 마지막 시도가 아니면 대기
+                time.sleep(0.5)
+        
+        if not buy_button_found:
+            logger.warning("⚠️ 구매 버튼이 나타나지 않음 - 구매 팝업 로딩 실패")
+            # 화면 닫기
+            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+            return False
+        
+        # 2단계: 구매 버튼 클릭 (최종 구매)
+        if self._click_button("buy"):
+            time.sleep(0.5)
+            
+            # 구매 완료 검증: 비활성화된 구입 버튼 확인 (여러 번 검증)
+            verification_success = 0
+            for verify_attempt in range(verification_count):
+                if self._verify_purchase_complete():
+                    verification_success += 1
+                    logger.debug(f"검증 성공 ({verify_attempt + 1}/{verification_count})")
+                else:
+                    logger.debug(f"검증 실패 ({verify_attempt + 1}/{verification_count})")
+                
+                # 마지막 시도가 아니면 잠시 대기 후 재확인
+                if verify_attempt < verification_count - 1:
+                    time.sleep(0.3)
+            
+            # 과반수 이상 성공하면 구매 성공으로 판단
+            if verification_success > verification_count // 2:
+                logger.info(f"✅ 구매 완료 검증 성공 ({verification_success}/{verification_count} 성공)")
+                # 화면 닫기
+                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+                return True
+            else:
+                logger.warning(f"⚠️  구매 완료 검증 실패 ({verification_success}/{verification_count} 성공) - 골드 부족 또는 구매 실패 가능성")
+                # 화면 왼쪽 클릭하여 창 닫기
+                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+                return False
+        else:
+            logger.warning("구매 버튼(2단계)을 찾을 수 없음")
+            # 취소 또는 뒤로가기 처리
+            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+            return False
     
     def _find_purchase_button_on_item_line(self, item_location: tuple):
         """
