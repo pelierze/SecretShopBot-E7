@@ -254,6 +254,8 @@ class SecretShopBot:
             if result:
                 found_items["mystic_medal"] = result
                 logger.info(f"💠 신비의 메달 발견: {result}")
+        else:
+            logger.warning(f"⚠️ 신비의 메달 이미지 파일을 찾을 수 없음: {self.MYSTIC_MEDAL} - 이 아이템은 검색하지 않습니다")
         
         # 성약의 책갈피 검색
         covenant_bookmark_path = self._find_image_file(self.base_dir / self.ITEMS_DIR, self.COVENANT_BOOKMARK)

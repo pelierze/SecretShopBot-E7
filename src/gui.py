@@ -37,8 +37,8 @@ class SecretShopGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("에픽세븐 비밀상점 자동화")
-        self.root.geometry("700x600")
-        self.root.resizable(False, False)
+        self.root.geometry("900x750")
+        self.root.resizable(True, True)
         
         # 변수
         self.adb_controller = None
@@ -180,7 +180,7 @@ class SecretShopGUI:
         log_frame = ttk.LabelFrame(self.root, text="로그", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, state='disabled', height=15, wrap=tk.WORD)
+        self.log_text = scrolledtext.ScrolledText(log_frame, state='disabled', height=25, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True)
         
     def _setup_logging(self):
