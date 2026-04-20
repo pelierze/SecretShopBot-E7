@@ -10,6 +10,7 @@ ENV/
 build/
 develop-eggs/
 dist/
+release/
 downloads/
 eggs/
 .eggs/
@@ -22,6 +23,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+*.spec
 
 # Logs
 logs/

@@ -1,0 +1,83 @@
+# SecretShopBot-E7 배포 방법
+
+이 문서는 VSCode에서 Windows 사용자용 배포 zip을 만들고 GitHub Releases에 올리는 절차입니다.
+
+## 1. 배포 zip 만들기
+
+VSCode에서 `Terminal > New Terminal`을 열고 프로젝트 루트에서 실행합니다.
+
+```powershell
+.\build_release.ps1 -Version 1.0.0
+```
+
+PowerShell 실행 정책 오류가 나오면 아래 명령을 사용합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_release.ps1 -Version 1.0.0
+```
+
+성공하면 아래 파일이 생성됩니다.
+
+```text
+release/SecretShopBot-E7-v1.0.0.zip
+release/SecretShopBot-E7-v1.0.0.zip.sha256.txt
+```
+
+## 2. GitHub에 코드 푸시
+
+변경사항이 있으면 커밋 후 푸시합니다.
+
+```powershell
+git status
+git add .
+git commit -m "chore: add release build workflow"
+git push
+```
+
+## 3. GitHub Release 생성
+
+브라우저에서 아래 주소를 엽니다.
+
+```text
+https://github.com/pelierze/SecretShopBot-E7/releases/new
+```
+
+입력값:
+
+- Tag: `v1.0.0`
+- Target: `master`
+- Release title: `SecretShopBot-E7 v1.0.0`
+
+Release description 예시:
+
+```markdown
+## 다운로드 및 실행
+
+1. 아래 Assets에서 `SecretShopBot-E7-v1.0.0.zip`을 다운로드합니다.
+2. 압축을 풉니다.
+3. `SecretShopBot-E7.exe`를 실행합니다.
+
+## 주의사항
+
+- Windows 전용 배포판입니다.
+- ADB를 사용하는 자동화 도구라 Windows SmartScreen 또는 백신 경고가 표시될 수 있습니다.
+- 에뮬레이터에서 ADB 디버깅을 켠 뒤 사용하세요.
+
+## SHA256
+
+`release/SecretShopBot-E7-v1.0.0.zip.sha256.txt`의 값을 참고하세요.
+```
+
+Assets에는 아래 파일을 첨부합니다.
+
+```text
+release/SecretShopBot-E7-v1.0.0.zip
+```
+
+마지막으로 `Publish release`를 누릅니다.
+
+사용자에게는 아래 링크를 안내하면 됩니다.
+
+```text
+https://github.com/pelierze/SecretShopBot-E7/releases/latest
+```
