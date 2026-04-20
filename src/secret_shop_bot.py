@@ -169,12 +169,9 @@ class SecretShopBot:
                         return self.stats
                     
                     logger.info(f"⭐ 아이템 발견: {item_name}")
-                    if self._purchase_item(item_location, buy_count_per_item):
-                        # 통계 업데이트 (실제 구매 개수는 1개)
-                        if item_name == "mystic_medal":
-                            self.stats["mystic_medal_bought"] += 1
-                        elif item_name == "covenant_bookmark":
-                            self.stats["covenant_bookmark_bought"] += 1
+                    if self._purchase_item(item_name, item_location, buy_count_per_item):
+                        # 구매 성공 (통계는 _purchase_item 내부에서 업데이트됨)
+                        pass
                     else:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
@@ -198,12 +195,9 @@ class SecretShopBot:
                         return self.stats
                     
                     logger.info(f"⭐ 아이템 발견: {item_name}")
-                    if self._purchase_item(item_location, buy_count_per_item):
-                        # 통계 업데이트 (실제 구매 개수는 1개)
-                        if item_name == "mystic_medal":
-                            self.stats["mystic_medal_bought"] += 1
-                        elif item_name == "covenant_bookmark":
-                            self.stats["covenant_bookmark_bought"] += 1
+                    if self._purchase_item(item_name, item_location, buy_count_per_item):
+                        # 구매 성공 (통계는 _purchase_item 내부에서 업데이트됨)
+                        pass
                     else:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
@@ -272,11 +266,12 @@ class SecretShopBot:
         
         return found_items
     
-    def _purchase_item(self, item_location: tuple, verification_count: int) -> bool:
+    def _purchase_item(self, item_name: str, item_location: tuple, verification_count: int) -> bool:
         """
         아이템 구매 (구입 -> 구매 2단계 프로세스) 및 구매 완료 검증
         
         Args:
+            item_name: 아이템 이름 (통계 업데이트용)
             item_location: 아이템 위치 (x, y, w, h)
             verification_count: 구매 완료 검증 횟수 (비활성화 버튼 확인 반복 횟수)
             
@@ -340,6 +335,14 @@ class SecretShopBot:
         
         # 2단계: 구매 버튼 클릭 (최종 구매)
         if self._click_button("buy"):
+            # 구매 버튼 클릭 성공 - 통계 즉시 업데이트
+            if item_name == "mystic_medal":
+                self.stats["mystic_medal_bought"] += 1
+                logger.info("📊 신비의 메달 구매 카운트 +1")
+            elif item_name == "covenant_bookmark":
+                self.stats["covenant_bookmark_bought"] += 1
+                logger.info("📊 성약의 책갈피 구매 카운트 +1")
+            
             time.sleep(0.5)
             
             # 구매 완료 검증: 비활성화된 구입 버튼 확인 (여러 번 검증)
