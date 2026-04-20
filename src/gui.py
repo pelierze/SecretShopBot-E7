@@ -2,14 +2,20 @@
 GUI 인터페이스
 tkinter를 사용한 사용자 인터페이스
 """
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
 import logging
 from pathlib import Path
 
+# libpng 경고 메시지 숨기기 (cv2 import 전에 설정)
+os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
+
 from .adb_controller import ADBController
 from .secret_shop_bot import SecretShopBot
+
+logger = logging.getLogger(__name__)
 
 
 class TextHandler(logging.Handler):
