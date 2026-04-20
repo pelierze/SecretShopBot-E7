@@ -243,7 +243,7 @@ class SecretShopBot:
             result = self.matcher.find_image(str(self.screenshot_path), str(covenant_bookmark_path))
             if result:
                 found_items["covenant_bookmark"] = result
-                logger.info(f"📖 성약의 책갈피 발견: {result}")")
+                logger.info(f"📖 성약의 책갈피 발견: {result}")
         
         if found_items:
             logger.info(f"🔍 스캔 완료 - 발견한 아이템: {list(found_items.keys())}")
