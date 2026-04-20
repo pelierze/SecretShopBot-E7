@@ -65,7 +65,10 @@ class SecretShopBot:
         self.user_action = None  # 'buy', 'refresh', 'stop'
         
         # 화면 스와이프 좌표 (화면 크기에 따라 조정 필요)
+        # 기본 해상도: 1280x720 (240dpi)
         self.screen_width, self.screen_height = self.adb.get_screen_size()
+        logger.info(f"화면 해상도: {self.screen_width}x{self.screen_height}")
+        
         self.swipe_start_y = int(self.screen_height * 0.6)
         self.swipe_end_y = int(self.screen_height * 0.3)
         self.swipe_x = int(self.screen_width * 0.5)
@@ -86,6 +89,13 @@ class SecretShopBot:
         for refresh_num in range(max_refresh_count):
             logger.info(f"=== 리프레시 {refresh_num + 1}/{max_refresh_count} ===")
             
+            # 일시정지 상태 확인
+            while self.paused:
+                time.sleep(0.5)
+                if self.user_action == 'stop':
+                    logger.info("사용자가 중지를 선택했습니다.")
+                    return self.stats
+            
             # 상점 첫 페이지 스캔
             found_items = self._scan_shop_page()
             
@@ -98,42 +108,22 @@ class SecretShopBot:
                 # 두 번째 페이지 스캔
                 found_items = self._scan_shop_page()
             
-            # 발견한 아이템이 있을 때
+            # 발견한 아이템 자동 구매
             if found_items:
-                # 일시정지 및 사용자 액션 대기
-                logger.warning("⏸️  원하는 아이템 발견! 일시정지합니다.")
-                self.paused = True
-                self.user_action = None
-                
-                # 사용자 액션 대기 (GUI에서 처리)
-                while self.paused and self.user_action is None:
-                    time.sleep(0.5)
-                
-                # 사용자가 중지 선택
-                if self.user_action == 'stop':
-                    logger.info("사용자가 중지를 선택했습니다.")
-                    break
-                
-                # 사용자가 구매 선택
-                if self.user_action == 'buy':
-                    purchase_success = False
-                    for item_name, item_location in found_items.items():
-                        logger.info(f"아이템 구매 시작: {item_name}")
-                        if self._purchase_item(item_location, buy_count_per_item):
-                            # 통계 업데이트
-                            if item_name == "mystic_medal":
-                                self.stats["mystic_medal_bought"] += buy_count_per_item
-                            elif item_name == "covenant_bookmark":
-                                self.stats["covenant_bookmark_bought"] += buy_count_per_item
-                            purchase_success = True
-                    
-                    # 구매가 성공했으면 다음 페이지로
-                    if purchase_success:
-                        self.paused = False
-                        continue
-                
-                # 사용자가 갱신 선택하거나 구매 실패
-                self.paused = False
+                purchase_success = False
+                for item_name, item_location in found_items.items():
+                    logger.info(f"⭐ 아이템 발견: {item_name}")
+                    if self._purchase_item(item_location, buy_count_per_item):
+                        # 통계 업데이트
+                        if item_name == "mystic_medal":
+                            self.stats["mystic_medal_bought"] += buy_count_per_item
+                        elif item_name == "covenant_bookmark":
+                            self.stats["covenant_bookmark_bought"] += buy_count_per_item
+                        purchase_success = True
+                    else:
+                        # 구매 실패 (골드 부족 등) - 중지
+                        logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
+                        return self.stats
             else:
                 logger.debug("원하는 아이템이 없음")
             
@@ -328,10 +318,23 @@ class SecretShopBot:
         logger.debug("화면 스크롤 (하단으로)")
     
     def set_user_action(self, action: str):
-        """사용자 액션 설정 (GUI에서 호출)"""
-        self.user_action = action
-        self.paused = False
-        logger.info(f"사용자 액션: {action}")
+        """
+        사용자 액션 설정 (GUI에서 호출)
+        
+        Args:
+            action: 'pause' (일시정지), 'resume' (재개), 'stop' (중지)
+        """
+        if action == 'pause':
+            self.paused = True
+            logger.info("⏸️  사용자가 일시정지를 요청했습니다.")
+        elif action == 'resume':
+            self.paused = False
+            self.user_action = None
+            logger.info("▶️  사용자가 재개를 요청했습니다.")
+        elif action == 'stop':
+            self.user_action = 'stop'
+            self.paused = False
+            logger.info("⛔ 사용자가 중지를 요청했습니다.")
     
     def get_stats(self) -> Dict:
         """통계 정보 반환"""
