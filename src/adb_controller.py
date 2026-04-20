@@ -4,11 +4,19 @@ ADB 통신을 위한 컨트롤러 모듈
 import subprocess
 import time
 import os
+import sys
 from typing import Tuple, Optional
 from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def get_resource_root() -> Path:
+    """Return the folder that contains bundled resources."""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parent.parent
 
 
 class ADBController:
@@ -22,7 +30,7 @@ class ADBController:
         self.device_id = device_id
         
         # 프로젝트 내부의 ADB 경로 확인
-        project_root = Path(__file__).parent.parent
+        project_root = get_resource_root()
         adb_path = project_root / "tools" / "adb" / "adb.exe"
         
         if adb_path.exists():
@@ -101,10 +109,14 @@ class ADBController:
             연결 성공 여부
         """
         try:
-            cmd = f"{self.adb_path} connect {ip}:{port}"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(
+                [self.adb_path, "connect", f"{ip}:{port}"],
+                capture_output=True,
+                text=True
+            )
             
-            if "connected" in result.stdout.lower():
+            output = f"{result.stdout}\n{result.stderr}".lower()
+            if "connected" in output or "already connected" in output:
                 self.device_id = f"{ip}:{port}"
                 logger.info(f"ADB 연결 성공: {self.device_id}")
                 return True
@@ -123,8 +135,11 @@ class ADBController:
             디바이스 정보 리스트 [{'id': 'device_id', 'status': 'device'}, ...]
         """
         try:
-            cmd = f"{self.adb_path} devices"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(
+                [self.adb_path, "devices"],
+                capture_output=True,
+                text=True
+            )
             
             devices = []
             lines = result.stdout.strip().split('\n')[1:]  # 첫 줄(헤더) 제외
@@ -156,8 +171,10 @@ class ADBController:
             실행 성공 여부
         """
         try:
-            cmd = f"{self.adb_path} -s {self.device_id} shell input tap {x} {y}"
-            subprocess.run(cmd, shell=True, capture_output=True)
+            subprocess.run(
+                [self.adb_path, "-s", self.device_id, "shell", "input", "tap", str(x), str(y)],
+                capture_output=True
+            )
             logger.debug(f"터치: ({x}, {y})")
             time.sleep(delay)
             return True
@@ -181,8 +198,13 @@ class ADBController:
             실행 성공 여부
         """
         try:
-            cmd = f"{self.adb_path} -s {self.device_id} shell input swipe {x1} {y1} {x2} {y2} {duration}"
-            subprocess.run(cmd, shell=True, capture_output=True)
+            subprocess.run(
+                [
+                    self.adb_path, "-s", self.device_id, "shell", "input", "swipe",
+                    str(x1), str(y1), str(x2), str(y2), str(duration)
+                ],
+                capture_output=True
+            )
             logger.debug(f"스와이프: ({x1}, {y1}) -> ({x2}, {y2})")
             time.sleep(delay)
             return True
@@ -203,12 +225,17 @@ class ADBController:
         try:
             # 디바이스에서 스크린샷 촬영
             screenshot_path = "/sdcard/screenshot.png"
-            cmd1 = f"{self.adb_path} -s {self.device_id} shell screencap -p {screenshot_path}"
-            subprocess.run(cmd1, shell=True, capture_output=True)
+            subprocess.run(
+                [self.adb_path, "-s", self.device_id, "shell", "screencap", "-p", screenshot_path],
+                capture_output=True
+            )
             
             # PC로 파일 전송
-            cmd2 = f"{self.adb_path} -s {self.device_id} pull {screenshot_path} {save_path}"
-            result = subprocess.run(cmd2, shell=True, capture_output=True, text=True)
+            result = subprocess.run(
+                [self.adb_path, "-s", self.device_id, "pull", screenshot_path, save_path],
+                capture_output=True,
+                text=True
+            )
             
             if "pulled" in result.stdout.lower() or result.returncode == 0:
                 logger.debug(f"스크린샷 저장: {save_path}")
@@ -228,8 +255,11 @@ class ADBController:
             (width, height) 튜플
         """
         try:
-            cmd = f"{self.adb_path} -s {self.device_id} shell wm size"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(
+                [self.adb_path, "-s", self.device_id, "shell", "wm", "size"],
+                capture_output=True,
+                text=True
+            )
             
             # "Physical size: 1920x1080" 형식의 출력 파싱
             size_str = result.stdout.strip().split(': ')[-1]

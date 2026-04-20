@@ -7,6 +7,7 @@ ADB 사용 이유:
 - 안정적인 화면 캡처 및 입력 제어
 """
 import os
+import sys
 import time
 import logging
 from typing import Optional, Dict
@@ -16,6 +17,20 @@ from .adb_controller import ADBController
 from .image_matcher import ImageMatcher
 
 logger = logging.getLogger(__name__)
+
+
+def get_resource_root() -> Path:
+    """Return the folder that contains bundled read-only resources."""
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+    return Path(__file__).resolve().parent.parent
+
+
+def get_runtime_root() -> Path:
+    """Return the writable folder next to the executable while bundled."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path.cwd()
 
 
 class SecretShopBot:
@@ -54,6 +69,10 @@ class SecretShopBot:
         exact_path = directory / base_name
         if exact_path.exists():
             return exact_path
+
+        if not directory.exists():
+            logger.warning(f"이미지 폴더를 찾을 수 없음: {directory}")
+            return None
         
         # 대소문자 구분 없이 찾기
         base_name_lower = base_name.lower()
@@ -63,7 +82,7 @@ class SecretShopBot:
         
         return None
     
-    def __init__(self, adb_controller: ADBController, base_dir: str = ".", thresholds: dict = None, debug_mode: bool = False):
+    def __init__(self, adb_controller: ADBController, base_dir: str = None, thresholds: dict = None, debug_mode: bool = False):
         """
         Args:
             adb_controller: ADB 컨트롤러 인스턴스
@@ -79,7 +98,8 @@ class SecretShopBot:
             debug_mode: 디버그 모드 (상세 로그 출력)
         """
         self.adb = adb_controller
-        self.base_dir = Path(base_dir)
+        self.resource_dir = Path(base_dir) if base_dir else get_resource_root()
+        self.runtime_dir = get_runtime_root()
         self.debug_mode = debug_mode
         
         # 이미지별 임계값 설정
@@ -96,7 +116,7 @@ class SecretShopBot:
         self.matcher = ImageMatcher(threshold=0.92)
         
         # 스크린샷 임시 저장 경로
-        self.screenshot_path = self.base_dir / "logs" / "current_screen.png"
+        self.screenshot_path = self.runtime_dir / "logs" / "current_screen.png"
         
         # 통계
         self.stats = {
@@ -242,7 +262,7 @@ class SecretShopBot:
         found_items = {}
         
         # 신비의 메달 검색
-        mystic_medal_path = self._find_image_file(self.base_dir / self.ITEMS_DIR, self.MYSTIC_MEDAL)
+        mystic_medal_path = self._find_image_file(self.resource_dir / self.ITEMS_DIR, self.MYSTIC_MEDAL)
         if mystic_medal_path:
             result = self.matcher.find_image(str(self.screenshot_path), str(mystic_medal_path), threshold=self.thresholds.get("mystic_medal", 0.92))
             if result:
@@ -252,7 +272,7 @@ class SecretShopBot:
             logger.warning(f"⚠️ 신비의 메달 이미지 파일을 찾을 수 없음: {self.MYSTIC_MEDAL} - 이 아이템은 검색하지 않습니다")
         
         # 성약의 책갈피 검색
-        covenant_bookmark_path = self._find_image_file(self.base_dir / self.ITEMS_DIR, self.COVENANT_BOOKMARK)
+        covenant_bookmark_path = self._find_image_file(self.resource_dir / self.ITEMS_DIR, self.COVENANT_BOOKMARK)
         if covenant_bookmark_path:
             result = self.matcher.find_image(str(self.screenshot_path), str(covenant_bookmark_path), threshold=self.thresholds.get("covenant_bookmark", 0.92))
             if result:
@@ -316,7 +336,7 @@ class SecretShopBot:
             self.adb.screenshot(str(self.screenshot_path))
             time.sleep(0.2)
             
-            buy_button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.BUY_BUTTON)
+            buy_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.BUY_BUTTON)
             if buy_button_path:
                 result = self.matcher.find_image(str(self.screenshot_path), str(buy_button_path))
                 if result:
@@ -393,14 +413,14 @@ class SecretShopBot:
         time.sleep(0.2)
         
         # 구입 버튼 이미지 경로 (활성화)
-        purchase_button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON)
+        purchase_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON)
         
         if not purchase_button_path:
             logger.debug("구입 버튼 이미지 파일을 찾을 수 없음")
             return None
         
         # 비활성화된 구입 버튼 이미지 경로
-        purchase_button_disabled_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
+        purchase_button_disabled_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
         
         if not purchase_button_disabled_path:
             logger.warning("비활성화된 구입 버튼 이미지를 찾을 수 없음 - 기존 방식으로 동작")
@@ -504,11 +524,11 @@ class SecretShopBot:
                 logger.error("❌ 갱신 버튼을 찾을 수 없음")
                 if self.debug_mode:
                     logger.error(f"💡 디버깅: 스크린샷이 {self.screenshot_path}에 저장되었습니다.")
-                    logger.error(f"💡 버튼 이미지: {self.base_dir / self.BUTTONS_DIR / self.REFRESH_BUTTON}")
+                    logger.error(f"💡 버튼 이미지: {self.resource_dir / self.BUTTONS_DIR / self.REFRESH_BUTTON}")
                     logger.error(f"💡 이미지 매칭 정확도를 낮춰보세요 (현재: {int(self.matcher.threshold*100)}%)")
                     
                     # 디버깅용 스크린샷 저장
-                    debug_path = self.base_dir / "logs" / "debug_refresh_button.png"
+                    debug_path = self.runtime_dir / "logs" / "debug_refresh_button.png"
                     debug_path.parent.mkdir(exist_ok=True)
                     import shutil
                     shutil.copy(self.screenshot_path, debug_path)
@@ -549,7 +569,7 @@ class SecretShopBot:
             logger.error(f"알 수 없는 버튼 타입: {button_type}")
             return False
         
-        button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, button_filename)
+        button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, button_filename)
         
         if not button_path:
             logger.error(f"버튼 이미지 파일을 찾을 수 없음: {button_filename}")
@@ -583,7 +603,7 @@ class SecretShopBot:
         time.sleep(0.2)
         
         # 비활성화된 구입 버튼 찾기 (약간 낮은 임계값 사용)
-        disabled_button_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
+        disabled_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
         
         if not disabled_button_path:
             logger.warning("비활성화된 구입 버튼 이미지 파일을 찾을 수 없음")
