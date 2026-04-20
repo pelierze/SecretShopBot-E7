@@ -47,3 +47,5 @@ screenshots/
 # ADB tools (사용자가 직접 다운로드)
 tools/adb/*.exe
 tools/adb/*.dll
+platform-tools/
+platform-tools.zip
