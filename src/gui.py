@@ -382,14 +382,16 @@ class SecretShopGUI:
                 time_str = f"{seconds}초"
             
             # 완료 메시지
-            self.root.after(0, lambda: messagebox.showinfo(
-                "완료",
-                f"자동화가 완료되었습니다!\n\n"
+            completion_msg = (
+                f"\n{'='*50}\n"
+                f"✅ 자동화가 완료되었습니다!\n"
                 f"총 리프레시: {final_stats['total_refreshes']}회\n"
                 f"신비의 메달: {final_stats['mystic_medal_bought']}개\n"
-                f"성약의 책갈피: {final_stats['covenant_bookmark_bought']}개\n\n"
-                f"⏱️ 동작 시간: {time_str}"
-            ))
+                f"성약의 책갈피: {final_stats['covenant_bookmark_bought']}개\n"
+                f"⏱️ 동작 시간: {time_str}\n"
+                f"{'='*50}"
+            )
+            self.log(completion_msg)
             
         except Exception as e:
             logging.error(f"봇 실행 중 오류: {e}", exc_info=True)
@@ -439,18 +441,20 @@ class SecretShopGUI:
                 else:
                     time_str = f"{seconds}초"
                 
-                messagebox.showinfo(
-                    "중지", 
-                    f"봇이 중지됩니다.\n\n"
+                stop_msg = (
+                    f"\n{'='*50}\n"
+                    f"⛔ 봇이 중지되었습니다.\n"
                     f"총 리프레시: {stats.get('total_refreshes', 0)}회\n"
                     f"신비의 메달: {stats.get('mystic_medal_bought', 0)}개\n"
-                    f"성약의 책갈피: {stats.get('covenant_bookmark_bought', 0)}개\n\n"
-                    f"⏱️ 동작 시간: {time_str}"
+                    f"성약의 책갈피: {stats.get('covenant_bookmark_bought', 0)}개\n"
+                    f"⏱️ 동작 시간: {time_str}\n"
+                    f"{'='*50}"
                 )
+                self.log(stop_msg)
             else:
-                messagebox.showinfo("중지", "봇이 중지됩니다.")
+                self.log("⛔ 봇이 중지되었습니다.")
         else:
-            messagebox.showinfo("중지", "봇이 중지됩니다.")
+            self.log("⛔ 봇이 중지되었습니다.")
         
     def _update_stats(self, stats):
         """통계 업데이트"""
