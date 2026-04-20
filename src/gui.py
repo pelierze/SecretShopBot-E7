@@ -100,6 +100,26 @@ class SecretShopGUI:
         self.stop_btn = ttk.Button(control_frame, text="■ 중지", command=self._stop_bot, state=tk.DISABLED)
         self.stop_btn.pack(side=tk.LEFT, padx=5)
         
+        # 일시정지 상태 표시
+        self.pause_label = ttk.Label(control_frame, text="", foreground="orange", font=("Arial", 10, "bold"))
+        self.pause_label.pack(side=tk.LEFT, padx=10)
+        
+        # === 일시정지 액션 섹션 (초기에는 숨김) ===
+        self.action_frame = ttk.LabelFrame(self.root, text="⏸️  아이템 발견! 선택하세요", padding=10)
+        # 초기에는 pack하지 않음
+        
+        action_btn_frame = ttk.Frame(self.action_frame)
+        action_btn_frame.pack(fill=tk.X, pady=5)
+        
+        self.buy_action_btn = ttk.Button(action_btn_frame, text="🛍 구매하기", command=self._action_buy, width=15)
+        self.buy_action_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.refresh_action_btn = ttk.Button(action_btn_frame, text="🔄 갱신하기", command=self._action_refresh, width=15)
+        self.refresh_action_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.stop_action_btn = ttk.Button(action_btn_frame, text="⛔ 중지하기", command=self._action_stop, width=15)
+        self.stop_action_btn.pack(side=tk.LEFT, padx=5)
+        
         # === 통계 섹션 ===
         stats_frame = ttk.LabelFrame(self.root, text="통계", padding=10)
         stats_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -211,14 +231,21 @@ class SecretShopGUI:
     def _run_bot(self, refresh_count, buy_count):
         """봇 실행 (별도 스레드)"""
         try:
-            # 정기적으로 통계 업데이트
-            def update_stats_periodically():
+            # 정기적으로 통계 업데이트 및 일시정지 상태 확인
+            def update_stats_and_check_pause():
                 if self.is_running and self.bot:
                     stats = self.bot.get_stats()
                     self._update_stats(stats)
-                    self.root.after(1000, update_stats_periodically)
+                    
+                    # 일시정지 상태 확인
+                    if self.bot.paused:
+                        self._show_pause_ui()
+                    else:
+                        self._hide_pause_ui()
+                    
+                    self.root.after(500, update_stats_and_check_pause)
             
-            self.root.after(1000, update_stats_periodically)
+            self.root.after(500, update_stats_and_check_pause)
             
             # 봇 실행
             final_stats = self.bot.run(refresh_count, buy_count)
@@ -262,6 +289,38 @@ class SecretShopGUI:
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.connect_btn.config(state=tk.NORMAL)
+        self._hide_pause_ui()
+    
+    def _action_buy(self):
+        """구매 액션 선택"""
+        if self.bot:
+            self.bot.set_user_action('buy')
+            self._hide_pause_ui()
+    
+    def _action_refresh(self):
+        """갱신 액션 선택"""
+        if self.bot:
+            self.bot.set_user_action('refresh')
+            self._hide_pause_ui()
+    
+    def _action_stop(self):
+        """중지 액션 선택"""
+        if self.bot:
+            self.bot.set_user_action('stop')
+            self._hide_pause_ui()
+            self._stop_bot()
+    
+    def _show_pause_ui(self):
+        """일시정지 UI 표시"""
+        self.pause_label.config(text="⏸️  일시정지")
+        self.action_frame.pack(fill=tk.X, padx=10, pady=5, before=self.root.winfo_children()[2])  # 통계 섹션 앞에 배치
+        # 비프음 (알림음) - Windows에서 시스템 비프음 재생
+        self.root.bell()
+    
+    def _hide_pause_ui(self):
+        """일시정지 UI 숨김"""
+        self.action_frame.pack_forget()
+        self.pause_label.config(text="")
 
 
 def run_gui():

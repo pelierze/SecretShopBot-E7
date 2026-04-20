@@ -37,6 +37,7 @@ class SecretShopBot:
     # 아이템 구매 프로세스: 구입 버튼 -> 구매 버튼
     PURCHASE_BUTTON = "purchase_button.png"  # 구입 버튼 (첫 번째 단계)
     BUY_BUTTON = "buy_button.png"  # 구매 버튼 (두 번째 단계, 최종 구매)
+    PURCHASE_BUTTON_DISABLED = "purchase_button_disabled.png"  # 구매 완료 후 비활성화된 구입 버튼
     
     def __init__(self, adb_controller: ADBController, base_dir: str = "."):
         """
@@ -58,6 +59,10 @@ class SecretShopBot:
             "covenant_bookmark_bought": 0,
             "total_cost": 0
         }
+        
+        # 일시정지 제어
+        self.paused = False
+        self.user_action = None  # 'buy', 'refresh', 'stop'
         
         # 화면 스와이프 좌표 (화면 크기에 따라 조정 필요)
         self.screen_width, self.screen_height = self.adb.get_screen_size()
@@ -93,17 +98,42 @@ class SecretShopBot:
                 # 두 번째 페이지 스캔
                 found_items = self._scan_shop_page()
             
-            # 발견한 아이템 구매
+            # 발견한 아이템이 있을 때
             if found_items:
-                for item_name, item_location in found_items.items():
-                    logger.info(f"아이템 발견: {item_name}")
-                    self._purchase_item(item_location, buy_count_per_item)
+                # 일시정지 및 사용자 액션 대기
+                logger.warning("⏸️  원하는 아이템 발견! 일시정지합니다.")
+                self.paused = True
+                self.user_action = None
+                
+                # 사용자 액션 대기 (GUI에서 처리)
+                while self.paused and self.user_action is None:
+                    time.sleep(0.5)
+                
+                # 사용자가 중지 선택
+                if self.user_action == 'stop':
+                    logger.info("사용자가 중지를 선택했습니다.")
+                    break
+                
+                # 사용자가 구매 선택
+                if self.user_action == 'buy':
+                    purchase_success = False
+                    for item_name, item_location in found_items.items():
+                        logger.info(f"아이템 구매 시작: {item_name}")
+                        if self._purchase_item(item_location, buy_count_per_item):
+                            # 통계 업데이트
+                            if item_name == "mystic_medal":
+                                self.stats["mystic_medal_bought"] += buy_count_per_item
+                            elif item_name == "covenant_bookmark":
+                                self.stats["covenant_bookmark_bought"] += buy_count_per_item
+                            purchase_success = True
                     
-                    # 통계 업데이트
-                    if item_name == "mystic_medal":
-                        self.stats["mystic_medal_bought"] += buy_count_per_item
-                    elif item_name == "covenant_bookmark":
-                        self.stats["covenant_bookmark_bought"] += buy_count_per_item
+                    # 구매가 성공했으면 다음 페이지로
+                    if purchase_success:
+                        self.paused = False
+                        continue
+                
+                # 사용자가 갱신 선택하거나 구매 실패
+                self.paused = False
             else:
                 logger.debug("원하는 아이템이 없음")
             
@@ -147,16 +177,21 @@ class SecretShopBot:
         
         return found_items
     
-    def _purchase_item(self, item_location: tuple, count: int):
+    def _purchase_item(self, item_location: tuple, count: int) -> bool:
         """
-        아이템 구매 (구입 -> 구매 2단계 프로세스)
+        아이템 구매 (구입 -> 구매 2단계 프로세스) 및 구매 완료 검증
         
         Args:
             item_location: 아이템 위치 (x, y, w, h)
             count: 구매 횟수
+            
+        Returns:
+            구매 성공 여부 (모든 구매가 성공했는지)
         """
         # 아이템 위치의 중심점 계산
         center_x, center_y = self.matcher.get_center(item_location)
+        
+        all_success = True
         
         for i in range(count):
             logger.info(f"구매 시도 {i + 1}/{count}")
@@ -170,16 +205,33 @@ class SecretShopBot:
                 
                 # 2단계: 구매 버튼 클릭 (최종 구매)
                 if self._click_button("buy"):
-                    logger.info(f"구매 완료 ({i + 1}/{count})")
                     time.sleep(0.5)
+                    
+                    # 구매 완료 검증: 비활성화된 구입 버튼 확인
+                    if self._verify_purchase_complete():
+                        logger.info(f"✅ 구매 완료 검증 성공 ({i + 1}/{count})")
+                    else:
+                        logger.warning(f"⚠️  구매 완료 검증 실패 ({i + 1}/{count}) - 골드 부족 또는 구매 실패 가능성")
+                        all_success = False
+                        # 화면 왼쪽 클릭하여 창 닫기
+                        self.adb.tap(center_x // 2, center_y, delay=0.3)
+                        break
                 else:
                     logger.warning("구매 버튼(2단계)을 찾을 수 없음")
-                    # 취소 또는 뒤로가기 처리 필요 시 추가
+                    all_success = False
+                    # 취소 또는 뒤로가기 처리
                     self.adb.tap(center_x // 2, center_y, delay=0.3)  # 화면 왼쪽 클릭 (취소)
+                    break
             else:
                 logger.warning("구입 버튼(1단계)을 찾을 수 없음")
+                all_success = False
+                break
             
+            # 화면 닫기 (다음 구매를 위해)
+            self.adb.tap(center_x // 2, center_y, delay=0.3)
             time.sleep(0.5)  # 구매 간 대기
+        
+        return all_success
     
     def _refresh_shop(self):
         """상점 리프레시 (갱신 -> 확인 2단계 프로세스)"""
@@ -243,6 +295,28 @@ class SecretShopBot:
             logger.debug(f"{button_type} 버튼을 찾을 수 없음")
             return False
     
+    def _verify_purchase_complete(self) -> bool:
+        """
+        구매 완료 검증: 비활성화된 구입 버튼 확인
+        
+        Returns:
+            구매 완료 여부 (비활성화된 버튼이 보이면 True)
+        """
+        # 스크린샷 촬영
+        self.adb.screenshot(str(self.screenshot_path))
+        time.sleep(0.2)
+        
+        # 비활성화된 구입 버튼 찾기
+        disabled_button_path = self.base_dir / self.BUTTONS_DIR / self.PURCHASE_BUTTON_DISABLED
+        result = self.matcher.find_image(str(self.screenshot_path), str(disabled_button_path), threshold=0.75)
+        
+        if result:
+            logger.debug("구매 완료: 비활성화된 구입 버튼 확인됨")
+            return True
+        else:
+            logger.debug("구매 완료 검증 실패: 비활성화된 구입 버튼을 찾을 수 없음")
+            return False
+    
     def _scroll_down(self):
         """화면을 아래로 스크롤 (두 번째 페이지로 이동)"""
         self.adb.swipe(
@@ -252,6 +326,12 @@ class SecretShopBot:
             delay=0.5
         )
         logger.debug("화면 스크롤 (하단으로)")
+    
+    def set_user_action(self, action: str):
+        """사용자 액션 설정 (GUI에서 호출)"""
+        self.user_action = action
+        self.paused = False
+        logger.info(f"사용자 액션: {action}")
     
     def get_stats(self) -> Dict:
         """통계 정보 반환"""
