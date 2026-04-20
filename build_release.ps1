@@ -49,12 +49,7 @@ New-Item -ItemType Directory -Path $ReleaseRoot -Force | Out-Null
 Write-Host "Building Windows app with PyInstaller..."
 python -m PyInstaller `
     --noconfirm `
-    --onedir `
-    --windowed `
-    --name $AppName `
-    --add-data "images;images" `
-    --add-data "tools;tools" `
-    main.py
+    SecretShopBot-E7.spec
 
 $BuiltDir = Join-Path $DistRoot $AppName
 if (-not (Test-Path $BuiltDir)) {
