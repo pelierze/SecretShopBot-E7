@@ -278,10 +278,10 @@ class SecretShopGUI:
             self.test_btn.config(state=tk.NORMAL)
             self.connect_btn.config(state=tk.DISABLED)
             self.disconnect_btn.config(state=tk.NORMAL)
-            messagebox.showinfo("성공", f"ADB 연결 성공: {ip}:{port}")
+            logger.info(f"✅ ADB 연결 성공: {ip}:{port}")
         else:
             self.connection_status.config(text="● 연결 실패", foreground="red")
-            messagebox.showerror("오류", "ADB 연결에 실패했습니다.\n앱플레이어가 실행 중인지 확인하세요.")
+            logger.error(f"❌ ADB 연결 실패: {ip}:{port} - 앱플레이어가 실행 중인지 확인하세요")
             
     def _start_bot(self):
         """봇 시작"""
