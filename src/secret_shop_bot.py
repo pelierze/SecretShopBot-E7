@@ -479,6 +479,11 @@ class SecretShopBot:
         """
         logger.debug("상점 갱신 시작")
         
+        # 중지 확인
+        if self.user_action == 'stop':
+            logger.debug("중지 요청으로 갱신 건너뜀")
+            return False
+        
         # 1단계: 갱신 버튼 찾기 및 클릭
         if self._click_button("refresh"):
             time.sleep(0.5)
@@ -489,20 +494,25 @@ class SecretShopBot:
                 time.sleep(0.8)
                 return True
             else:
-                logger.warning("⚠️  갱신 확인 버튼을 찾을 수 없음 - 갱신 실패")
+                # 중지 요청이면 로그 생략
+                if self.user_action != 'stop':
+                    logger.warning("⚠️  갱신 확인 버튼을 찾을 수 없음")
                 return False
         else:
-            logger.error("❌ 갱신 버튼을 찾을 수 없음 - 갱신 실패")
-            logger.error(f"💡 디버깅: 스크린샷이 {self.screenshot_path}에 저장되었습니다.")
-            logger.error(f"💡 버튼 이미지: {self.base_dir / self.BUTTONS_DIR / self.REFRESH_BUTTON}")
-            logger.error(f"💡 이미지 매칭 정확도를 낮춰보세요 (현재: {int(self.matcher.threshold*100)}%)")
-            
-            # 디버깅용 스크린샷 저장
-            debug_path = self.base_dir / "logs" / "debug_refresh_button.png"
-            debug_path.parent.mkdir(exist_ok=True)
-            import shutil
-            shutil.copy(self.screenshot_path, debug_path)
-            logger.error(f"💡 디버그 스크린샷: {debug_path}")
+            # 중지 요청이면 로그 생략
+            if self.user_action != 'stop':
+                logger.error("❌ 갱신 버튼을 찾을 수 없음")
+                if self.debug_mode:
+                    logger.error(f"💡 디버깅: 스크린샷이 {self.screenshot_path}에 저장되었습니다.")
+                    logger.error(f"💡 버튼 이미지: {self.base_dir / self.BUTTONS_DIR / self.REFRESH_BUTTON}")
+                    logger.error(f"💡 이미지 매칭 정확도를 낮춰보세요 (현재: {int(self.matcher.threshold*100)}%)")
+                    
+                    # 디버깅용 스크린샷 저장
+                    debug_path = self.base_dir / "logs" / "debug_refresh_button.png"
+                    debug_path.parent.mkdir(exist_ok=True)
+                    import shutil
+                    shutil.copy(self.screenshot_path, debug_path)
+                    logger.error(f"💡 디버그 스크린샷: {debug_path}")
             return False
     
     def _click_button(self, button_type: str) -> bool:
