@@ -29,10 +29,16 @@ class TextHandler(logging.Handler):
         msg = self.format(record)
         
         def append():
+            # 현재 스크롤 위치 저장
+            is_at_bottom = self.text_widget.yview()[1] >= 0.99
+            
             self.text_widget.configure(state='normal')
             self.text_widget.insert(tk.END, msg + '\n')
             self.text_widget.configure(state='disabled')
-            self.text_widget.yview(tk.END)
+            
+            # 맨 아래에 있었을 때만 자동 스크롤
+            if is_at_bottom:
+                self.text_widget.yview(tk.END)
             
         self.text_widget.after(0, append)
 
