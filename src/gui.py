@@ -367,20 +367,6 @@ class SecretShopGUI:
             # 최종 통계 업데이트
             self._update_stats(final_stats)
             
-            # 동작 시간 계산
-            elapsed_seconds = final_stats.get('elapsed_time', 0)
-            hours = elapsed_seconds // 3600
-            minutes = (elapsed_seconds % 3600) // 60
-            seconds = elapsed_seconds % 60
-            
-            time_str = ""
-            if hours > 0:
-                time_str = f"{hours}시간 {minutes}분 {seconds}초"
-            elif minutes > 0:
-                time_str = f"{minutes}분 {seconds}초"
-            else:
-                time_str = f"{seconds}초"
-            
             # 완료 메시지
             completion_msg = (
                 f"\n{'='*50}\n"
@@ -388,7 +374,6 @@ class SecretShopGUI:
                 f"총 리프레시: {final_stats['total_refreshes']}회\n"
                 f"신비의 메달: {final_stats['mystic_medal_bought']}개\n"
                 f"성약의 책갈피: {final_stats['covenant_bookmark_bought']}개\n"
-                f"⏱️ 동작 시간: {time_str}\n"
                 f"{'='*50}"
             )
             self.log(completion_msg)
@@ -433,31 +418,15 @@ class SecretShopGUI:
         
         # 현재 통계 가져오기
         if self.bot:
-            import time as time_module
             stats = self.bot.get_stats()
             
-            # 동작 시간 계산
-            if stats.get('start_time'):
-                elapsed_seconds = int(time_module.time() - stats['start_time'])
-                hours = elapsed_seconds // 3600
-                minutes = (elapsed_seconds % 3600) // 60
-                seconds = elapsed_seconds % 60
-                
-                time_str = ""
-                if hours > 0:
-                    time_str = f"{hours}시간 {minutes}분 {seconds}초"
-                elif minutes > 0:
-                    time_str = f"{minutes}분 {seconds}초"
-                else:
-                    time_str = f"{seconds}초"
-                
+            if stats.get('total_refreshes', 0) > 0:
                 stop_msg = (
                     f"\n{'='*50}\n"
                     f"⛔ 봇이 중지되었습니다.\n"
                     f"총 리프레시: {stats.get('total_refreshes', 0)}회\n"
                     f"신비의 메달: {stats.get('mystic_medal_bought', 0)}개\n"
                     f"성약의 책갈피: {stats.get('covenant_bookmark_bought', 0)}개\n"
-                    f"⏱️ 동작 시간: {time_str}\n"
                     f"{'='*50}"
                 )
                 self.log(stop_msg)
@@ -501,7 +470,7 @@ class SecretShopGUI:
         self.test_btn.config(state=tk.DISABLED)
         self.connect_btn.config(state=tk.NORMAL)
         self.disconnect_btn.config(state=tk.DISABLED)
-        messagebox.showinfo("성공", "ADB 연결이 해제되었습니다.")
+        self.log("✅ ADB 연결이 해제되었습니다.")
     
     def _reset_ui(self):
         """상태 복귀"""
