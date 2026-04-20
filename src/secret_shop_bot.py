@@ -97,13 +97,13 @@ class SecretShopBot:
         
         # 화면 스와이프 좌표 (화면 크기에 따라 조정 필요)
         # 기본 해상도: 1280x720 (240dpi)
-        # 2번 구역(오른쪽 위) 중앙에서 아래로 드래그
+        # 2번 구역(오른쪽 위) 중앙에서 위로 드래그
         self.screen_width, self.screen_height = self.adb.get_screen_size()
         logger.info(f"화면 해상도: {self.screen_width}x{self.screen_height}")
         
         self.swipe_x = int(self.screen_width * 0.75)  # 2번 구역 중앙 (X: 75%)
-        self.swipe_start_y = int(self.screen_height * 0.25)  # 2번 구역 상단 (Y: 25%)
-        self.swipe_end_y = int(self.screen_height * 0.75)  # 아래로 드래그
+        self.swipe_start_y = int(self.screen_height * 0.75)  # 아래에서 시작 (Y: 75%)
+        self.swipe_end_y = int(self.screen_height * 0.25)  # 위로 드래그 (Y: 25%)
         
     def run(self, max_refresh_count: int, buy_count_per_item: int) -> Dict:
         """
@@ -461,7 +461,7 @@ class SecretShopBot:
             return False
     
     def _scroll_down(self):
-        """화면을 아래로 스크롤 (두 번째 페이지로 이동)"""
+        """화면을 위로 스크롤 (두 번째 페이지로 이동)"""
         if self.debug_mode:
             logger.debug(f"드래그 시작: ({self.swipe_x}, {self.swipe_start_y}) → ({self.swipe_x}, {self.swipe_end_y})")
         
@@ -473,7 +473,7 @@ class SecretShopBot:
         )
         
         if self.debug_mode:
-            logger.debug("화면 스크롤 완료 (하단으로)")
+            logger.debug("화면 스크롤 완료 (상단으로)")
     
     def set_user_action(self, action: str):
         """

@@ -409,11 +409,29 @@ class SecretShopGUI:
             messagebox.showwarning("경고", "봇이 실행 중일 때는 테스트할 수 없습니다.")
             return
         
+        # 파일 선택 대화상자
+        from tkinter import filedialog
+        
+        base_dir = Path(__file__).parent.parent
+        initial_dir = base_dir / "images"
+        
+        file_path = filedialog.askopenfilename(
+            title="테스트할 이미지 선택",
+            initialdir=str(initial_dir),
+            filetypes=[
+                ("이미지 파일", "*.png *.PNG *.jpg *.jpeg"),
+                ("모든 파일", "*.*")
+            ]
+        )
+        
+        if not file_path:
+            return  # 사용자가 취소함
+        
         # 별도 스레드에서 테스트 실행
-        test_thread = threading.Thread(target=self._run_image_test, daemon=True)
+        test_thread = threading.Thread(target=self._run_image_test, args=(file_path,), daemon=True)
         test_thread.start()
     
-    def _run_image_test(self):
+    def _run_image_test(self, image_path):
         """이미지 매칭 테스트 실행"""
         import cv2
         import numpy as np
@@ -421,6 +439,7 @@ class SecretShopGUI:
         try:
             logging.info("="*60)
             logging.info("🔍 이미지 매칭 테스트 시작")
+            logging.info(f"📄 테스트 이미지: {Path(image_path).name}")
             logging.info("="*60)
             
             # 현재 화면 스크린샷
@@ -436,62 +455,47 @@ class SecretShopGUI:
                 logging.error("❌ 스크린샷을 로드할 수 없습니다.")
                 return
             
-            # 테스트할 이미지 목록
-            items_dir = base_dir / "images" / "items"
-            buttons_dir = base_dir / "images" / "buttons"
-            
-            test_images = []
-            
-            # 아이템 이미지
-            if items_dir.exists():
-                for img_file in items_dir.glob("*.png"):
-                    test_images.append(("아이템", img_file))
-                for img_file in items_dir.glob("*.PNG"):
-                    test_images.append(("아이템", img_file))
-            
-            # 버튼 이미지
-            if buttons_dir.exists():
-                for img_file in buttons_dir.glob("*.png"):
-                    test_images.append(("버튼", img_file))
-                for img_file in buttons_dir.glob("*.PNG"):
-                    test_images.append(("버튼", img_file))
-            
-            if not test_images:
-                logging.warning("⚠️  테스트할 이미지가 없습니다.")
+            # 테스트 이미지 로드
+            template = cv2.imread(image_path)
+            if template is None:
+                logging.error(f"❌ 테스트 이미지를 로드할 수 없습니다: {image_path}")
                 return
+            
+            logging.info(f"✅ 스크린샷 크기: {screenshot.shape}")
+            logging.info(f"✅ 템플릿 크기: {template.shape}")
+            logging.info("")
             
             # 현재 설정된 임계값
             current_threshold = float(self.threshold_scale.get())
             
             logging.info(f"📊 현재 임계값: {int(current_threshold*100)}%")
-            logging.info(f"🔍 테스트 이미지 개수: {len(test_images)}")
             logging.info("")
             
-            # 각 이미지 테스트
-            for img_type, img_path in test_images:
-                template = cv2.imread(str(img_path))
-                if template is None:
-                    logging.warning(f"⚠️  [{img_type}] {img_path.name}: 이미지 로드 실패")
-                    continue
-                
-                # 매칭 수행
-                result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
-                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-                
-                # 결과 출력
-                confidence_percent = int(max_val * 100)
-                
-                if max_val >= current_threshold:
-                    logging.info(f"✅ [{img_type}] {img_path.name}: {confidence_percent}% (위치: {max_loc})")
+            # 다양한 임계값으로 테스트
+            thresholds = [0.99, 0.95, 0.92, 0.90, 0.85, 0.80, 0.75, 0.70]
+            
+            result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            
+            logging.info("🔍 다양한 임계값 테스트 결과:")
+            for threshold in thresholds:
+                if max_val >= threshold:
+                    logging.info(f"  ✅ 임계값 {int(threshold*100)}%: 매칭 성공! (신뢰도: {max_val:.4f}, 위치: {max_loc})")
                 else:
-                    # 권장 임계값 계산
-                    recommended = int(max_val * 0.95 * 100)
-                    logging.warning(f"❌ [{img_type}] {img_path.name}: {confidence_percent}% (현재 임계값: {int(current_threshold*100)}%, 권장: {recommended}%)")
+                    logging.info(f"  ❌ 임계값 {int(threshold*100)}%: 매칭 실패 (최대 신뢰도: {max_val:.4f})")
             
             logging.info("")
             logging.info("="*60)
-            logging.info("✅ 이미지 매칭 테스트 완료")
-            logging.info("💡 매칭 실패한 이미지는 임계값을 낮추거나 이미지를 다시 캡처하세요.")
+            logging.info(f"📈 최대 매칭 신뢰도: {max_val:.4f} ({int(max_val*100)}%)")
+            
+            if max_val >= current_threshold:
+                logging.info(f"✅ 현재 임계값({int(current_threshold*100)}%)으로 매칭 성공!")
+                logging.info(f"📍 매칭 위치: {max_loc}")
+            else:
+                recommended = int(max_val * 0.95 * 100)
+                logging.warning(f"❌ 현재 임계값({int(current_threshold*100)}%)으로 매칭 실패")
+                logging.warning(f"💡 권장 임계값: {recommended}% (최대값의 95%)")
+            
             logging.info("="*60)
             
         except Exception as e:
