@@ -120,7 +120,7 @@ class ADBController:
         연결된 ADB 디바이스 목록 가져오기
         
         Returns:
-            디바이스 ID 리스트
+            디바이스 정보 리스트 [{'id': 'device_id', 'status': 'device'}, ...]
         """
         try:
             cmd = f"{self.adb_path} devices"
@@ -130,9 +130,13 @@ class ADBController:
             lines = result.stdout.strip().split('\n')[1:]  # 첫 줄(헤더) 제외
             
             for line in lines:
-                if '\tdevice' in line:
-                    device_id = line.split('\t')[0]
-                    devices.append(device_id)
+                if '\t' in line:
+                    parts = line.split('\t')
+                    if len(parts) >= 2:
+                        device_id = parts[0].strip()
+                        status = parts[1].strip()
+                        if device_id:  # 빈 라인 제외
+                            devices.append({'id': device_id, 'status': status})
                     
             return devices
         except Exception as e:

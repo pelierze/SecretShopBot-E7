@@ -68,14 +68,23 @@ class SecretShopGUI:
         self.port_entry.insert(0, "5555")
         self.port_entry.grid(row=0, column=3, padx=5)
         
+        self.scan_btn = ttk.Button(connection_frame, text="장치 검색", command=self._scan_devices)
+        self.scan_btn.grid(row=0, column=4, padx=5)
+        
         self.connect_btn = ttk.Button(connection_frame, text="연결", command=self._connect_adb)
-        self.connect_btn.grid(row=0, column=4, padx=5)
+        self.connect_btn.grid(row=0, column=5, padx=5)
         
         self.disconnect_btn = ttk.Button(connection_frame, text="연결 해제", command=self._disconnect_adb, state=tk.DISABLED)
-        self.disconnect_btn.grid(row=0, column=5, padx=5)
+        self.disconnect_btn.grid(row=0, column=6, padx=5)
         
         self.connection_status = ttk.Label(connection_frame, text="● 연결 안됨", foreground="red")
-        self.connection_status.grid(row=0, column=6, padx=10)
+        self.connection_status.grid(row=0, column=7, padx=10)
+        
+        # 장치 목록
+        ttk.Label(connection_frame, text="장치:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.device_combo = ttk.Combobox(connection_frame, width=30, state="readonly")
+        self.device_combo.grid(row=1, column=1, columnspan=4, sticky=tk.W, padx=5, pady=5)
+        self.device_combo.bind("<<ComboboxSelected>>", self._on_device_selected)
         
         # === 설정 섹션 ===
         settings_frame = ttk.LabelFrame(self.root, text="매크로 설정", padding=10)
@@ -204,6 +213,48 @@ class SecretShopGUI:
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
         
+    def _scan_devices(self):
+        """장치 검색"""
+        try:
+            from .adb_controller import ADBController
+            
+            # 임시 ADB 컨트롤러 생성
+            temp_adb = ADBController()
+            devices = temp_adb.get_devices()
+            
+            if not devices:
+                logger.warning("⚠️ 연결된 장치가 없습니다. ADB 디버깅이 활성화되어 있는지 확인하세요.")
+                self.device_combo['values'] = []
+                return
+            
+            # 장치 목록 업데이트
+            device_list = [f"{d['id']} ({d['status']})" for d in devices]
+            self.device_combo['values'] = device_list
+            
+            if device_list:
+                self.device_combo.current(0)  # 첫 번째 장치 선택
+                self._on_device_selected(None)
+            
+            logger.info(f"🔍 장치 {len(devices)}개 발견: {[d['id'] for d in devices]}")
+            
+        except Exception as e:
+            logger.error(f"장치 검색 중 오류: {e}")
+    
+    def _on_device_selected(self, event):
+        """장치 선택 시 호출"""
+        if self.device_combo.get():
+            # 선택된 장치 ID 추출 ("device_id (status)" 형식)
+            device_str = self.device_combo.get()
+            device_id = device_str.split(' (')[0]
+            
+            # IP와 포트로 분리
+            if ':' in device_id:
+                parts = device_id.split(':')
+                self.ip_entry.delete(0, tk.END)
+                self.ip_entry.insert(0, parts[0])
+                self.port_entry.delete(0, tk.END)
+                self.port_entry.insert(0, parts[1])
+    
     def _connect_adb(self):
         """ADB 연결"""
         ip = self.ip_entry.get().strip()
