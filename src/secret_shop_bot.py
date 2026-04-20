@@ -373,7 +373,7 @@ class SecretShopBot:
     def _find_purchase_button_on_item_line(self, item_location: tuple):
         """
         아이템과 같은 라인(비슷한 Y 좌표)의 오른쪽에 있는 구입 버튼 찾기
-        비활성화된 버튼(이미 구매한 아이템)은 제외
+        활성화/비활성화 이미지 유사도를 비교하여 판단
         
         Args:
             item_location: 아이템 위치 (x, y, w, h)
@@ -397,19 +397,35 @@ class SecretShopBot:
         # 비활성화된 구입 버튼 이미지 경로
         purchase_button_disabled_path = self._find_image_file(self.base_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
         
-        # 화면에서 모든 활성화된 구입 버튼 찾기
-        all_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path), threshold=self.thresholds.get("purchase_button", 0.92))
-        
-        if not all_buttons:
-            logger.debug("구입 버튼을 찾을 수 없음")
+        if not purchase_button_disabled_path:
+            logger.warning("비활성화된 구입 버튼 이미지를 찾을 수 없음 - 기존 방식으로 동작")
+            # 기존 방식: 활성화된 버튼만 찾기
+            all_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path), threshold=self.thresholds.get("purchase_button", 0.92))
+            if not all_buttons:
+                return None
+            
+            item_x, item_y, item_w, item_h = item_location
+            item_center_y = item_y + item_h // 2
+            y_tolerance = 50
+            
+            for button in all_buttons:
+                btn_x, btn_y, btn_w, btn_h = button
+                btn_center_y = btn_y + btn_h // 2
+                if abs(btn_center_y - item_center_y) <= y_tolerance and btn_x > item_x:
+                    return button
             return None
         
-        # 비활성화된 버튼 위치들 찾기 (이미 구매한 아이템)
-        disabled_buttons = []
-        if purchase_button_disabled_path:
-            disabled_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_disabled_path))
-            if disabled_buttons:
-                logger.debug(f"비활성화된 구입 버튼 {len(disabled_buttons)}개 발견 (이미 구매한 아이템)")
+        # 화면에서 모든 구입 버튼 후보 찾기 (활성화 + 비활성화 모두)
+        # 임계값을 낮춰서 모든 후보를 찾음
+        all_active_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path), threshold=0.7)
+        all_disabled_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_disabled_path), threshold=0.7)
+        
+        # 모든 버튼 후보 합치기
+        all_button_candidates = list(set(all_active_buttons + all_disabled_buttons))
+        
+        if not all_button_candidates:
+            logger.debug("구입 버튼 후보를 찾을 수 없음")
+            return None
         
         # 아이템의 Y 좌표
         item_x, item_y, item_w, item_h = item_location
@@ -418,28 +434,34 @@ class SecretShopBot:
         # 같은 라인에 있는 버튼 찾기 (약간의 여유 있게 ±50 픽셀)
         y_tolerance = 50
         
-        for button in all_buttons:
+        for button in all_button_candidates:
             btn_x, btn_y, btn_w, btn_h = button
             btn_center_y = btn_y + btn_h // 2
             
             # Y 좌표가 비슷하고, 아이템보다 오른쪽에 있는 버튼
             if abs(btn_center_y - item_center_y) <= y_tolerance and btn_x > item_x:
-                # 비활성화된 버튼인지 확인
-                is_disabled = False
-                for disabled_btn in disabled_buttons:
-                    disabled_x, disabled_y, disabled_w, disabled_h = disabled_btn
-                    # 같은 위치의 버튼인지 확인 (±10 픽셀 오차 허용)
-                    if abs(btn_x - disabled_x) <= 10 and abs(btn_y - disabled_y) <= 10:
-                        is_disabled = True
-                        logger.info(f"⏭️  이미 구매한 아이템 건너뜀 (비활성화된 버튼): ({btn_x}, {btn_y})")
-                        break
+                # 활성화/비활성화 이미지 유사도 비교
+                active_similarity = self.matcher.get_similarity_at_location(
+                    str(self.screenshot_path), 
+                    str(purchase_button_path), 
+                    button
+                )
+                disabled_similarity = self.matcher.get_similarity_at_location(
+                    str(self.screenshot_path), 
+                    str(purchase_button_disabled_path), 
+                    button
+                )
                 
-                if not is_disabled:
-                    logger.debug(f"같은 라인의 활성화된 구입 버튼 발견: ({btn_x}, {btn_y})")
-                    return button
-                else:
-                    # 비활성화된 버튼만 있음 (이미 구매한 아이템)
+                logger.debug(f"버튼 ({btn_x}, {btn_y}) - 활성화: {active_similarity:.3f}, 비활성화: {disabled_similarity:.3f}")
+                
+                # 비활성화 이미지가 더 유사하면 비활성화된 버튼
+                if disabled_similarity > active_similarity:
+                    logger.info(f"⏭️  이미 구매한 아이템 건너뜀 (비활성화 유사도: {disabled_similarity:.3f} > 활성화: {active_similarity:.3f})")
                     return False
+                else:
+                    # 활성화 이미지가 더 유사하면 활성화된 버튼
+                    logger.debug(f"같은 라인의 활성화된 구입 버튼 발견 (활성화 유사도: {active_similarity:.3f} > 비활성화: {disabled_similarity:.3f})")
+                    return button
         
         logger.warning("아이템과 같은 라인의 구입 버튼을 찾을 수 없음")
         return None

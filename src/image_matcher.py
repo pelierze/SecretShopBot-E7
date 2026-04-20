@@ -117,6 +117,77 @@ class ImageMatcher:
             logger.error(f"이미지 매칭 중 오류: {e}")
             return []
     
+    def get_similarity(self, screen_img_path: str, template_img_path: str) -> float:
+        """
+        화면과 템플릿 이미지의 유사도 계산
+        
+        Args:
+            screen_img_path: 스크린샷 이미지 경로
+            template_img_path: 비교할 템플릿 이미지 경로
+            
+        Returns:
+            유사도 (0.0 ~ 1.0), 오류 시 0.0
+        """
+        try:
+            # 이미지 로드
+            screen = cv2.imread(screen_img_path, cv2.IMREAD_COLOR)
+            template = cv2.imread(template_img_path, cv2.IMREAD_COLOR)
+            
+            if screen is None or template is None:
+                return 0.0
+            
+            # 템플릿 매칭
+            result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            
+            return float(max_val)
+            
+        except Exception as e:
+            logger.error(f"유사도 계산 중 오류: {e}")
+            return 0.0
+    
+    def get_similarity_at_location(self, screen_img_path: str, template_img_path: str, 
+                                    location: Tuple[int, int, int, int]) -> float:
+        """
+        특정 위치에서 화면과 템플릿 이미지의 유사도 계산
+        
+        Args:
+            screen_img_path: 스크린샷 이미지 경로
+            template_img_path: 비교할 템플릿 이미지 경로
+            location: 비교할 위치 (x, y, w, h)
+            
+        Returns:
+            유사도 (0.0 ~ 1.0), 오류 시 0.0
+        """
+        try:
+            # 이미지 로드
+            screen = cv2.imread(screen_img_path, cv2.IMREAD_COLOR)
+            template = cv2.imread(template_img_path, cv2.IMREAD_COLOR)
+            
+            if screen is None or template is None:
+                return 0.0
+            
+            x, y, w, h = location
+            
+            # 화면에서 해당 영역 추출
+            screen_region = screen[y:y+h, x:x+w]
+            
+            # 템플릿과 비교
+            if screen_region.shape != template.shape:
+                # 크기가 다르면 템플릿 매칭 사용
+                result = cv2.matchTemplate(screen, template, cv2.TM_CCOEFF_NORMED)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                return float(max_val)
+            else:
+                # 크기가 같으면 직접 비교
+                result = cv2.matchTemplate(screen_region, template, cv2.TM_CCOEFF_NORMED)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+                return float(max_val)
+            
+        except Exception as e:
+            logger.error(f"위치별 유사도 계산 중 오류: {e}")
+            return 0.0
+    
     def _non_max_suppression(self, boxes: List[Tuple[int, int, int, int]], 
                             overlap_thresh: float = 0.3) -> List[Tuple[int, int, int, int]]:
         """
