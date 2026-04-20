@@ -194,7 +194,7 @@ class SecretShopGUI:
         stats_grid = ttk.Frame(stats_frame)
         stats_grid.pack(fill=tk.X)
         
-        ttk.Label(stats_grid, text="총 리프레시:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(stats_grid, text="진행 완료:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         self.total_refresh_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
         self.total_refresh_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
         
@@ -422,6 +422,8 @@ class SecretShopGUI:
         # 통계 초기화
         self._update_stats({
             "total_refreshes": 0,
+            "completed_runs": 0,
+            "successful_refreshes": 0,
             "mystic_medal_bought": 0,
             "covenant_bookmark_bought": 0
         })
@@ -460,14 +462,7 @@ class SecretShopGUI:
             self._update_stats(final_stats)
             
             # 완료 메시지
-            completion_msg = (
-                f"\n{'='*50}\n"
-                f"✅ 자동화가 완료되었습니다!\n"
-                f"총 리프레시: {final_stats['total_refreshes']}회\n"
-                f"신비의 메달: {final_stats['mystic_medal_bought']}개\n"
-                f"성약의 책갈피: {final_stats['covenant_bookmark_bought']}개\n"
-                f"{'='*50}"
-            )
+            completion_msg = self._format_stats_summary("✅ 자동화 완료", final_stats)
             self.log(completion_msg)
             
         except Exception as e:
@@ -516,12 +511,7 @@ class SecretShopGUI:
             
             if stats.get('total_refreshes', 0) > 0:
                 stop_msg = (
-                    f"\n{'='*50}\n"
-                    f"⛔ 봇이 중지되었습니다.\n"
-                    f"총 리프레시: {stats.get('total_refreshes', 0)}회\n"
-                    f"신비의 메달: {stats.get('mystic_medal_bought', 0)}개\n"
-                    f"성약의 책갈피: {stats.get('covenant_bookmark_bought', 0)}개\n"
-                    f"{'='*50}"
+                    self._format_stats_summary("⛔ 자동화 중지", stats)
                 )
                 self.log(stop_msg)
             else:
@@ -531,7 +521,8 @@ class SecretShopGUI:
         
     def _update_stats(self, stats):
         """통계 업데이트"""
-        self.total_refresh_label.config(text=str(stats.get("total_refreshes", 0)))
+        completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
+        self.total_refresh_label.config(text=str(completed_runs))
         self.mystic_label.config(text=str(stats.get("mystic_medal_bought", 0)))
         self.bookmark_label.config(text=str(stats.get("covenant_bookmark_bought", 0)))
         
@@ -549,6 +540,41 @@ class SecretShopGUI:
             self.elapsed_time_label.config(text=f"{hours:02d}:{minutes:02d}:{seconds:02d}")
         else:
             self.elapsed_time_label.config(text="00:00:00")
+
+    def _format_stats_summary(self, title, stats):
+        """완료/중지 통계를 읽기 쉬운 로그 메시지로 만듭니다."""
+        completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
+        successful_refreshes = stats.get("successful_refreshes", max(completed_runs - 1, 0))
+        mystic_count = stats.get("mystic_medal_bought", 0)
+        bookmark_count = stats.get("covenant_bookmark_bought", 0)
+        elapsed = self._format_elapsed_seconds(stats.get("elapsed_time", 0))
+
+        return (
+            f"\n{'=' * 42}\n"
+            f"{title}\n"
+            f"- 진행 완료: {completed_runs}회\n"
+            f"- 갱신 성공: {successful_refreshes}회\n"
+            f"- 신비의 메달 구매: {mystic_count}개\n"
+            f"- 성약의 책갈피 구매: {bookmark_count}개\n"
+            f"- 소요 시간: {elapsed}\n"
+            f"{'=' * 42}"
+        )
+
+    def _format_elapsed_seconds(self, seconds):
+        try:
+            seconds = int(seconds)
+        except (TypeError, ValueError):
+            seconds = 0
+
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        remaining_seconds = seconds % 60
+
+        if hours:
+            return f"{hours}시간 {minutes}분 {remaining_seconds}초"
+        if minutes:
+            return f"{minutes}분 {remaining_seconds}초"
+        return f"{remaining_seconds}초"
         
     def _disconnect_adb(self):
         """ADB 연결 해제"""

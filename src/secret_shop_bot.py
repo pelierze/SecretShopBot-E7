@@ -129,6 +129,8 @@ class SecretShopBot:
         # 통계
         self.stats = {
             "total_refreshes": 0,
+            "completed_runs": 0,
+            "successful_refreshes": 0,
             "mystic_medal_bought": 0,
             "covenant_bookmark_bought": 0,
             "total_cost": 0,
@@ -175,16 +177,18 @@ class SecretShopBot:
             # 중지 요청 확인 (최우선)
             if self.user_action == 'stop':
                 logger.info("⛔ 사용자가 중지를 선택했습니다.")
-                return self.stats
+                return self._finish_stats()
             
             logger.info(f"=== 리프레시 {refresh_num + 1}/{max_refresh_count} ===")
+            self.stats["completed_runs"] = refresh_num + 1
+            self.stats["total_refreshes"] = self.stats["completed_runs"]
             
             # 일시정지 상태 확인
             while self.paused:
                 time.sleep(0.1)  # 빠른 반응을 위해 0.1초로 감소
                 if self.user_action == 'stop':
                     logger.info("⛔ 사용자가 중지를 선택했습니다.")
-                    return self.stats
+                    return self._finish_stats()
             
             # 상점 첫 페이지 스캔
             found_items = self._scan_shop_page(page_num=1)
@@ -196,7 +200,7 @@ class SecretShopBot:
                     # 중지 요청 확인
                     if self.user_action == 'stop':
                         logger.info("⛔ 사용자가 중지를 선택했습니다.")
-                        return self.stats
+                        return self._finish_stats()
                     
                     logger.info(f"⭐ 아이템 발견: {item_name}")
                     if self._purchase_item(item_name, item_location, buy_count_per_item):
@@ -205,7 +209,7 @@ class SecretShopBot:
                     else:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
-                        return self.stats
+                        return self._finish_stats()
             
             # 첫 페이지 처리 완료 → 드래그하여 두 번째 페이지로 이동
             logger.debug("두 번째 페이지로 이동")
@@ -222,7 +226,7 @@ class SecretShopBot:
                     # 중지 요청 확인
                     if self.user_action == 'stop':
                         logger.info("⛔ 사용자가 중지를 선택했습니다.")
-                        return self.stats
+                        return self._finish_stats()
                     
                     logger.info(f"⭐ 아이템 발견: {item_name}")
                     if self._purchase_item(item_name, item_location, buy_count_per_item):
@@ -231,27 +235,40 @@ class SecretShopBot:
                     else:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
-                        return self.stats
+                        return self._finish_stats()
             else:
                 logger.debug("두 번째 페이지에도 아이템 없음")
             
             # 상점 리프레시
             if refresh_num < max_refresh_count - 1:  # 마지막 회차가 아니면
                 if self._refresh_shop():
-                    self.stats["total_refreshes"] += 1
+                    self.stats["successful_refreshes"] += 1
                     time.sleep(1)  # 리프레시 후 대기
                 else:
                     logger.error("⚠️  상점 갱신에 실패했습니다. 다시 시도합니다...")
                     time.sleep(2)  # 실패 시 조금 더 대기
         
-        # 종료 시간 기록
-        import time as time_module
-        self.stats["end_time"] = time_module.time()
-        self.stats["elapsed_time"] = int(self.stats["end_time"] - self.stats["start_time"])
+        self._finish_stats()
         
         logger.info("비밀상점 자동화 완료")
-        logger.info(f"통계: {self.stats}")
+        logger.info(
+            "완료 요약 - 진행: %s회, 갱신 성공: %s회, 신비의 메달: %s개, 성약의 책갈피: %s개, 소요 시간: %s초",
+            self.stats["completed_runs"],
+            self.stats["successful_refreshes"],
+            self.stats["mystic_medal_bought"],
+            self.stats["covenant_bookmark_bought"],
+            self.stats["elapsed_time"],
+        )
         
+        return self.stats
+
+    def _finish_stats(self) -> Dict:
+        """종료 시각과 소요 시간을 기록하고 통계를 반환합니다."""
+        import time as time_module
+
+        if self.stats.get("start_time") and not self.stats.get("end_time"):
+            self.stats["end_time"] = time_module.time()
+            self.stats["elapsed_time"] = int(self.stats["end_time"] - self.stats["start_time"])
         return self.stats
     
     def _scan_shop_page(self, page_num: int = 1) -> Dict[str, tuple]:
