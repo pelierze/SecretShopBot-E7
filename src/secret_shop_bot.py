@@ -92,12 +92,13 @@ class SecretShopBot:
         
         # 화면 스와이프 좌표 (화면 크기에 따라 조정 필요)
         # 기본 해상도: 1280x720 (240dpi)
+        # 1번 구역(왼쪽 위)에서 아래로 드래그
         self.screen_width, self.screen_height = self.adb.get_screen_size()
         logger.info(f"화면 해상도: {self.screen_width}x{self.screen_height}")
         
-        self.swipe_start_y = int(self.screen_height * 0.6)
-        self.swipe_end_y = int(self.screen_height * 0.3)
-        self.swipe_x = int(self.screen_width * 0.3)  # 왼쪽으로 이동하여 불필요한 클릭 방지
+        self.swipe_x = int(self.screen_width * 0.25)  # 1번 구역 (X: 25%)
+        self.swipe_start_y = int(self.screen_height * 0.25)  # 1번 구역 (Y: 25%)
+        self.swipe_end_y = int(self.screen_height * 0.75)  # 아래로 드래그
         
     def run(self, max_refresh_count: int, buy_count_per_item: int) -> Dict:
         """
@@ -122,7 +123,7 @@ class SecretShopBot:
             
             # 일시정지 상태 확인
             while self.paused:
-                time.sleep(0.5)
+                time.sleep(0.1)  # 빠른 반응을 위해 0.1초로 감소
                 if self.user_action == 'stop':
                     logger.info("⛔ 사용자가 중지를 선택했습니다.")
                     return self.stats
@@ -179,11 +180,15 @@ class SecretShopBot:
     
     def _scan_shop_page(self) -> Dict[str, tuple]:
         """
-        현재 상점 페이지 스캔
+        현재 상점 페이지 스캠
         
         Returns:
             발견한 아이템 딕셔너리 {아이템명: (x, y, w, h)}
         """
+        # 중지 확인
+        if self.user_action == 'stop':
+            return {}
+        
         # 스크린샷 촬영
         self.adb.screenshot(str(self.screenshot_path))
         time.sleep(0.3)
@@ -222,6 +227,11 @@ class SecretShopBot:
         all_success = True
         
         for i in range(count):
+            # 중지 확인
+            if self.user_action == 'stop':
+                logger.info("⛔ 중지 요청 - 구매 중단")
+                return False
+            
             logger.info(f"구매 시도 {i + 1}/{count}")
             
             # 1단계: 아이템과 같은 라인의 오른쪽에 있는 구입 버튼 찾기 및 클릭
@@ -231,10 +241,22 @@ class SecretShopBot:
                 all_success = False
                 break
             
+            # 중지 확인
+            if self.user_action == 'stop':
+                logger.info("⛔ 중지 요청 - 구매 중단")
+                return False
+            
             # 구입 버튼 클릭
             btn_center_x, btn_center_y = self.matcher.get_center(purchase_btn)
             self.adb.tap(btn_center_x, btn_center_y, delay=0.5)
             time.sleep(0.3)
+            
+            # 중지 확인
+            if self.user_action == 'stop':
+                logger.info("⛔ 중지 요청 - 구매 중단")
+                # 화면 닫기
+                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+                return False
             
             # 2단계: 구매 버튼 클릭 (최종 구매)
             if self._click_button("buy"):
@@ -357,6 +379,10 @@ class SecretShopBot:
         Returns:
             클릭 성공 여부
         """
+        # 중지 확인
+        if self.user_action == 'stop':
+            return False
+        
         # 스크린샷 촬영
         self.adb.screenshot(str(self.screenshot_path))
         time.sleep(0.2)
