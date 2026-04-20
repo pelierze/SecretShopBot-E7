@@ -157,7 +157,7 @@ class SecretShopBot:
                     return self.stats
             
             # 상점 첫 페이지 스캔
-            found_items = self._scan_shop_page()
+            found_items = self._scan_shop_page(page_num=1)
             
             # 첫 페이지에서 아이템 발견 시 구매
             if found_items:
@@ -183,7 +183,7 @@ class SecretShopBot:
             time.sleep(0.5)
             
             # 두 번째 페이지 스캔
-            found_items = self._scan_shop_page()
+            found_items = self._scan_shop_page(page_num=2)
             
             # 두 번째 페이지에서 아이템 발견 시 구매
             if found_items:
@@ -224,7 +224,7 @@ class SecretShopBot:
         
         return self.stats
     
-    def _scan_shop_page(self) -> Dict[str, tuple]:
+    def _scan_shop_page(self, page_num: int = 1) -> Dict[str, tuple]:
         """
         현재 상점 페이지 스캠
         
@@ -262,7 +262,7 @@ class SecretShopBot:
         if found_items:
             logger.info(f"🔍 스캔 완료 - 발견한 아이템: {list(found_items.keys())}")
         else:
-            logger.info("🔍 스캔 완료 - 아이템 없음")
+            logger.info(f"🔍 스캔 완료 ({page_num}페이지) - 아이템 없음")
         
         return found_items
     
