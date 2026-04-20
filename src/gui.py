@@ -71,8 +71,11 @@ class SecretShopGUI:
         self.connect_btn = ttk.Button(connection_frame, text="연결", command=self._connect_adb)
         self.connect_btn.grid(row=0, column=4, padx=5)
         
+        self.disconnect_btn = ttk.Button(connection_frame, text="연결 해제", command=self._disconnect_adb, state=tk.DISABLED)
+        self.disconnect_btn.grid(row=0, column=5, padx=5)
+        
         self.connection_status = ttk.Label(connection_frame, text="● 연결 안됨", foreground="red")
-        self.connection_status.grid(row=0, column=5, padx=10)
+        self.connection_status.grid(row=0, column=6, padx=10)
         
         # === 설정 섹션 ===
         settings_frame = ttk.LabelFrame(self.root, text="매크로 설정", padding=10)
@@ -84,11 +87,11 @@ class SecretShopGUI:
         self.refresh_count_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(settings_frame, text="회").grid(row=0, column=2, sticky=tk.W)
         
-        ttk.Label(settings_frame, text="아이템당 구매 횟수:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(settings_frame, text="발견된 아이템 구매 개수:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.buy_count_entry = ttk.Entry(settings_frame, width=10)
         self.buy_count_entry.insert(0, "1")
         self.buy_count_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(settings_frame, text="개").grid(row=1, column=2, sticky=tk.W)
+        ttk.Label(settings_frame, text="개 (같은 아이템을 여러 번 구매)").grid(row=1, column=2, sticky=tk.W)
         
         ttk.Label(settings_frame, text="이미지 매칭 정확도:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.threshold_scale = ttk.Scale(settings_frame, from_=0.7, to=0.99, orient=tk.HORIZONTAL, length=150)
@@ -190,6 +193,8 @@ class SecretShopGUI:
         if self.adb_controller.connect(ip, port):
             self.connection_status.config(text="● 연결됨", foreground="green")
             self.start_btn.config(state=tk.NORMAL)
+            self.connect_btn.config(state=tk.DISABLED)
+            self.disconnect_btn.config(state=tk.NORMAL)
             messagebox.showinfo("성공", f"ADB 연결 성공: {ip}:{port}")
         else:
             self.connection_status.config(text="● 연결 실패", foreground="red")
@@ -309,13 +314,29 @@ class SecretShopGUI:
         self.mystic_label.config(text=str(stats.get("mystic_medal_bought", 0)))
         self.bookmark_label.config(text=str(stats.get("covenant_bookmark_bought", 0)))
         
+    def _disconnect_adb(self):
+        """ADB 연결 해제"""
+        if self.is_running:
+            messagebox.showwarning("경고", "봇이 실행 중일 때는 연결을 해제할 수 없습니다.")
+            return
+        
+        if self.adb_controller:
+            self.adb_controller = None
+        
+        self.connection_status.config(text="● 연결 안됨", foreground="red")
+        self.start_btn.config(state=tk.DISABLED)
+        self.connect_btn.config(state=tk.NORMAL)
+        self.disconnect_btn.config(state=tk.DISABLED)
+        messagebox.showinfo("성공", "ADB 연결이 해제되었습니다.")
+    
     def _reset_ui(self):
         """UI 초기 상태로 복귀"""
-        self.start_btn.config(state=tk.NORMAL)
+        self.start_btn.config(state=tk.NORMAL if self.adb_controller else tk.DISABLED)
         self.pause_btn.config(state=tk.DISABLED)
         self.resume_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.DISABLED)
-        self.connect_btn.config(state=tk.NORMAL)
+        self.connect_btn.config(state=tk.DISABLED if self.adb_controller else tk.NORMAL)
+        self.disconnect_btn.config(state=tk.NORMAL if self.adb_controller else tk.DISABLED)
         self.pause_label.config(text="")
 
 
