@@ -82,28 +82,33 @@ release/SecretShopBot-E7-v1.0.0.zip
 https://github.com/pelierze/SecretShopBot-E7/releases/latest
 ```
 
-## 4. 자동 설정 업데이트 운영
+## 4. 원격 스크립트 동기화 운영
 
-앱은 실행 시 아래 원격 설정 파일을 확인합니다.
+앱은 실행 시 아래 원격 스크립트 파일을 확인합니다.
 
 ```text
-https://raw.githubusercontent.com/pelierze/SecretShopBot-E7/master/update_config.json
+https://raw.githubusercontent.com/pelierze/SecretShopBot-E7/master/remote_script.json
 ```
 
-배포자가 `update_config.json`을 수정해서 `master`에 푸시하면 사용자는 exe를 새로 받지 않아도 다음 실행 시 설정을 자동으로 적용받습니다.
+배포자가 `remote_script.json`을 수정해서 `master`에 푸시하면 사용자는 exe를 새로 받지 않아도 다음 실행 시 GUI 표시값과 매크로 동작 정의를 자동으로 적용받습니다.
 
-자동 업데이트로 바꿀 수 있는 값:
+원격 스크립트로 바꿀 수 있는 값:
 
+- GUI 제목, 섹션명, 버튼명, 라벨명
 - 기본 리프레시 횟수
 - 구매 완료 검증 횟수
 - 이미지별 매칭 정확도
 - 스와이프 위치 비율
 - 스와이프 시간
+- 활성화할 구매 대상 아이템
+- 아이템/버튼 이미지 파일명
+- 구매/갱신/검증 대기 시간
+- 구매 버튼 후보 탐색 기준
 
 주의:
 
-- 원격 설정은 JSON 데이터만 사용합니다.
+- 원격 스크립트는 JSON 데이터만 사용합니다.
 - 원격 Python 코드나 명령은 실행하지 않습니다.
 - `schema_version`은 현재 `1`로 유지하세요.
 - 임계값은 `70`부터 `99` 사이 정수로 입력하세요.
-- 설정 적용 실패 시 앱은 내장 설정 또는 캐시된 설정으로 실행됩니다.
+- 동기화 실패 시 앱은 캐시된 스크립트, 내장 스크립트 순서로 실행됩니다.
