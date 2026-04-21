@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "script_version": "2026.04.21.1",
+  "app_min_version": "1.0.0",
+  "gui": {
+    "window_title": "에픽세븐 비밀상점 자동화",
+    "sections": {
+      "connection": "ADB 연결",
+      "settings": "매크로 설정",
+      "stats": "통계",
+      "log": "로그"
+    },
+    "labels": {
+      "ip": "IP 주소:",
+      "port": "포트:",
+      "device": "장치:",
+      "refresh_count": "리프레시 횟수:",
+      "refresh_count_unit": "회",
+      "purchase_verification_count": "구매 완료 검증 횟수:",
+      "purchase_verification_count_unit": "회 (비활성화 버튼 확인 반복, 권장: 3회)",
+      "threshold_header": "=== 이미지 매칭 정확도 (70-99) ===",
+      "mystic_medal": "신비의 메달:",
+      "covenant_bookmark": "성약의 책갈피:",
+      "purchase_button": "구입 버튼:",
+      "buy_button": "구매 버튼:",
+      "refresh_button": "갱신 버튼:",
+      "debug_mode": "디버그 모드 (상세 로그)"
+    },
+    "buttons": {
+      "scan": "장치 검색",
+      "connect": "연결",
+      "disconnect": "연결 해제",
+      "start": "▶ 시작",
+      "pause": "⏸ 일시정지",
+      "resume": "▶ 재개",
+      "stop": "■ 중지",
+      "image_test": "💡 이미지 테스트"
+    },
+    "stats": {
+      "total_refreshes": "진행 완료:",
+      "mystic_medal": "신비의 메달:",
+      "covenant_bookmark": "성약의 책갈피:",
+      "elapsed_time": "경과 시간:"
+    }
+  },
+  "defaults": {
+    "refresh_count": 100,
+    "purchase_verification_count": 3
+  },
+  "thresholds": {
+    "mystic_medal": 92,
+    "covenant_bookmark": 92,
+    "purchase_button": 92,
+    "buy_button": 92,
+    "refresh_button": 92
+  },
+  "swipe": {
+    "x_ratio": 0.75,
+    "start_y_ratio": 0.75,
+    "end_y_ratio": 0.25,
+    "duration_ms": 500
+  },
+  "macro": {
+    "enabled_items": [
+      "mystic_medal",
+      "covenant_bookmark"
+    ],
+    "items": {
+      "mystic_medal": {
+        "label": "신비의 메달",
+        "image": "mystic_medal.png",
+        "stat_key": "mystic_medal_bought",
+        "log_prefix": "신비의 메달"
+      },
+      "covenant_bookmark": {
+        "label": "성약의 책갈피",
+        "image": "covenant_bookmark.PNG",
+        "stat_key": "covenant_bookmark_bought",
+        "log_prefix": "성약의 책갈피"
+      }
+    },
+    "buttons": {
+      "refresh": "refresh_button.png",
+      "refresh_confirm": "confirm_button.png",
+      "purchase": "purchase_button.png",
+      "buy": "buy_button.png",
+      "purchase_disabled": "purchase_button_disabled.png"
+    },
+    "timings": {
+      "after_screenshot": 0.3,
+      "after_scroll": 0.5,
+      "refresh_confirm_delay": 0.5,
+      "after_refresh": 0.8,
+      "refresh_retry": 2.0,
+      "after_purchase_tap": 0.5,
+      "buy_button_wait_attempts": 4,
+      "buy_button_wait_interval": 0.5,
+      "verify_interval": 0.3,
+      "close_popup_delay": 0.3
+    },
+    "thresholds": {
+      "purchase_candidate": 70,
+      "verification_disabled_button": 85
+    },
+    "layout": {
+      "purchase_line_y_tolerance": 50
+    }
+  }
+}

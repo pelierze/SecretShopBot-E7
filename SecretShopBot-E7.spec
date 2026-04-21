@@ -17,6 +17,7 @@ def collect_images():
 datas = collect_images() + [
     ('tools', 'tools'),
     ('update_config.json', '.'),
+    ('remote_script.json', '.'),
 ]
 
 a = Analysis(
