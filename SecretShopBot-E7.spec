@@ -7,7 +7,7 @@ def collect_images():
     datas = []
     for root, dirs, files in os.walk('images'):
         for f in files:
-            if f.endswith('.png') and not f.endswith('_backup.png'):
+            if f.lower().endswith('.png') and not f.lower().endswith('_backup.png'):
                 src = os.path.join(root, f)
                 dst = root
                 datas.append((src, dst))
