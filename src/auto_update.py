@@ -151,7 +151,10 @@ class SettingsUpdater:
         try:
             remote_data = fetch_json(self.update_url)
             config = validate_config(remote_data)
-            self.save_cache(config)
+            try:
+                self.save_cache(config)
+            except Exception as exc:
+                logger.info("원격 설정 캐시 저장에 실패했습니다: %s", exc)
             return config, "remote"
         except Exception as exc:
             logger.info("원격 설정 업데이트를 사용할 수 없습니다: %s", exc)
