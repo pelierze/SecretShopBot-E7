@@ -14,6 +14,7 @@
       "ip": "IP 주소:",
       "port": "포트:",
       "device": "장치:",
+      "macro": "매크로:",
       "refresh_count": "리프레시 횟수:",
       "refresh_count_unit": "회",
       "purchase_verification_count": "구매 완료 검증 횟수:",
@@ -105,5 +106,14 @@
     "layout": {
       "purchase_line_y_tolerance": 50
     }
-  }
+  },
+  "macros": [
+    {
+      "id": "secret_shop",
+      "name": "비밀상점 갱신",
+      "description": "신비의 메달과 성약의 책갈피를 찾고 구매합니다.",
+      "runner": "secret_shop",
+      "steps": []
+    }
+  ]
 }

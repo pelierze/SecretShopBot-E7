@@ -119,6 +119,8 @@ https://raw.githubusercontent.com/pelierze/SecretShopBot-E7/master/remote_script
 - 아이템과 버튼 이미지 파일명
 - 구매, 갱신, 검증 대기 시간
 - 구매 버튼 후보 탐색 기준
+- 실행 가능한 매크로 목록
+- JSON steps 기반 매크로 동작 순서
 
 원격 스크립트는 JSON 데이터만 사용합니다. 원격 Python 코드나 명령은 실행하지 않습니다.
 
@@ -146,6 +148,23 @@ images/buttons
 - `images/buttons/purchase_button.png`
 - `images/buttons/buy_button.png`
 - `images/buttons/purchase_button_disabled.png`
+
+## 원격 매크로 방식
+
+배포된 exe는 ADB 연결, 화면 캡처, 이미지 매칭, 클릭, 스와이프를 수행하는 구동기 역할을 합니다.
+
+매크로 목록과 일부 동작 정의는 `remote_script.json`에서 불러옵니다. 현재 비밀상점 매크로는 내장 실행기로 동작하며, 이후 추가 매크로는 JSON steps 방식으로 정의할 수 있습니다.
+
+지원되는 JSON steps 액션:
+
+- `log`
+- `wait`
+- `screenshot`
+- `tap_image`
+- `swipe`
+- `repeat`
+
+보안을 위해 원격 Python 코드, 셸 명령, 임의 파일 경로는 실행하지 않습니다.
 
 ## 문제 해결
 

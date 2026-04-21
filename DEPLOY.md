@@ -7,20 +7,20 @@
 VSCode에서 `Terminal > New Terminal`을 열고 프로젝트 루트에서 실행합니다.
 
 ```powershell
-.\build_release.ps1 -Version 1.0.0
+.\build_release.ps1 -Version 1.0.5
 ```
 
 PowerShell 실행 정책 오류가 나오면 아래 명령을 사용합니다.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build_release.ps1 -Version 1.0.0
+powershell -ExecutionPolicy Bypass -File .\build_release.ps1 -Version 1.0.5
 ```
 
 성공하면 아래 파일이 생성됩니다.
 
 ```text
-release/SecretShopBot-E7-v1.0.0.zip
-release/SecretShopBot-E7-v1.0.0.zip.sha256.txt
+release/SecretShopBot-E7-v1.0.5.zip
+release/SecretShopBot-E7-v1.0.5.zip.sha256.txt
 ```
 
 ## 2. GitHub에 코드 푸시
@@ -44,16 +44,16 @@ https://github.com/pelierze/SecretShopBot-E7/releases/new
 
 입력값:
 
-- Tag: `v1.0.0`
+- Tag: `v1.0.5`
 - Target: `master`
-- Release title: `SecretShopBot-E7 v1.0.0`
+- Release title: `SecretShopBot-E7 v1.0.5`
 
 Release description 예시:
 
 ```markdown
 ## 다운로드 및 실행
 
-1. 아래 Assets에서 `SecretShopBot-E7-v1.0.0.zip`을 다운로드합니다.
+1. 아래 Assets에서 `SecretShopBot-E7-v1.0.5.zip`을 다운로드합니다.
 2. 압축을 풉니다.
 3. `SecretShopBot-E7.exe`를 실행합니다.
 
@@ -65,13 +65,13 @@ Release description 예시:
 
 ## SHA256
 
-`release/SecretShopBot-E7-v1.0.0.zip.sha256.txt`의 값을 참고하세요.
+`release/SecretShopBot-E7-v1.0.5.zip.sha256.txt`의 값을 참고하세요.
 ```
 
 Assets에는 아래 파일을 첨부합니다.
 
 ```text
-release/SecretShopBot-E7-v1.0.0.zip
+release/SecretShopBot-E7-v1.0.5.zip
 ```
 
 마지막으로 `Publish release`를 누릅니다.
@@ -104,6 +104,8 @@ https://raw.githubusercontent.com/pelierze/SecretShopBot-E7/master/remote_script
 - 아이템/버튼 이미지 파일명
 - 구매/갱신/검증 대기 시간
 - 구매 버튼 후보 탐색 기준
+- 실행 가능한 매크로 목록
+- JSON steps 기반 매크로 동작 순서
 
 주의:
 
@@ -112,3 +114,5 @@ https://raw.githubusercontent.com/pelierze/SecretShopBot-E7/master/remote_script
 - `schema_version`은 현재 `1`로 유지하세요.
 - 임계값은 `70`부터 `99` 사이 정수로 입력하세요.
 - 동기화 실패 시 앱은 캐시된 스크립트, 내장 스크립트 순서로 실행됩니다.
+- `runner`가 `secret_shop`인 매크로는 exe에 내장된 비밀상점 실행기를 사용합니다.
+- `runner`가 `steps`인 매크로는 허용된 JSON 액션만 순서대로 실행합니다.

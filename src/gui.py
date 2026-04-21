@@ -13,6 +13,7 @@ from pathlib import Path
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 
 from .adb_controller import ADBController
+from .json_macro_engine import JsonMacroEngine
 from .remote_script import RemoteScriptUpdater
 from .secret_shop_bot import SecretShopBot
 
@@ -64,6 +65,8 @@ class SecretShopGUI:
         self.bot_thread = None
         self.adb_server_started = False
         self.remote_settings = {}
+        self.macro_definitions = [self._default_macro_definition()]
+        self.selected_macro_id = "secret_shop"
         
         # UI 생성
         self._create_widgets()
@@ -179,6 +182,17 @@ class SecretShopGUI:
         # === 제어 섹션 ===
         control_frame = ttk.Frame(self.root, padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        self.macro_select_label = ttk.Label(control_frame, text="매크로:")
+        self.macro_select_label.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.macro_combo = ttk.Combobox(
+            control_frame,
+            width=22,
+            state="readonly",
+        )
+        self.macro_combo.pack(side=tk.LEFT, padx=(0, 10))
+        self._refresh_macro_combo()
         
         self.start_btn = ttk.Button(control_frame, text="▶ 시작", command=self._start_bot, state=tk.DISABLED)
         self.start_btn.pack(side=tk.LEFT, padx=5)
@@ -255,6 +269,15 @@ class SecretShopGUI:
         file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(file_handler)
 
+    def _default_macro_definition(self):
+        return {
+            "id": "secret_shop",
+            "name": "비밀상점 갱신",
+            "description": "신비의 메달과 성약의 책갈피를 찾고 구매합니다.",
+            "runner": "secret_shop",
+            "steps": [],
+        }
+
     def _start_settings_update(self):
         """원격 설정 업데이트를 백그라운드에서 확인합니다."""
         thread = threading.Thread(target=self._load_settings_update, daemon=True)
@@ -275,6 +298,7 @@ class SecretShopGUI:
 
         self.remote_settings = config
         self._apply_remote_gui(config.get("gui", {}))
+        self._apply_remote_macros(config.get("macros", []))
 
         defaults = config.get("defaults", {})
         thresholds = config.get("thresholds", {})
@@ -302,6 +326,35 @@ class SecretShopGUI:
         version = config.get("script_version", config.get("config_version", "unknown"))
         logger.info(f"원격 스크립트 동기화 완료 ({source}, 버전: {version})")
 
+    def _apply_remote_macros(self, macros):
+        if not isinstance(macros, list) or not macros:
+            self.macro_definitions = [self._default_macro_definition()]
+        else:
+            self.macro_definitions = macros
+        self._refresh_macro_combo()
+
+    def _refresh_macro_combo(self):
+        if not hasattr(self, "macro_combo"):
+            return
+        labels = [macro.get("name", macro.get("id", "macro")) for macro in self.macro_definitions]
+        self.macro_combo["values"] = labels
+        current_id = self.selected_macro_id
+        selected_index = 0
+        for index, macro in enumerate(self.macro_definitions):
+            if macro.get("id") == current_id:
+                selected_index = index
+                break
+        if labels:
+            self.macro_combo.current(selected_index)
+
+    def _get_selected_macro(self):
+        selected_index = self.macro_combo.current() if hasattr(self, "macro_combo") else 0
+        if selected_index < 0 or selected_index >= len(self.macro_definitions):
+            selected_index = 0
+        macro = self.macro_definitions[selected_index]
+        self.selected_macro_id = macro.get("id", "secret_shop")
+        return macro
+
     def _apply_remote_gui(self, gui_config):
         """원격 GUI 정의 중 현재 클라이언트가 지원하는 항목만 적용합니다."""
         if not isinstance(gui_config, dict):
@@ -323,6 +376,7 @@ class SecretShopGUI:
 
         labels = gui_config.get("labels", {})
         label_widgets = {
+            "macro": self.macro_select_label,
             "ip": self.ip_label,
             "port": self.port_label,
             "device": self.device_label,
@@ -483,12 +537,23 @@ class SecretShopGUI:
         
         # 봇 생성 (이미지별 임계값 및 디버그 모드 전달)
         debug_mode = self.debug_mode_var.get()
-        self.bot = SecretShopBot(
-            self.adb_controller,
-            thresholds=thresholds,
-            debug_mode=debug_mode,
-            automation_settings=self.remote_settings,
-        )
+        selected_macro = self._get_selected_macro()
+        runner = selected_macro.get("runner", "secret_shop")
+        if runner == "steps":
+            self.bot = JsonMacroEngine(
+                self.adb_controller,
+                macro_definition=selected_macro,
+                thresholds=thresholds,
+                debug_mode=debug_mode,
+                automation_settings=self.remote_settings,
+            )
+        else:
+            self.bot = SecretShopBot(
+                self.adb_controller,
+                thresholds=thresholds,
+                debug_mode=debug_mode,
+                automation_settings=self.remote_settings,
+            )
         
         # UI 상태 변경
         self.is_running = True
@@ -498,6 +563,7 @@ class SecretShopGUI:
         self.stop_btn.config(state=tk.NORMAL)
         self.connect_btn.config(state=tk.DISABLED)
         self.disconnect_btn.config(state=tk.DISABLED)
+        self.macro_combo.config(state=tk.DISABLED)
         
         # 설정 필드 비활성화
         self.refresh_count_entry.config(state=tk.DISABLED)
@@ -732,6 +798,7 @@ class SecretShopGUI:
         self.stop_btn.config(state=tk.DISABLED)
         self.connect_btn.config(state=tk.DISABLED if self.adb_controller else tk.NORMAL)
         self.disconnect_btn.config(state=tk.NORMAL if self.adb_controller else tk.DISABLED)
+        self.macro_combo.config(state="readonly")
         self.pause_label.config(text="")
         
         # 설정 필드 활성화

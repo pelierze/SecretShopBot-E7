@@ -22,6 +22,15 @@ DEFAULT_SCRIPT_URL = (
 
 SAFE_FILENAME = re.compile(r"^[A-Za-z0-9_. -]+$")
 SAFE_KEY = re.compile(r"^[A-Za-z0-9_]+$")
+ALLOWED_MACRO_RUNNERS = {"secret_shop", "steps"}
+ALLOWED_STEP_ACTIONS = {
+    "log",
+    "wait",
+    "screenshot",
+    "tap_image",
+    "swipe",
+    "repeat",
+}
 
 
 def get_resource_root() -> Path:
@@ -131,6 +140,7 @@ def validate_remote_script(data: Dict[str, Any]) -> Dict[str, Any]:
             "thresholds": {},
             "layout": {},
         },
+        "macros": [],
     }
 
     gui = data.get("gui", {})
@@ -165,6 +175,10 @@ def validate_remote_script(data: Dict[str, Any]) -> Dict[str, Any]:
     macro = data.get("macro", {})
     if isinstance(macro, dict):
         validated["macro"] = validate_macro(macro)
+
+    macros = data.get("macros", [])
+    if isinstance(macros, list):
+        validated["macros"] = validate_macros(macros)
 
     return validated
 
@@ -211,8 +225,7 @@ def validate_macro(macro: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(enabled_items, list):
         for item_key in enabled_items:
             key = safe_key(item_key)
-            if key in validated["items"]:
-                validated["enabled_items"].append(key)
+            validated["enabled_items"].append(key)
 
     buttons = macro.get("buttons", {})
     if isinstance(buttons, dict):
@@ -259,6 +272,96 @@ def validate_macro(macro: Dict[str, Any]) -> Dict[str, Any]:
     return validated
 
 
+def validate_macros(macros: list[Any]) -> list[Dict[str, Any]]:
+    validated_macros = []
+    seen_ids = set()
+
+    for raw_macro in macros[:50]:
+        if not isinstance(raw_macro, dict):
+            continue
+
+        macro_id = safe_key(raw_macro.get("id", ""))
+        if not macro_id or macro_id in seen_ids:
+            continue
+        seen_ids.add(macro_id)
+
+        runner = safe_key(raw_macro.get("runner", "steps"))
+        if runner not in ALLOWED_MACRO_RUNNERS:
+            raise ValueError(f"unsupported macro runner: {runner}")
+
+        validated = {
+            "id": macro_id,
+            "name": safe_text(raw_macro.get("name", macro_id), 80),
+            "description": safe_text(raw_macro.get("description", ""), 160),
+            "runner": runner,
+            "steps": [],
+        }
+
+        steps = raw_macro.get("steps", [])
+        if runner == "steps":
+            if not isinstance(steps, list) or not steps:
+                raise ValueError(f"macro {macro_id} has no steps")
+            validated["steps"] = validate_steps(steps)
+        elif isinstance(steps, list):
+            validated["steps"] = validate_steps(steps)
+
+        validated_macros.append(validated)
+
+    return validated_macros
+
+
+def validate_steps(steps: list[Any], depth: int = 0) -> list[Dict[str, Any]]:
+    if depth > 3:
+        raise ValueError("step nesting is too deep")
+
+    validated_steps = []
+    for raw_step in steps[:500]:
+        if not isinstance(raw_step, dict):
+            continue
+
+        action = safe_key(raw_step.get("action", ""))
+        if action not in ALLOWED_STEP_ACTIONS:
+            raise ValueError(f"unsupported step action: {action}")
+
+        step: Dict[str, Any] = {"action": action}
+
+        if "message" in raw_step:
+            step["message"] = safe_text(raw_step["message"], 200)
+        if "target" in raw_step:
+            step["target"] = safe_key(raw_step["target"])
+        if "target_type" in raw_step:
+            target_type = safe_key(raw_step["target_type"])
+            if target_type not in {"button", "item"}:
+                raise ValueError(f"unsupported target type: {target_type}")
+            step["target_type"] = target_type
+        if "image" in raw_step:
+            step["image"] = safe_filename(raw_step["image"])
+        if "required" in raw_step:
+            step["required"] = bool(raw_step["required"])
+        if "threshold" in raw_step:
+            step["threshold"] = clamp_int(raw_step["threshold"], 50, 99)
+        if "seconds" in raw_step:
+            step["seconds"] = clamp_float(raw_step["seconds"], 0.0, 60.0)
+        if "duration_ms" in raw_step:
+            step["duration_ms"] = clamp_int(raw_step["duration_ms"], 100, 5000)
+        if "count" in raw_step:
+            step["count"] = clamp_int(raw_step["count"], 1, 10000)
+
+        for ratio_key in ("x_ratio", "start_y_ratio", "end_y_ratio"):
+            if ratio_key in raw_step:
+                step[ratio_key] = clamp_float(raw_step[ratio_key], 0.0, 1.0)
+
+        if action == "repeat":
+            nested_steps = raw_step.get("steps", [])
+            if not isinstance(nested_steps, list) or not nested_steps:
+                raise ValueError("repeat step requires nested steps")
+            step["steps"] = validate_steps(nested_steps, depth + 1)
+
+        validated_steps.append(step)
+
+    return validated_steps
+
+
 class RemoteScriptUpdater:
     def __init__(self, script_url: str = DEFAULT_SCRIPT_URL):
         self.script_url = script_url
@@ -269,7 +372,10 @@ class RemoteScriptUpdater:
         try:
             remote_data = fetch_json(self.script_url)
             script = validate_remote_script(remote_data)
-            self.save_cache(script)
+            try:
+                self.save_cache(script)
+            except Exception as exc:
+                logger.info("원격 스크립트 캐시 저장에 실패했습니다: %s", exc)
             return script, "remote"
         except Exception as exc:
             logger.info("원격 스크립트 동기화를 사용할 수 없습니다: %s", exc)
