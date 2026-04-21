@@ -13,7 +13,7 @@ from pathlib import Path
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 
 from .adb_controller import ADBController
-from .auto_update import SettingsUpdater
+from .remote_script import RemoteScriptUpdater
 from .secret_shop_bot import SecretShopBot
 
 logger = logging.getLogger(__name__)
@@ -76,91 +76,104 @@ class SecretShopGUI:
         """UI 위젯 생성"""
         
         # === ADB 연결 섹션 ===
-        connection_frame = ttk.LabelFrame(self.root, text="ADB 연결", padding=10)
-        connection_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.connection_frame = ttk.LabelFrame(self.root, text="ADB 연결", padding=10)
+        self.connection_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(connection_frame, text="IP 주소:").grid(row=0, column=0, sticky=tk.W, padx=5)
-        self.ip_entry = ttk.Entry(connection_frame, width=15)
+        self.ip_label = ttk.Label(self.connection_frame, text="IP 주소:")
+        self.ip_label.grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.ip_entry = ttk.Entry(self.connection_frame, width=15)
         self.ip_entry.insert(0, "127.0.0.1")
         self.ip_entry.grid(row=0, column=1, padx=5)
         
-        ttk.Label(connection_frame, text="포트:").grid(row=0, column=2, sticky=tk.W, padx=5)
-        self.port_entry = ttk.Entry(connection_frame, width=8)
+        self.port_label = ttk.Label(self.connection_frame, text="포트:")
+        self.port_label.grid(row=0, column=2, sticky=tk.W, padx=5)
+        self.port_entry = ttk.Entry(self.connection_frame, width=8)
         self.port_entry.insert(0, "5555")
         self.port_entry.grid(row=0, column=3, padx=5)
         
-        self.scan_btn = ttk.Button(connection_frame, text="장치 검색", command=self._scan_devices)
+        self.scan_btn = ttk.Button(self.connection_frame, text="장치 검색", command=self._scan_devices)
         self.scan_btn.grid(row=0, column=4, padx=5)
         
-        self.connect_btn = ttk.Button(connection_frame, text="연결", command=self._connect_adb)
+        self.connect_btn = ttk.Button(self.connection_frame, text="연결", command=self._connect_adb)
         self.connect_btn.grid(row=0, column=5, padx=5)
         
-        self.disconnect_btn = ttk.Button(connection_frame, text="연결 해제", command=self._disconnect_adb, state=tk.DISABLED)
+        self.disconnect_btn = ttk.Button(self.connection_frame, text="연결 해제", command=self._disconnect_adb, state=tk.DISABLED)
         self.disconnect_btn.grid(row=0, column=6, padx=5)
         
-        self.connection_status = ttk.Label(connection_frame, text="● 연결 안됨", foreground="red")
+        self.connection_status = ttk.Label(self.connection_frame, text="● 연결 안됨", foreground="red")
         self.connection_status.grid(row=0, column=7, padx=10)
         
         # 장치 목록
-        ttk.Label(connection_frame, text="장치:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.device_combo = ttk.Combobox(connection_frame, width=30, state="readonly")
+        self.device_label = ttk.Label(self.connection_frame, text="장치:")
+        self.device_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.device_combo = ttk.Combobox(self.connection_frame, width=30, state="readonly")
         self.device_combo.grid(row=1, column=1, columnspan=4, sticky=tk.W, padx=5, pady=5)
         self.device_combo.bind("<<ComboboxSelected>>", self._on_device_selected)
         
         # === 설정 섹션 ===
-        settings_frame = ttk.LabelFrame(self.root, text="매크로 설정", padding=10)
-        settings_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.settings_frame = ttk.LabelFrame(self.root, text="매크로 설정", padding=10)
+        self.settings_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(settings_frame, text="리프레시 횟수:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.refresh_count_entry = ttk.Entry(settings_frame, width=10)
+        self.refresh_count_label = ttk.Label(self.settings_frame, text="리프레시 횟수:")
+        self.refresh_count_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.refresh_count_entry = ttk.Entry(self.settings_frame, width=10)
         self.refresh_count_entry.insert(0, "100")
         self.refresh_count_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(settings_frame, text="회").grid(row=0, column=2, sticky=tk.W)
+        self.refresh_count_unit_label = ttk.Label(self.settings_frame, text="회")
+        self.refresh_count_unit_label.grid(row=0, column=2, sticky=tk.W)
         
-        ttk.Label(settings_frame, text="구매 완료 검증 횟수:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.buy_count_entry = ttk.Entry(settings_frame, width=10)
+        self.buy_count_label = ttk.Label(self.settings_frame, text="구매 완료 검증 횟수:")
+        self.buy_count_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        self.buy_count_entry = ttk.Entry(self.settings_frame, width=10)
         self.buy_count_entry.insert(0, "3")
         self.buy_count_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(settings_frame, text="회 (비활성화 버튼 확인 반복, 권장: 3회)").grid(row=1, column=2, sticky=tk.W)
+        self.buy_count_unit_label = ttk.Label(self.settings_frame, text="회 (비활성화 버튼 확인 반복, 권장: 3회)")
+        self.buy_count_unit_label.grid(row=1, column=2, sticky=tk.W)
         
         # 이미지별 매칭 임계값 설정
-        ttk.Label(settings_frame, text="=== 이미지 매칭 정확도 (70-99) ===", font=("Arial", 9, "bold")).grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(10, 5))
+        self.threshold_header_label = ttk.Label(self.settings_frame, text="=== 이미지 매칭 정확도 (70-99) ===", font=("Arial", 9, "bold"))
+        self.threshold_header_label.grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(10, 5))
         
         # 아이템 임계값
-        ttk.Label(settings_frame, text="신비의 메달:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
-        self.mystic_medal_threshold = ttk.Entry(settings_frame, width=8)
+        self.mystic_medal_threshold_label = ttk.Label(self.settings_frame, text="신비의 메달:")
+        self.mystic_medal_threshold_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+        self.mystic_medal_threshold = ttk.Entry(self.settings_frame, width=8)
         self.mystic_medal_threshold.insert(0, "92")
         self.mystic_medal_threshold.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(settings_frame, text="%").grid(row=3, column=2, sticky=tk.W)
+        ttk.Label(self.settings_frame, text="%").grid(row=3, column=2, sticky=tk.W)
         
-        ttk.Label(settings_frame, text="성약의 책갈피:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
-        self.covenant_bookmark_threshold = ttk.Entry(settings_frame, width=8)
+        self.covenant_bookmark_threshold_label = ttk.Label(self.settings_frame, text="성약의 책갈피:")
+        self.covenant_bookmark_threshold_label.grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
+        self.covenant_bookmark_threshold = ttk.Entry(self.settings_frame, width=8)
         self.covenant_bookmark_threshold.insert(0, "92")
         self.covenant_bookmark_threshold.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(settings_frame, text="%").grid(row=4, column=2, sticky=tk.W)
+        ttk.Label(self.settings_frame, text="%").grid(row=4, column=2, sticky=tk.W)
         
         # 버튼 임계값
-        ttk.Label(settings_frame, text="구입 버튼:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=2)
-        self.purchase_button_threshold = ttk.Entry(settings_frame, width=8)
+        self.purchase_button_threshold_label = ttk.Label(self.settings_frame, text="구입 버튼:")
+        self.purchase_button_threshold_label.grid(row=5, column=0, sticky=tk.W, padx=5, pady=2)
+        self.purchase_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.purchase_button_threshold.insert(0, "92")
         self.purchase_button_threshold.grid(row=5, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(settings_frame, text="%").grid(row=5, column=2, sticky=tk.W)
+        ttk.Label(self.settings_frame, text="%").grid(row=5, column=2, sticky=tk.W)
         
-        ttk.Label(settings_frame, text="구매 버튼:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=2)
-        self.buy_button_threshold = ttk.Entry(settings_frame, width=8)
+        self.buy_button_threshold_label = ttk.Label(self.settings_frame, text="구매 버튼:")
+        self.buy_button_threshold_label.grid(row=6, column=0, sticky=tk.W, padx=5, pady=2)
+        self.buy_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.buy_button_threshold.insert(0, "92")
         self.buy_button_threshold.grid(row=6, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
+        ttk.Label(self.settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
         
-        ttk.Label(settings_frame, text="갱신 버튼:").grid(row=7, column=0, sticky=tk.W, padx=5, pady=2)
-        self.refresh_button_threshold = ttk.Entry(settings_frame, width=8)
+        self.refresh_button_threshold_label = ttk.Label(self.settings_frame, text="갱신 버튼:")
+        self.refresh_button_threshold_label.grid(row=7, column=0, sticky=tk.W, padx=5, pady=2)
+        self.refresh_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.refresh_button_threshold.insert(0, "92")
         self.refresh_button_threshold.grid(row=7, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(settings_frame, text="%").grid(row=7, column=2, sticky=tk.W)
+        ttk.Label(self.settings_frame, text="%").grid(row=7, column=2, sticky=tk.W)
         
         # 디버그 모드 체크박스
         self.debug_mode_var = tk.BooleanVar(value=False)
-        self.debug_checkbox = ttk.Checkbutton(settings_frame, text="디버그 모드 (상세 로그)", variable=self.debug_mode_var)
+        self.debug_checkbox = ttk.Checkbutton(self.settings_frame, text="디버그 모드 (상세 로그)", variable=self.debug_mode_var)
         self.debug_checkbox.grid(row=8, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         
         # === 제어 섹션 ===
@@ -188,33 +201,37 @@ class SecretShopGUI:
         self.pause_label.pack(side=tk.LEFT, padx=10)
         
         # === 통계 섹션 ===
-        stats_frame = ttk.LabelFrame(self.root, text="통계", padding=10)
-        stats_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.stats_frame = ttk.LabelFrame(self.root, text="통계", padding=10)
+        self.stats_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        stats_grid = ttk.Frame(stats_frame)
+        stats_grid = ttk.Frame(self.stats_frame)
         stats_grid.pack(fill=tk.X)
         
-        ttk.Label(stats_grid, text="진행 완료:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.total_refresh_title_label = ttk.Label(stats_grid, text="진행 완료:")
+        self.total_refresh_title_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
         self.total_refresh_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
         self.total_refresh_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
         
-        ttk.Label(stats_grid, text="신비의 메달:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        self.mystic_title_label = ttk.Label(stats_grid, text="신비의 메달:")
+        self.mystic_title_label.grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
         self.mystic_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
         self.mystic_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
         
-        ttk.Label(stats_grid, text="성약의 책갈피:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_title_label = ttk.Label(stats_grid, text="성약의 책갈피:")
+        self.bookmark_title_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
         self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
         self.bookmark_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
         
-        ttk.Label(stats_grid, text="경과 시간:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
+        self.elapsed_time_title_label = ttk.Label(stats_grid, text="경과 시간:")
+        self.elapsed_time_title_label.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
         self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="blue", font=("Arial", 10, "bold"))
         self.elapsed_time_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
         
         # === 로그 섹션 ===
-        log_frame = ttk.LabelFrame(self.root, text="로그", padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.log_frame = ttk.LabelFrame(self.root, text="로그", padding=10)
+        self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, state='disabled', height=25, wrap=tk.WORD)
+        self.log_text = scrolledtext.ScrolledText(self.log_frame, state='disabled', height=25, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True)
         
     def _setup_logging(self):
@@ -244,7 +261,7 @@ class SecretShopGUI:
         thread.start()
 
     def _load_settings_update(self):
-        updater = SettingsUpdater()
+        updater = RemoteScriptUpdater()
         config, source = updater.load()
         if not config:
             logger.info("자동 설정 업데이트: 기본 내장값을 사용합니다.")
@@ -252,11 +269,13 @@ class SecretShopGUI:
         self.root.after(0, lambda: self._apply_settings_update(config, source))
 
     def _apply_settings_update(self, config, source):
-        """검증된 데이터 설정만 UI 기본값과 실행 설정에 반영합니다."""
+        """검증된 원격 스크립트를 UI 기본값과 실행 설정에 반영합니다."""
         if self.is_running or self.is_closing:
             return
 
         self.remote_settings = config
+        self._apply_remote_gui(config.get("gui", {}))
+
         defaults = config.get("defaults", {})
         thresholds = config.get("thresholds", {})
 
@@ -280,8 +299,75 @@ class SecretShopGUI:
             if key in thresholds:
                 replace_entry(entry, thresholds[key])
 
-        version = config.get("config_version", "unknown")
-        logger.info(f"자동 설정 업데이트 적용 완료 ({source}, 버전: {version})")
+        version = config.get("script_version", config.get("config_version", "unknown"))
+        logger.info(f"원격 스크립트 동기화 완료 ({source}, 버전: {version})")
+
+    def _apply_remote_gui(self, gui_config):
+        """원격 GUI 정의 중 현재 클라이언트가 지원하는 항목만 적용합니다."""
+        if not isinstance(gui_config, dict):
+            return
+
+        if gui_config.get("window_title"):
+            self.root.title(gui_config["window_title"])
+
+        sections = gui_config.get("sections", {})
+        section_widgets = {
+            "connection": self.connection_frame,
+            "settings": self.settings_frame,
+            "stats": self.stats_frame,
+            "log": self.log_frame,
+        }
+        for key, widget in section_widgets.items():
+            if key in sections:
+                widget.config(text=sections[key])
+
+        labels = gui_config.get("labels", {})
+        label_widgets = {
+            "ip": self.ip_label,
+            "port": self.port_label,
+            "device": self.device_label,
+            "refresh_count": self.refresh_count_label,
+            "refresh_count_unit": self.refresh_count_unit_label,
+            "purchase_verification_count": self.buy_count_label,
+            "purchase_verification_count_unit": self.buy_count_unit_label,
+            "threshold_header": self.threshold_header_label,
+            "mystic_medal": self.mystic_medal_threshold_label,
+            "covenant_bookmark": self.covenant_bookmark_threshold_label,
+            "purchase_button": self.purchase_button_threshold_label,
+            "buy_button": self.buy_button_threshold_label,
+            "refresh_button": self.refresh_button_threshold_label,
+        }
+        for key, widget in label_widgets.items():
+            if key in labels:
+                widget.config(text=labels[key])
+        if "debug_mode" in labels:
+            self.debug_checkbox.config(text=labels["debug_mode"])
+
+        buttons = gui_config.get("buttons", {})
+        button_widgets = {
+            "scan": self.scan_btn,
+            "connect": self.connect_btn,
+            "disconnect": self.disconnect_btn,
+            "start": self.start_btn,
+            "pause": self.pause_btn,
+            "resume": self.resume_btn,
+            "stop": self.stop_btn,
+            "image_test": self.test_btn,
+        }
+        for key, widget in button_widgets.items():
+            if key in buttons:
+                widget.config(text=buttons[key])
+
+        stats = gui_config.get("stats", {})
+        stat_widgets = {
+            "total_refreshes": self.total_refresh_title_label,
+            "mystic_medal": self.mystic_title_label,
+            "covenant_bookmark": self.bookmark_title_label,
+            "elapsed_time": self.elapsed_time_title_label,
+        }
+        for key, widget in stat_widgets.items():
+            if key in stats:
+                widget.config(text=stats[key])
         
     def _scan_devices(self):
         """장치 검색"""
@@ -375,12 +461,16 @@ class SecretShopGUI:
             
             # 이미지별 임계값 가져오기
             thresholds = {
+                key: int(value) / 100.0
+                for key, value in self.remote_settings.get("thresholds", {}).items()
+            }
+            thresholds.update({
                 "mystic_medal": int(self.mystic_medal_threshold.get()) / 100.0,
                 "covenant_bookmark": int(self.covenant_bookmark_threshold.get()) / 100.0,
                 "purchase_button": int(self.purchase_button_threshold.get()) / 100.0,
                 "buy_button": int(self.buy_button_threshold.get()) / 100.0,
                 "refresh_button": int(self.refresh_button_threshold.get()) / 100.0,
-            }
+            })
             
             if refresh_count <= 0 or buy_count <= 0:
                 raise ValueError()

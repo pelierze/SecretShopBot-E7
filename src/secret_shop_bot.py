@@ -109,6 +109,13 @@ class SecretShopBot:
         self.runtime_dir = get_runtime_root()
         self.debug_mode = debug_mode
         self.automation_settings = automation_settings or {}
+        self.macro_settings = self.automation_settings.get("macro", {})
+        self.item_definitions = self._build_item_definitions()
+        self.enabled_items = self._build_enabled_items()
+        self.button_images = self._build_button_images()
+        self.timings = self.macro_settings.get("timings", {})
+        self.macro_thresholds = self.macro_settings.get("thresholds", {})
+        self.macro_layout = self.macro_settings.get("layout", {})
         
         # 이미지별 임계값 설정
         default_thresholds = {
@@ -138,6 +145,10 @@ class SecretShopBot:
             "end_time": None,
             "elapsed_time": 0
         }
+        for item in self.item_definitions.values():
+            stat_key = item.get("stat_key")
+            if stat_key:
+                self.stats.setdefault(stat_key, 0)
         
         # 일시정지 제어
         self.paused = False
@@ -154,6 +165,66 @@ class SecretShopBot:
         self.swipe_x = int(self.screen_width * float(swipe_settings.get("x_ratio", 0.75)))
         self.swipe_start_y = int(self.screen_height * float(swipe_settings.get("start_y_ratio", 0.75)))
         self.swipe_end_y = int(self.screen_height * float(swipe_settings.get("end_y_ratio", 0.25)))
+
+    def _build_item_definitions(self) -> Dict[str, Dict[str, str]]:
+        defaults = {
+            "mystic_medal": {
+                "label": "신비의 메달",
+                "image": self.MYSTIC_MEDAL,
+                "stat_key": "mystic_medal_bought",
+                "log_prefix": "신비의 메달",
+            },
+            "covenant_bookmark": {
+                "label": "성약의 책갈피",
+                "image": self.COVENANT_BOOKMARK,
+                "stat_key": "covenant_bookmark_bought",
+                "log_prefix": "성약의 책갈피",
+            },
+        }
+        remote_items = self.macro_settings.get("items", {})
+        if isinstance(remote_items, dict):
+            for key, value in remote_items.items():
+                if isinstance(value, dict):
+                    merged = defaults.get(key, {}).copy()
+                    merged.update(value)
+                    defaults[key] = merged
+        return defaults
+
+    def _build_enabled_items(self) -> list:
+        enabled = self.macro_settings.get("enabled_items", [])
+        if isinstance(enabled, list):
+            filtered = [item for item in enabled if item in self.item_definitions]
+            if filtered:
+                return filtered
+        return ["mystic_medal", "covenant_bookmark"]
+
+    def _build_button_images(self) -> Dict[str, str]:
+        defaults = {
+            "refresh": self.REFRESH_BUTTON,
+            "refresh_confirm": self.REFRESH_CONFIRM_BUTTON,
+            "purchase": self.PURCHASE_BUTTON,
+            "buy": self.BUY_BUTTON,
+            "purchase_disabled": self.PURCHASE_BUTTON_DISABLED,
+        }
+        remote_buttons = self.macro_settings.get("buttons", {})
+        if isinstance(remote_buttons, dict):
+            defaults.update(remote_buttons)
+        return defaults
+
+    def _timing(self, key: str, default: float) -> float:
+        try:
+            return float(self.timings.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    def _macro_threshold(self, key: str, default_percent: int) -> float:
+        try:
+            return float(self.macro_thresholds.get(key, default_percent)) / 100.0
+        except (TypeError, ValueError):
+            return default_percent / 100.0
+
+    def _item_label(self, item_name: str) -> str:
+        return self.item_definitions.get(item_name, {}).get("label", item_name)
         
     def run(self, max_refresh_count: int, buy_count_per_item: int) -> Dict:
         """
@@ -214,7 +285,7 @@ class SecretShopBot:
             # 첫 페이지 처리 완료 → 드래그하여 두 번째 페이지로 이동
             logger.debug("두 번째 페이지로 이동")
             self._scroll_down()
-            time.sleep(0.5)
+            time.sleep(self._timing("after_scroll", 0.5))
             
             # 두 번째 페이지 스캔
             found_items = self._scan_shop_page(page_num=2)
@@ -243,10 +314,10 @@ class SecretShopBot:
             if refresh_num < max_refresh_count - 1:  # 마지막 회차가 아니면
                 if self._refresh_shop():
                     self.stats["successful_refreshes"] += 1
-                    time.sleep(1)  # 리프레시 후 대기
+                    time.sleep(self._timing("after_refresh", 1.0))  # 리프레시 후 대기
                 else:
                     logger.error("⚠️  상점 갱신에 실패했습니다. 다시 시도합니다...")
-                    time.sleep(2)  # 실패 시 조금 더 대기
+                    time.sleep(self._timing("refresh_retry", 2.0))  # 실패 시 조금 더 대기
         
         self._finish_stats()
         
@@ -284,27 +355,26 @@ class SecretShopBot:
         
         # 스크린샷 촬영
         self.adb.screenshot(str(self.screenshot_path))
-        time.sleep(0.3)
+        time.sleep(self._timing("after_screenshot", 0.3))
         
         found_items = {}
         
-        # 신비의 메달 검색
-        mystic_medal_path = self._find_image_file(self.resource_dir / self.ITEMS_DIR, self.MYSTIC_MEDAL)
-        if mystic_medal_path:
-            result = self.matcher.find_image(str(self.screenshot_path), str(mystic_medal_path), threshold=self.thresholds.get("mystic_medal", 0.92))
+        for item_name in self.enabled_items:
+            item = self.item_definitions.get(item_name, {})
+            image_name = item.get("image", f"{item_name}.png")
+            image_path = self._find_image_file(self.resource_dir / self.ITEMS_DIR, image_name)
+            if not image_path:
+                logger.warning(f"⚠️ {self._item_label(item_name)} 이미지 파일을 찾을 수 없음: {image_name} - 이 아이템은 검색하지 않습니다")
+                continue
+
+            result = self.matcher.find_image(
+                str(self.screenshot_path),
+                str(image_path),
+                threshold=self.thresholds.get(item_name, 0.92),
+            )
             if result:
-                found_items["mystic_medal"] = result
-                logger.info(f"💠 신비의 메달 발견: {result}")
-        else:
-            logger.warning(f"⚠️ 신비의 메달 이미지 파일을 찾을 수 없음: {self.MYSTIC_MEDAL} - 이 아이템은 검색하지 않습니다")
-        
-        # 성약의 책갈피 검색
-        covenant_bookmark_path = self._find_image_file(self.resource_dir / self.ITEMS_DIR, self.COVENANT_BOOKMARK)
-        if covenant_bookmark_path:
-            result = self.matcher.find_image(str(self.screenshot_path), str(covenant_bookmark_path), threshold=self.thresholds.get("covenant_bookmark", 0.92))
-            if result:
-                found_items["covenant_bookmark"] = result
-                logger.info(f"📖 성약의 책갈피 발견: {result}")
+                found_items[item_name] = result
+                logger.info(f"⭐ {self._item_label(item_name)} 발견: {result}")
         
         if found_items:
             logger.info(f"🔍 스캔 완료 - 발견한 아이템: {list(found_items.keys())}")
@@ -348,49 +418,53 @@ class SecretShopBot:
         # 구입 버튼 클릭
         btn_center_x, btn_center_y = self.matcher.get_center(purchase_btn)
         self.adb.tap(btn_center_x, btn_center_y, delay=0.5)
-        time.sleep(0.5)  # 구매 팝업이 뜰 때까지 대기
+        time.sleep(self._timing("after_purchase_tap", 0.5))  # 구매 팝업이 뜰 때까지 대기
         
         # 중지 확인
         if self.user_action == 'stop':
             logger.info("⛔ 중지 요청 - 구매 중단")
             # 화면 닫기
-            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=self._timing("close_popup_delay", 0.3))
             return False
         
         # 구매 버튼이 나타날 때까지 대기 (최대 2초)
         buy_button_found = False
-        for wait_attempt in range(4):  # 0.5초씩 4번 = 최대 2초
+        buy_button_wait_attempts = int(self.timings.get("buy_button_wait_attempts", 4))
+        wait_interval = self._timing("buy_button_wait_interval", 0.5)
+        for wait_attempt in range(buy_button_wait_attempts):
             self.adb.screenshot(str(self.screenshot_path))
-            time.sleep(0.2)
+            time.sleep(self._timing("after_screenshot", 0.2))
             
-            buy_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.BUY_BUTTON)
+            buy_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.button_images["buy"])
             if buy_button_path:
-                result = self.matcher.find_image(str(self.screenshot_path), str(buy_button_path))
+                result = self.matcher.find_image(
+                    str(self.screenshot_path),
+                    str(buy_button_path),
+                    threshold=self.thresholds.get("buy_button", 0.92),
+                )
                 if result:
                     buy_button_found = True
-                    logger.debug(f"구매 버튼 발견 (대기 시간: {wait_attempt * 0.5}초)")
+                    logger.debug(f"구매 버튼 발견 (대기 시간: {wait_attempt * wait_interval}초)")
                     break
             
-            if wait_attempt < 3:  # 마지막 시도가 아니면 대기
-                time.sleep(0.5)
+            if wait_attempt < buy_button_wait_attempts - 1:  # 마지막 시도가 아니면 대기
+                time.sleep(wait_interval)
         
         if not buy_button_found:
             logger.warning("⚠️ 구매 버튼이 나타나지 않음 - 구매 팝업 로딩 실패")
             # 화면 닫기
-            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=self._timing("close_popup_delay", 0.3))
             return False
         
         # 2단계: 구매 버튼 클릭 (최종 구매)
         if self._click_button("buy"):
             # 구매 버튼 클릭 성공 - 통계 즉시 업데이트
-            if item_name == "mystic_medal":
-                self.stats["mystic_medal_bought"] += 1
-                logger.info("📊 신비의 메달 구매 카운트 +1")
-            elif item_name == "covenant_bookmark":
-                self.stats["covenant_bookmark_bought"] += 1
-                logger.info("📊 성약의 책갈피 구매 카운트 +1")
+            stat_key = self.item_definitions.get(item_name, {}).get("stat_key")
+            if stat_key:
+                self.stats[stat_key] = self.stats.get(stat_key, 0) + 1
+                logger.info(f"📊 {self._item_label(item_name)} 구매 카운트 +1")
             
-            time.sleep(0.5)
+            time.sleep(self._timing("after_purchase_tap", 0.5))
             
             # 구매 완료 검증: 비활성화된 구입 버튼 확인 (여러 번 검증)
             verification_success = 0
@@ -403,23 +477,23 @@ class SecretShopBot:
                 
                 # 마지막 시도가 아니면 잠시 대기 후 재확인
                 if verify_attempt < verification_count - 1:
-                    time.sleep(0.3)
+                    time.sleep(self._timing("verify_interval", 0.3))
             
             # 과반수 이상 성공하면 구매 성공으로 판단
             if verification_success > verification_count // 2:
                 logger.info(f"✅ 구매 완료 검증 성공 ({verification_success}/{verification_count} 성공)")
                 # 화면 닫기
-                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=self._timing("close_popup_delay", 0.3))
                 return True
             else:
                 logger.warning(f"⚠️  구매 완료 검증 실패 ({verification_success}/{verification_count} 성공) - 골드 부족 또는 구매 실패 가능성")
                 # 화면 왼쪽 클릭하여 창 닫기
-                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+                self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=self._timing("close_popup_delay", 0.3))
                 return False
         else:
             logger.warning("구매 버튼(2단계)을 찾을 수 없음")
             # 취소 또는 뒤로가기 처리
-            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=0.3)
+            self.adb.tap(self.screen_width // 4, self.screen_height // 2, delay=self._timing("close_popup_delay", 0.3))
             return False
     
     def _find_purchase_button_on_item_line(self, item_location: tuple):
@@ -437,28 +511,38 @@ class SecretShopBot:
         """
         # 스크린샷 촬영
         self.adb.screenshot(str(self.screenshot_path))
-        time.sleep(0.2)
+        time.sleep(self._timing("after_screenshot", 0.2))
         
         # 구입 버튼 이미지 경로 (활성화)
-        purchase_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON)
+        purchase_button_path = self._find_image_file(
+            self.resource_dir / self.BUTTONS_DIR,
+            self.button_images["purchase"],
+        )
         
         if not purchase_button_path:
             logger.debug("구입 버튼 이미지 파일을 찾을 수 없음")
             return None
         
         # 비활성화된 구입 버튼 이미지 경로
-        purchase_button_disabled_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
+        purchase_button_disabled_path = self._find_image_file(
+            self.resource_dir / self.BUTTONS_DIR,
+            self.button_images["purchase_disabled"],
+        )
         
         if not purchase_button_disabled_path:
             logger.warning("비활성화된 구입 버튼 이미지를 찾을 수 없음 - 기존 방식으로 동작")
             # 기존 방식: 활성화된 버튼만 찾기
-            all_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path), threshold=self.thresholds.get("purchase_button", 0.92))
+            all_buttons = self.matcher.find_all_images(
+                str(self.screenshot_path),
+                str(purchase_button_path),
+                threshold=self.thresholds.get("purchase_button", 0.92),
+            )
             if not all_buttons:
                 return None
             
             item_x, item_y, item_w, item_h = item_location
             item_center_y = item_y + item_h // 2
-            y_tolerance = 50
+            y_tolerance = int(self.macro_layout.get("purchase_line_y_tolerance", 50))
             
             for button in all_buttons:
                 btn_x, btn_y, btn_w, btn_h = button
@@ -469,8 +553,17 @@ class SecretShopBot:
         
         # 화면에서 모든 구입 버튼 후보 찾기 (활성화 + 비활성화 모두)
         # 임계값을 낮춰서 모든 후보를 찾음
-        all_active_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_path), threshold=0.7)
-        all_disabled_buttons = self.matcher.find_all_images(str(self.screenshot_path), str(purchase_button_disabled_path), threshold=0.7)
+        candidate_threshold = self._macro_threshold("purchase_candidate", 70)
+        all_active_buttons = self.matcher.find_all_images(
+            str(self.screenshot_path),
+            str(purchase_button_path),
+            threshold=candidate_threshold,
+        )
+        all_disabled_buttons = self.matcher.find_all_images(
+            str(self.screenshot_path),
+            str(purchase_button_disabled_path),
+            threshold=candidate_threshold,
+        )
         
         # 모든 버튼 후보 합치기
         all_button_candidates = list(set(all_active_buttons + all_disabled_buttons))
@@ -484,7 +577,7 @@ class SecretShopBot:
         item_center_y = item_y + item_h // 2
         
         # 같은 라인에 있는 버튼 찾기 (약간의 여유 있게 ±50 픽셀)
-        y_tolerance = 50
+        y_tolerance = int(self.macro_layout.get("purchase_line_y_tolerance", 50))
         
         for button in all_button_candidates:
             btn_x, btn_y, btn_w, btn_h = button
@@ -533,12 +626,12 @@ class SecretShopBot:
         
         # 1단계: 갱신 버튼 찾기 및 클릭
         if self._click_button("refresh"):
-            time.sleep(0.5)
+            time.sleep(self._timing("refresh_confirm_delay", 0.5))
             
             # 2단계: 확인 버튼 클릭
             if self._click_button("refresh_confirm"):
                 logger.info("✅ 상점 갱신 성공")
-                time.sleep(0.8)
+                time.sleep(self._timing("after_refresh", 0.8))
                 return True
             else:
                 # 중지 요청이면 로그 생략
@@ -582,15 +675,10 @@ class SecretShopBot:
         
         # 스크린샷 촬영
         self.adb.screenshot(str(self.screenshot_path))
-        time.sleep(0.2)
+        time.sleep(self._timing("after_screenshot", 0.2))
         
         # 버튼 이미지 경로 선택
-        button_filename = {
-            "refresh": self.REFRESH_BUTTON,
-            "refresh_confirm": self.REFRESH_CONFIRM_BUTTON,
-            "purchase": self.PURCHASE_BUTTON,
-            "buy": self.BUY_BUTTON
-        }.get(button_type)
+        button_filename = self.button_images.get(button_type)
         
         if not button_filename:
             logger.error(f"알 수 없는 버튼 타입: {button_type}")
@@ -604,7 +692,12 @@ class SecretShopBot:
         
         # 버튼 찾기
         # 버튼 타입에 따라 임계값 선택
-        threshold_key = "refresh_button" if "refresh" in button_type else "buy_button"
+        threshold_key = {
+            "refresh": "refresh_button",
+            "refresh_confirm": "refresh_button",
+            "purchase": "purchase_button",
+            "buy": "buy_button",
+        }.get(button_type, "buy_button")
         threshold = self.thresholds.get(threshold_key, 0.92)
         result = self.matcher.find_image(str(self.screenshot_path), str(button_path), threshold=threshold)
         
@@ -627,16 +720,23 @@ class SecretShopBot:
         """
         # 스크린샷 촬영
         self.adb.screenshot(str(self.screenshot_path))
-        time.sleep(0.2)
+        time.sleep(self._timing("after_screenshot", 0.2))
         
         # 비활성화된 구입 버튼 찾기 (약간 낮은 임계값 사용)
-        disabled_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.PURCHASE_BUTTON_DISABLED)
+        disabled_button_path = self._find_image_file(
+            self.resource_dir / self.BUTTONS_DIR,
+            self.button_images["purchase_disabled"],
+        )
         
         if not disabled_button_path:
             logger.warning("비활성화된 구입 버튼 이미지 파일을 찾을 수 없음")
             return False
         
-        result = self.matcher.find_image(str(self.screenshot_path), str(disabled_button_path), threshold=0.85)
+        result = self.matcher.find_image(
+            str(self.screenshot_path),
+            str(disabled_button_path),
+            threshold=self._macro_threshold("verification_disabled_button", 85),
+        )
         
         if result:
             logger.debug("구매 완료: 비활성화된 구입 버튼 확인됨")
