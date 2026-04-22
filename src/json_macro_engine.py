@@ -36,6 +36,7 @@ class JsonMacroEngine:
         self,
         adb_controller: ADBController,
         macro_definition: dict,
+        runtime_dir: str = None,
         thresholds: dict = None,
         automation_settings: dict = None,
         debug_mode: bool = False,
@@ -46,13 +47,13 @@ class JsonMacroEngine:
         self.automation_settings = automation_settings or {}
         self.debug_mode = debug_mode
         self.resource_dir = get_resource_root()
-        self.runtime_dir = get_runtime_root()
+        self.runtime_dir = Path(runtime_dir) if runtime_dir else get_runtime_root() / "logs"
         self.matcher = ImageMatcher(threshold=0.92)
         self.macro_settings = self.automation_settings.get("macro", {})
         self.items = self._build_items()
         self.buttons = self._build_buttons()
         self.timings = self.macro_settings.get("timings", {})
-        self.screenshot_path = self.runtime_dir / "logs" / "current_screen.png"
+        self.screenshot_path = self.runtime_dir / "current_screen.png"
         self.paused = False
         self.user_action = None
         self.screen_width, self.screen_height = self.adb.get_screen_size()
