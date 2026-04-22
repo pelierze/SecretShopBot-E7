@@ -7,20 +7,20 @@
 VSCode에서 `Terminal > New Terminal`을 열고 프로젝트 루트에서 실행합니다.
 
 ```powershell
-.\build_release.ps1 -Version 1.0.5
+.\build_release.ps1 -Version 1.0.6
 ```
 
 PowerShell 실행 정책 오류가 나오면 아래 명령을 사용합니다.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build_release.ps1 -Version 1.0.5
+powershell -ExecutionPolicy Bypass -File .\build_release.ps1 -Version 1.0.6
 ```
 
 성공하면 아래 파일이 생성됩니다.
 
 ```text
-release/SecretShopBot-E7-v1.0.5.zip
-release/SecretShopBot-E7-v1.0.5.zip.sha256.txt
+release/SecretShopBot-E7-v1.0.6.zip
+release/SecretShopBot-E7-v1.0.6.zip.sha256.txt
 ```
 
 ## 2. GitHub에 코드 푸시
@@ -44,16 +44,16 @@ https://github.com/pelierze/SecretShopBot-E7/releases/new
 
 입력값:
 
-- Tag: `v1.0.5`
+- Tag: `v1.0.6`
 - Target: `master`
-- Release title: `SecretShopBot-E7 v1.0.5`
+- Release title: `SecretShopBot-E7 v1.0.6`
 
 Release description 예시:
 
 ```markdown
 ## 다운로드 및 실행
 
-1. 아래 Assets에서 `SecretShopBot-E7-v1.0.5.zip`을 다운로드합니다.
+1. 아래 Assets에서 `SecretShopBot-E7-v1.0.6.zip`을 다운로드합니다.
 2. 압축을 풉니다.
 3. `SecretShopBot-E7.exe`를 실행합니다.
 
@@ -65,13 +65,13 @@ Release description 예시:
 
 ## SHA256
 
-`release/SecretShopBot-E7-v1.0.5.zip.sha256.txt`의 값을 참고하세요.
+`release/SecretShopBot-E7-v1.0.6.zip.sha256.txt`의 값을 참고하세요.
 ```
 
 Assets에는 아래 파일을 첨부합니다.
 
 ```text
-release/SecretShopBot-E7-v1.0.5.zip
+release/SecretShopBot-E7-v1.0.6.zip
 ```
 
 마지막으로 `Publish release`를 누릅니다.

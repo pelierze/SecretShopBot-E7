@@ -63,6 +63,15 @@ class ADBController:
 
         return subprocess.run([self.adb_path, *args], **kwargs)
 
+    def _format_completed_output(self, result: subprocess.CompletedProcess) -> str:
+        stdout = result.stdout if result.stdout is not None else ""
+        stderr = result.stderr if result.stderr is not None else ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        return f"{stdout}\n{stderr}".strip()
+
     def _download_adb(self, project_root: Path) -> bool:
         """
         ADB 자동 다운로드
@@ -138,6 +147,20 @@ class ADBController:
         except Exception as e:
             logger.error(f"ADB 연결 중 오류: {e}")
             return False
+
+    def test_connection(self) -> tuple[bool, str]:
+        """Verify that the connected device accepts ADB shell commands."""
+        if not self.device_id:
+            return False, "ADB 장치가 선택되지 않았습니다."
+
+        try:
+            result = self._run_adb(["-s", self.device_id, "shell", "echo", "SECRET_SHOP_ADB_OK"], text=True)
+            output = self._format_completed_output(result)
+            if result.returncode == 0 and "SECRET_SHOP_ADB_OK" in output:
+                return True, "ADB 테스트 통신 성공"
+            return False, output or f"ADB shell 명령 실패 (returncode={result.returncode})"
+        except Exception as e:
+            return False, str(e)
     
     def get_devices(self) -> list:
         """
@@ -179,7 +202,10 @@ class ADBController:
             실행 성공 여부
         """
         try:
-            self._run_adb(["-s", self.device_id, "shell", "input", "tap", str(x), str(y)])
+            result = self._run_adb(["-s", self.device_id, "shell", "input", "tap", str(x), str(y)])
+            if result.returncode != 0:
+                logger.error(f"터치 실행 실패: {self._format_completed_output(result)}")
+                return False
             logger.debug(f"터치: ({x}, {y})")
             time.sleep(delay)
             return True
@@ -203,13 +229,32 @@ class ADBController:
             실행 성공 여부
         """
         try:
-            self._run_adb([
-                "-s", self.device_id, "shell", "input", "swipe",
-                str(x1), str(y1), str(x2), str(y2), str(duration)
-            ])
-            logger.debug(f"스와이프: ({x1}, {y1}) -> ({x2}, {y2})")
-            time.sleep(delay)
-            return True
+            commands = [
+                [
+                    "-s", self.device_id, "shell", "input", "touchscreen", "swipe",
+                    str(x1), str(y1), str(x2), str(y2), str(duration)
+                ],
+                [
+                    "-s", self.device_id, "shell", "input", "swipe",
+                    str(x1), str(y1), str(x2), str(y2), str(duration)
+                ],
+                [
+                    "-s", self.device_id, "shell", "input", "swipe",
+                    str(x1), str(y1), str(x2), str(y2)
+                ],
+            ]
+
+            last_output = ""
+            for command in commands:
+                result = self._run_adb(command)
+                if result.returncode == 0:
+                    logger.debug(f"스와이프: ({x1}, {y1}) -> ({x2}, {y2}), duration={duration}")
+                    time.sleep(delay)
+                    return True
+                last_output = self._format_completed_output(result)
+
+            logger.error(f"스와이프 실행 실패: {last_output}")
+            return False
         except Exception as e:
             logger.error(f"스와이프 실행 중 오류: {e}")
             return False
@@ -225,7 +270,19 @@ class ADBController:
             캡처 성공 여부
         """
         try:
-            # 디바이스에서 스크린샷 촬영
+            save_file = Path(save_path)
+            save_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # exec-out으로 PNG bytes를 직접 받아 저장합니다. Windows 한글 경로에서 adb pull보다 안정적입니다.
+            result = self._run_adb(["-s", self.device_id, "exec-out", "screencap", "-p"])
+            if result.returncode == 0 and isinstance(result.stdout, bytes) and result.stdout.startswith(b"\x89PNG"):
+                save_file.write_bytes(result.stdout)
+                logger.debug(f"스크린샷 저장: {save_path}")
+                return True
+
+            logger.debug(f"exec-out 스크린샷 실패, pull 방식 재시도: {self._format_completed_output(result)}")
+
+            # 디바이스에서 스크린샷 촬영 후 pull fallback
             screenshot_path = "/sdcard/screenshot.png"
             self._run_adb(["-s", self.device_id, "shell", "screencap", "-p", screenshot_path])
             

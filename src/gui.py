@@ -13,6 +13,7 @@ from pathlib import Path
 os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 
 from .adb_controller import ADBController
+from .image_matcher import read_image
 from .json_macro_engine import JsonMacroEngine
 from .remote_script import RemoteScriptUpdater
 from .secret_shop_bot import SecretShopBot
@@ -438,9 +439,15 @@ class SecretShopGUI:
                     temp_adb.kill_server()
             
             if not devices:
-                logger.warning("⚠️ 연결된 장치가 없습니다. ADB 디버깅이 활성화되어 있는지 확인하세요.")
+                logger.warning("⚠️ 연결된 장치가 없습니다. 앱플레이어의 ADB 브릿지/ADB 디버깅 옵션이 활성화되어 있는지 확인하세요.")
                 self.device_combo['values'] = []
                 return
+            unavailable_devices = [d for d in devices if d.get("status") != "device"]
+            if unavailable_devices:
+                logger.warning(
+                    "⚠️ ADB 장치가 정상 상태가 아닙니다: %s. 앱플레이어의 ADB 브릿지/ADB 디버깅 옵션을 확인하세요.",
+                    unavailable_devices,
+                )
             
             # 장치 목록 업데이트
             device_list = [f"{d['id']} ({d['status']})" for d in devices]
@@ -492,16 +499,25 @@ class SecretShopGUI:
         self.adb_controller = ADBController()
         
         if self.adb_controller.connect(ip, port):
-            self.adb_server_started = True
-            self.connection_status.config(text="● 연결됨", foreground="green")
-            self.start_btn.config(state=tk.NORMAL)
-            self.test_btn.config(state=tk.NORMAL)
-            self.connect_btn.config(state=tk.DISABLED)
-            self.disconnect_btn.config(state=tk.NORMAL)
-            logger.info(f"✅ ADB 연결 성공: {ip}:{port}")
+            logger.info("ADB 테스트 통신 확인 중...")
+            test_ok, test_message = self.adb_controller.test_connection()
+            if test_ok:
+                self.adb_server_started = True
+                self.connection_status.config(text="● 연결됨", foreground="green")
+                self.start_btn.config(state=tk.NORMAL)
+                self.test_btn.config(state=tk.NORMAL)
+                self.connect_btn.config(state=tk.DISABLED)
+                self.disconnect_btn.config(state=tk.NORMAL)
+                logger.info(f"✅ ADB 연결 및 테스트 통신 성공: {ip}:{port}")
+            else:
+                self.connection_status.config(text="● 통신 실패", foreground="red")
+                logger.error(f"❌ ADB 테스트 통신 실패: {test_message}")
+                logger.error("앱플레이어의 ADB 브릿지/ADB 디버깅 옵션이 활성화되어 있는지 확인한 뒤 다시 연결하세요.")
+                self.adb_controller.disconnect()
+                self.adb_controller = None
         else:
             self.connection_status.config(text="● 연결 실패", foreground="red")
-            logger.error(f"❌ ADB 연결 실패: {ip}:{port} - 앱플레이어가 실행 중인지 확인하세요")
+            logger.error(f"❌ ADB 연결 실패: {ip}:{port} - 앱플레이어 실행 상태와 ADB 브릿지/ADB 디버깅 옵션을 확인하세요")
             
     def _start_bot(self):
         """봇 시작"""
@@ -862,13 +878,13 @@ class SecretShopGUI:
             self.adb_controller.screenshot(str(screenshot_path))
             logging.info(f"📸 스크린샷 저장: {screenshot_path}")
             
-            screenshot = cv2.imread(str(screenshot_path))
+            screenshot = read_image(str(screenshot_path))
             if screenshot is None:
                 logging.error("❌ 스크린샷을 로드할 수 없습니다.")
                 return
             
             # 테스트 이미지 로드
-            template = cv2.imread(image_path)
+            template = read_image(image_path)
             if template is None:
                 logging.error(f"❌ 테스트 이미지를 로드할 수 없습니다: {image_path}")
                 return

@@ -14,6 +14,18 @@ os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 logger = logging.getLogger(__name__)
 
 
+def read_image(path: str, flags: int = cv2.IMREAD_COLOR):
+    """Read an image from paths that may contain non-ASCII characters."""
+    try:
+        data = np.fromfile(os.fspath(path), dtype=np.uint8)
+        if data.size == 0:
+            return None
+        return cv2.imdecode(data, flags)
+    except Exception as e:
+        logger.error(f"이미지 파일 읽기 중 오류: {path} - {e}")
+        return None
+
+
 class ImageMatcher:
     """화면에서 이미지를 찾는 클래스"""
     
@@ -39,8 +51,8 @@ class ImageMatcher:
         """
         try:
             # 이미지 로드
-            screen = cv2.imread(screen_img_path, cv2.IMREAD_COLOR)
-            template = cv2.imread(template_img_path, cv2.IMREAD_COLOR)
+            screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
+            template = read_image(template_img_path, cv2.IMREAD_COLOR)
             
             if screen is None:
                 logger.error(f"스크린샷 이미지를 불러올 수 없음: {screen_img_path}")
@@ -87,8 +99,8 @@ class ImageMatcher:
         """
         try:
             # 이미지 로드
-            screen = cv2.imread(screen_img_path, cv2.IMREAD_COLOR)
-            template = cv2.imread(template_img_path, cv2.IMREAD_COLOR)
+            screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
+            template = read_image(template_img_path, cv2.IMREAD_COLOR)
             
             if screen is None or template is None:
                 logger.error("이미지를 불러올 수 없음")
@@ -134,8 +146,8 @@ class ImageMatcher:
         """
         try:
             # 이미지 로드
-            screen = cv2.imread(screen_img_path, cv2.IMREAD_COLOR)
-            template = cv2.imread(template_img_path, cv2.IMREAD_COLOR)
+            screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
+            template = read_image(template_img_path, cv2.IMREAD_COLOR)
             
             if screen is None or template is None:
                 return 0.0
@@ -165,8 +177,8 @@ class ImageMatcher:
         """
         try:
             # 이미지 로드
-            screen = cv2.imread(screen_img_path, cv2.IMREAD_COLOR)
-            template = cv2.imread(template_img_path, cv2.IMREAD_COLOR)
+            screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
+            template = read_image(template_img_path, cv2.IMREAD_COLOR)
             
             if screen is None or template is None:
                 return 0.0
