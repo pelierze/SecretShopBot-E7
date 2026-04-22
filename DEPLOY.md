@@ -62,16 +62,24 @@ Release description 예시:
 - Windows 전용 배포판입니다.
 - ADB를 사용하는 자동화 도구라 Windows SmartScreen 또는 백신 경고가 표시될 수 있습니다.
 - 에뮬레이터에서 ADB 디버깅을 켠 뒤 사용하세요.
+- VirusTotal에서 소수 엔진만 탐지하는 경우 PyInstaller, ADB, 화면 캡처, 자동 입력 기능으로 인한 오탐일 수 있습니다.
 
 ## SHA256
 
-`release/SecretShopBot-E7-v1.0.6.zip.sha256.txt`의 값을 참고하세요.
+9C3AA5A0F24E6D6C472F2BFC3E394FC3961F9113F72D7CECC82AA10214976E45  SecretShopBot-E7-v1.0.6.zip
+
+PowerShell 확인 명령:
+
+Get-FileHash -Algorithm SHA256 .\SecretShopBot-E7-v1.0.6.zip
+
+`release/SecretShopBot-E7-v1.0.6.zip.sha256.txt`의 값과 비교하세요.
 ```
 
 Assets에는 아래 파일을 첨부합니다.
 
 ```text
 release/SecretShopBot-E7-v1.0.6.zip
+release/SecretShopBot-E7-v1.0.6.zip.sha256.txt
 ```
 
 마지막으로 `Publish release`를 누릅니다.

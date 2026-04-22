@@ -69,6 +69,11 @@ if (Test-Path $DeploySource) {
     Copy-Item -LiteralPath $DeploySource -Destination (Join-Path $PackageDir "DEPLOY.md")
 }
 
+$SecuritySource = Join-Path $ProjectRoot "SECURITY.md"
+if (Test-Path $SecuritySource) {
+    Copy-Item -LiteralPath $SecuritySource -Destination (Join-Path $PackageDir "SECURITY.md")
+}
+
 Write-Host "Creating zip package..."
 $ZipCreated = $false
 for ($Attempt = 1; $Attempt -le 5; $Attempt++) {

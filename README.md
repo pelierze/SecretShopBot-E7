@@ -45,6 +45,14 @@ SecretShopBot-E7.exe
 
 Windows SmartScreen 또는 백신 경고가 표시될 수 있습니다. 배포 출처를 확인한 뒤 실행하세요.
 
+배포 파일의 무결성은 릴리즈 노트에 공개된 SHA256 값으로 확인할 수 있습니다.
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\SecretShopBot-E7-v버전.zip
+```
+
+자세한 내용은 `SECURITY.md`를 참고하세요.
+
 ## 앱플레이어 준비
 
 앱플레이어에서 ADB 디버깅을 켜야 합니다.
@@ -204,6 +212,7 @@ images/buttons
 - 게임 이용 약관을 확인하고 사용 여부를 판단하세요.
 - 자동화 도구 사용으로 발생하는 계정 제재나 손실은 사용자 책임입니다.
 - 처음 사용할 때는 리프레시 횟수를 낮게 설정해 테스트하세요.
+- ADB 기반 자동화 도구 특성상 Windows SmartScreen 또는 일부 백신 경고가 표시될 수 있습니다.
 
 ## 개발자용 정보
 
