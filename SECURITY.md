@@ -27,7 +27,7 @@ GitHub Release에는 zip 파일과 SHA256 해시를 함께 공개합니다.
 다운로드한 zip 파일이 배포자가 올린 파일과 같은지 확인하려면 PowerShell에서 아래 명령을 실행하세요.
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\SecretShopBot-E7-v1.0.6.zip
+Get-FileHash -Algorithm SHA256 .\SecretShopBot-E7-v1.0.7.zip
 ```
 
 출력된 해시가 릴리즈 노트 또는 `.sha256.txt` 파일의 값과 같으면 같은 파일입니다.
