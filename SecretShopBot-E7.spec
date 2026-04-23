@@ -16,6 +16,7 @@ def collect_images():
 
 datas = collect_images() + [
     ('tools', 'tools'),
+    ('images/equipment_options/README.txt', 'images/equipment_options'),
     ('update_config.json', '.'),
     ('remote_script.json', '.'),
 ]
