@@ -86,7 +86,6 @@ class SecretShopBot:
         self,
         adb_controller: ADBController,
         base_dir: str = None,
-        runtime_dir: str = None,
         thresholds: dict = None,
         debug_mode: bool = False,
         automation_settings: dict = None,
@@ -107,7 +106,7 @@ class SecretShopBot:
         """
         self.adb = adb_controller
         self.resource_dir = Path(base_dir) if base_dir else get_resource_root()
-        self.runtime_dir = Path(runtime_dir) if runtime_dir else get_runtime_root() / "logs"
+        self.runtime_dir = get_runtime_root()
         self.debug_mode = debug_mode
         self.automation_settings = automation_settings or {}
         self.macro_settings = self.automation_settings.get("macro", {})
@@ -132,7 +131,7 @@ class SecretShopBot:
         self.matcher = ImageMatcher(threshold=0.92)
         
         # 스크린샷 임시 저장 경로
-        self.screenshot_path = self.runtime_dir / "current_screen.png"
+        self.screenshot_path = self.runtime_dir / "logs" / "current_screen.png"
         
         # 통계
         self.stats = {
@@ -649,7 +648,7 @@ class SecretShopBot:
                     logger.error(f"💡 이미지 매칭 정확도를 낮춰보세요 (현재: {int(self.matcher.threshold*100)}%)")
                     
                     # 디버깅용 스크린샷 저장
-                    debug_path = self.runtime_dir / "debug_refresh_button.png"
+                    debug_path = self.runtime_dir / "logs" / "debug_refresh_button.png"
                     debug_path.parent.mkdir(exist_ok=True)
                     import shutil
                     shutil.copy(self.screenshot_path, debug_path)
