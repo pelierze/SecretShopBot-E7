@@ -181,7 +181,7 @@ class JsonMacroEngine:
         x_ratio = float(step.get("x_ratio", defaults.get("x_ratio", 0.75)))
         start_y_ratio = float(step.get("start_y_ratio", defaults.get("start_y_ratio", 0.75)))
         end_y_ratio = float(step.get("end_y_ratio", defaults.get("end_y_ratio", 0.25)))
-        duration_ms = int(step.get("duration_ms", defaults.get("duration_ms", 500)))
+        duration_ms = int(step.get("duration_ms", defaults.get("duration_ms", 1000)))
 
         x = int(self.screen_width * x_ratio)
         start_y = int(self.screen_height * start_y_ratio)

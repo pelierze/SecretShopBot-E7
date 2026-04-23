@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "script_version": "2026.04.21.1",
+  "script_version": "2026.04.23.1",
   "app_min_version": "1.0.0",
   "gui": {
     "window_title": "에픽세븐 비밀상점 자동화",
@@ -59,7 +59,7 @@
     "x_ratio": 0.75,
     "start_y_ratio": 0.75,
     "end_y_ratio": 0.25,
-    "duration_ms": 500
+    "duration_ms": 1000
   },
   "macro": {
     "enabled_items": [
