@@ -59,7 +59,7 @@
     "x_ratio": 0.75,
     "start_y_ratio": 0.75,
     "end_y_ratio": 0.25,
-    "duration_ms": 1000
+    "duration_ms": 200
   },
   "macro": {
     "enabled_items": [
