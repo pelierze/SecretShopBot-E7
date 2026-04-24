@@ -2,12 +2,16 @@
 이미지 매칭 테스트 스크립트
 갱신 버튼을 찾을 수 있는지 테스트
 """
-import cv2
-import numpy as np
 from pathlib import Path
+import unittest
 
 def test_image_matching():
     """이미지 매칭 테스트"""
+    try:
+        import cv2
+    except ModuleNotFoundError as exc:
+        raise unittest.SkipTest("OpenCV가 설치되지 않아 이미지 매칭 테스트를 건너뜁니다.") from exc
+
     base_dir = Path(__file__).parent
     
     # 스크린샷 경로 (봇이 마지막으로 저장한 스크린샷)
