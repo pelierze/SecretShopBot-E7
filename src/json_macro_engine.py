@@ -98,6 +98,11 @@ class JsonMacroEngine:
         self.stats["start_time"] = time.time()
         macro_name = self.macro_definition.get("name", self.macro_definition.get("id", "macro"))
         logger.info("JSON 매크로 시작: %s", macro_name)
+        if buy_count_per_item != 1:
+            logger.info(
+                "JSON steps 매크로는 '구매 완료 검증 횟수' 대신 각 step 구성을 사용합니다. 현재 입력값 %s는 실행 로직에 직접 반영되지 않습니다.",
+                buy_count_per_item,
+            )
 
         try:
             for run_index in range(max_refresh_count):
@@ -127,12 +132,14 @@ class JsonMacroEngine:
             elif action == "wait":
                 time.sleep(float(step.get("seconds", 0)))
             elif action == "screenshot":
-                self._screenshot()
+                if not self._screenshot():
+                    return False
             elif action == "tap_image":
                 if not self._tap_image(step):
                     return False
             elif action == "swipe":
-                self._swipe(step)
+                if not self._swipe(step):
+                    return False
             elif action == "repeat":
                 count = int(step.get("count", 1))
                 for _ in range(count):
@@ -144,7 +151,9 @@ class JsonMacroEngine:
         return True
 
     def _tap_image(self, step: dict) -> bool:
-        self._screenshot()
+        if not self._screenshot():
+            logger.error("스크린샷에 실패해 tap_image 단계를 중지합니다.")
+            return False
         image_path = self._resolve_image_path(step)
         required = bool(step.get("required", True))
         if not image_path:
@@ -166,7 +175,9 @@ class JsonMacroEngine:
             return not required
 
         center_x, center_y = self.matcher.get_center(result)
-        self.adb.tap(center_x, center_y, delay=0.3)
+        if not self.adb.tap(center_x, center_y, delay=0.3):
+            logger.error("입력 탭 명령이 실패했습니다: %s", image_path.name)
+            return False
         logger.debug("JSON tap_image: %s (%s, %s)", image_path.name, center_x, center_y)
         return True
 
@@ -176,7 +187,7 @@ class JsonMacroEngine:
         time.sleep(float(self.timings.get("after_screenshot", 0.2)))
         return result
 
-    def _swipe(self, step: dict) -> None:
+    def _swipe(self, step: dict) -> bool:
         defaults = self.automation_settings.get("swipe", {})
         x_ratio = float(step.get("x_ratio", defaults.get("x_ratio", 0.75)))
         start_y_ratio = float(step.get("start_y_ratio", defaults.get("start_y_ratio", 0.75)))
@@ -186,7 +197,10 @@ class JsonMacroEngine:
         x = int(self.screen_width * x_ratio)
         start_y = int(self.screen_height * start_y_ratio)
         end_y = int(self.screen_height * end_y_ratio)
-        self.adb.swipe(x, start_y, x, end_y, duration=duration_ms, delay=0.5)
+        if not self.adb.swipe(x, start_y, x, end_y, duration=duration_ms, delay=0.5):
+            logger.error("JSON swipe 단계가 실패했습니다.")
+            return False
+        return True
 
     def _resolve_image_path(self, step: dict) -> Optional[Path]:
         image = step.get("image")
