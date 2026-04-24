@@ -5,6 +5,7 @@ import subprocess
 import time
 import os
 import sys
+import re
 from typing import Tuple, Optional
 from pathlib import Path
 import logging
@@ -239,10 +240,11 @@ class ADBController:
             실행 성공 여부
         """
         try:
+            effective_duration = self._normalize_swipe_duration(duration)
             if self.input_profile == "mumu":
-                success, last_output = self._swipe_mumu_compat(x1, y1, x2, y2, duration)
+                success, last_output = self._swipe_mumu_compat(x1, y1, x2, y2, effective_duration)
             else:
-                success, last_output = self._swipe_standard(x1, y1, x2, y2, duration)
+                success, last_output = self._swipe_standard(x1, y1, x2, y2, effective_duration)
 
             if success:
                 logger.debug(
@@ -252,7 +254,7 @@ class ADBController:
                     y1,
                     x2,
                     y2,
-                    duration,
+                    effective_duration,
                 )
                 time.sleep(delay)
                 return True
@@ -264,6 +266,17 @@ class ADBController:
             return False
 
     def _swipe_standard(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> tuple[bool, str]:
+        return self._run_swipe_command_list(self._build_swipe_commands(x1, y1, x2, y2, duration))
+
+    def _build_swipe_commands(
+        self,
+        x1: int,
+        y1: int,
+        x2: int,
+        y2: int,
+        duration: int,
+        allow_root: bool = False,
+    ) -> list[list[str]]:
         commands = [
             [
                 "-s", self.device_id, "shell", "input", "touchscreen", "swipe",
@@ -278,15 +291,51 @@ class ADBController:
                 str(x1), str(y1), str(x2), str(y2)
             ],
         ]
-        return self._run_swipe_command_list(commands)
+        if allow_root:
+            commands.extend(
+                [
+                    [
+                        "-s", self.device_id, "shell", "su", "0", "input", "swipe",
+                        str(x1), str(y1), str(x2), str(y2), str(duration)
+                    ],
+                    [
+                        "-s", self.device_id, "shell", "su", "0", "input", "swipe",
+                        str(x1), str(y1), str(x2), str(y2)
+                    ],
+                ]
+            )
+        return commands
+
+    def _build_root_swipe_commands(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> list[list[str]]:
+        return [
+            [
+                "-s", self.device_id, "shell", "su", "0", "input", "swipe",
+                str(x1), str(y1), str(x2), str(y2), str(duration)
+            ],
+            [
+                "-s", self.device_id, "shell", "su", "0", "input", "swipe",
+                str(x1), str(y1), str(x2), str(y2)
+            ],
+        ]
+
+    def _normalize_swipe_duration(self, duration: int) -> int:
+        return max(150, min(duration, 200))
 
     def _swipe_mumu_compat(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> tuple[bool, str]:
+        success, output = self._run_swipe_command_list(
+            self._build_root_swipe_commands(x1, y1, x2, y2, duration)
+        )
+        if success:
+            return True, output
+
+        logger.warning("MuMu 루트 스와이프가 실패해 호환 드래그 명령으로 재시도합니다: %s", output)
+
         success, output = self._swipe_with_motionevent(x1, y1, x2, y2, duration)
         if success:
             return True, output
 
         logger.warning("MuMu 호환 드래그가 실패해 기본 스와이프 명령으로 재시도합니다: %s", output)
-        return self._swipe_standard(x1, y1, x2, y2, duration)
+        return self._run_swipe_command_list(self._build_swipe_commands(x1, y1, x2, y2, duration))
 
     def _run_swipe_command_list(self, commands: list[list[str]]) -> tuple[bool, str]:
         last_output = ""
@@ -372,6 +421,18 @@ class ADBController:
             (width, height) 튜플
         """
         try:
+            result = self._run_adb(["-s", self.device_id, "shell", "dumpsys", "input"], text=True)
+            output = self._format_completed_output(result)
+            match = re.search(
+                r"Viewport INTERNAL:.*?logicalFrame=\[\s*\d+,\s*\d+,\s*(\d+),\s*(\d+)\]",
+                output,
+                re.DOTALL,
+            )
+            if result.returncode == 0 and match:
+                width, height = map(int, match.groups())
+                logger.info(f"?붾㈃ ?낅젰 ?ш린: {width}x{height}")
+                return width, height
+
             result = self._run_adb(["-s", self.device_id, "shell", "wm", "size"], text=True)
             
             # "Physical size: 1920x1080" 형식의 출력 파싱

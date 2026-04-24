@@ -161,7 +161,7 @@ class SecretShopBot:
         logger.info(f"화면 해상도: {self.screen_width}x{self.screen_height}")
         
         swipe_settings = self.automation_settings.get("swipe", {})
-        self.swipe_duration = int(swipe_settings.get("duration_ms", 1000))
+        self.swipe_duration = int(swipe_settings.get("duration_ms", 200))
         self.swipe_x = int(self.screen_width * float(swipe_settings.get("x_ratio", 0.75)))
         self.swipe_start_y = int(self.screen_height * float(swipe_settings.get("start_y_ratio", 0.75)))
         self.swipe_end_y = int(self.screen_height * float(swipe_settings.get("end_y_ratio", 0.25)))
@@ -747,30 +747,30 @@ class SecretShopBot:
     
     def _scroll_down(self):
         """화면을 위로 스크롤 (두 번째 페이지로 이동)"""
-        for attempt in range(1, 3):
-            logger.info(
-                "화면 스크롤 시도 %s/2 - (%s, %s) -> (%s, %s), duration=%sms",
-                attempt,
-                self.swipe_x,
-                self.swipe_start_y,
-                self.swipe_x,
-                self.swipe_end_y,
-                self.swipe_duration,
-            )
+        logger.info(
+            "화면 스크롤 시도 1/1 - (%s, %s) -> (%s, %s), duration=%sms",
+            self.swipe_x,
+            self.swipe_start_y,
+            self.swipe_x,
+            self.swipe_end_y,
+            self.swipe_duration,
+        )
 
-            success = self.adb.swipe(
-                self.swipe_x, self.swipe_start_y,
-                self.swipe_x, self.swipe_end_y,
-                duration=self.swipe_duration,
-                delay=0.5
-            )
+        success = self.adb.swipe(
+            self.swipe_x,
+            self.swipe_start_y,
+            self.swipe_x,
+            self.swipe_end_y,
+            duration=self.swipe_duration,
+            delay=0.5,
+        )
 
-            if success:
-                logger.info("화면 스크롤 시도 %s/2 성공", attempt)
-            else:
-                logger.warning("화면 스크롤 시도 %s/2 실패", attempt)
+        if success:
+            logger.info("화면 스크롤 시도 1/1 성공")
+        else:
+            logger.warning("화면 스크롤 시도 1/1 실패")
 
-        logger.info("화면 스크롤 2회 시도 완료")
+        logger.info("화면 스크롤 1회 시도 완료")
     
     def set_user_action(self, action: str):
         """
