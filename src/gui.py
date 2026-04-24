@@ -81,6 +81,8 @@ class SessionView:
         self.bot_thread = None
         self.is_running = False
         self.selected_macro_id = "secret_shop"
+        self.scanned_devices = {}
+        self.selected_device_info = None
         self.input_profile_label_text = "MuMu 앱플레이어 사용 (호환 드래그 사용)"
         self.buy_count_default_label_text = "구매 완료 검증 횟수:"
         self.buy_count_default_unit_text = "회 (비활성화 버튼 확인 반복, 권장: 3회)"
@@ -413,6 +415,8 @@ class SessionView:
                 devices = temp_adb.get_devices()
                 if not devices:
                     logger.warning("⚠️ 연결된 장치가 없습니다. 앱플레이어의 ADB 브릿지/ADB 디버깅 옵션이 활성화되어 있는지 확인하세요.")
+                    self.scanned_devices = {}
+                    self.selected_device_info = None
                     self.device_combo["values"] = []
                     return
 
@@ -423,7 +427,11 @@ class SessionView:
                         unavailable_devices,
                     )
 
-                device_list = [f"{d['id']} ({d['status']})" for d in devices]
+                self.scanned_devices = {
+                    f"{device['id']} ({device['status']})": device
+                    for device in devices
+                }
+                device_list = list(self.scanned_devices.keys())
                 self.device_combo["values"] = device_list
                 if device_list:
                     self.device_combo.current(0)
@@ -434,6 +442,7 @@ class SessionView:
 
     def _on_device_selected(self, event):
         if self.device_combo.get():
+            self.selected_device_info = self.scanned_devices.get(self.device_combo.get())
             device_id = self.device_combo.get().split(" (")[0]
             if ":" in device_id:
                 ip, port = device_id.split(":", 1)
@@ -442,18 +451,24 @@ class SessionView:
 
     def _connect_adb(self):
         with log_session(self.name):
-            ip = self.ip_entry.get().strip()
-            port = self.port_entry.get().strip()
-            if not ip or not port:
-                messagebox.showerror("오류", "IP 주소와 포트를 입력하세요.")
-                return
-            try:
-                port = int(port)
-            except ValueError:
-                messagebox.showerror("오류", "포트는 숫자여야 합니다.")
-                return
+            selected_entry = self.scanned_devices.get(self.device_combo.get())
+            if selected_entry:
+                device_id = selected_entry["id"]
+                is_network_device = ADBController._is_network_device_id(device_id)
+            else:
+                ip = self.ip_entry.get().strip()
+                port = self.port_entry.get().strip()
+                if not ip or not port:
+                    messagebox.showerror("오류", "IP 주소와 포트를 입력하세요.")
+                    return
+                try:
+                    port = int(port)
+                except ValueError:
+                    messagebox.showerror("오류", "포트는 숫자여야 합니다.")
+                    return
+                device_id = f"{ip}:{port}"
+                is_network_device = True
 
-            device_id = f"{ip}:{port}"
             if self.app.is_device_in_use(device_id, self):
                 self.connection_status.config(text="● 사용 중", foreground="red")
                 logger.error("❌ %s 장치는 다른 세션에서 이미 사용 중입니다.", device_id)
@@ -461,7 +476,13 @@ class SessionView:
 
             self.adb_controller = ADBController()
             self._apply_input_profile()
-            if self.adb_controller.connect(ip, port):
+            if is_network_device:
+                ip, port_text = device_id.rsplit(":", 1)
+                connected = self.adb_controller.connect(ip, int(port_text))
+            else:
+                connected = self.adb_controller.connect_device(device_id)
+
+            if connected:
                 logger.info("ADB 테스트 통신 확인 중...")
                 test_ok, test_message = self.adb_controller.test_connection()
                 if test_ok:
@@ -534,7 +555,6 @@ class SessionView:
                 self.bot = JsonMacroEngine(
                     self.adb_controller,
                     macro_definition=selected_macro,
-                    runtime_dir=str(self.runtime_dir),
                     thresholds=thresholds,
                     debug_mode=debug_mode,
                     automation_settings=self.app.remote_settings,
@@ -542,7 +562,6 @@ class SessionView:
             else:
                 self.bot = SecretShopBot(
                     self.adb_controller,
-                    runtime_dir=str(self.runtime_dir),
                     thresholds=thresholds,
                     debug_mode=debug_mode,
                     automation_settings=self.app.remote_settings,
