@@ -130,7 +130,8 @@ class JsonMacroEngine:
             if action == "log":
                 logger.info(step.get("message", ""))
             elif action == "wait":
-                time.sleep(float(step.get("seconds", 0)))
+                if not self._sleep_with_stop(float(step.get("seconds", 0))):
+                    return False
             elif action == "screenshot":
                 if not self._screenshot():
                     return False
@@ -249,6 +250,16 @@ class JsonMacroEngine:
     def _wait_if_paused(self) -> None:
         while self.paused and self.user_action != "stop":
             time.sleep(0.1)
+
+    def _sleep_with_stop(self, seconds: float) -> bool:
+        end_time = time.time() + max(0.0, seconds)
+        while time.time() < end_time:
+            if self._should_stop():
+                logger.info("⛔ 대기 중 중지 요청을 감지했습니다.")
+                return False
+            self._wait_if_paused()
+            time.sleep(min(0.1, end_time - time.time()))
+        return not self._should_stop()
 
     def _should_stop(self) -> bool:
         return self.user_action == "stop"
