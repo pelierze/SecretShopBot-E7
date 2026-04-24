@@ -66,6 +66,7 @@ class SecretShopGUI:
         self.bot_thread = None
         self.adb_server_started = False
         self.remote_settings = {}
+        self.input_profile_label_text = "기본 입력 방식 사용"
         self.macro_definitions = [self._default_macro_definition()]
         self.selected_macro_id = "secret_shop"
         
@@ -179,6 +180,15 @@ class SecretShopGUI:
         self.debug_mode_var = tk.BooleanVar(value=False)
         self.debug_checkbox = ttk.Checkbutton(self.settings_frame, text="디버그 모드 (상세 로그)", variable=self.debug_mode_var)
         self.debug_checkbox.grid(row=8, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
+        self.mumu_mode_var = tk.BooleanVar(value=False)
+        self.mumu_checkbox = ttk.Checkbutton(
+            self.settings_frame,
+            text="MuMu 앱플레이어 사용 (호환 드래그 사용)",
+            variable=self.mumu_mode_var,
+            command=self._on_input_profile_changed,
+        )
+        self.mumu_checkbox.grid(row=9, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
         
         # === 제어 섹션 ===
         control_frame = ttk.Frame(self.root, padding=10)
@@ -397,6 +407,9 @@ class SecretShopGUI:
                 widget.config(text=labels[key])
         if "debug_mode" in labels:
             self.debug_checkbox.config(text=labels["debug_mode"])
+        if "mumu_compatibility" in labels:
+            self.input_profile_label_text = labels["mumu_compatibility"]
+            self.mumu_checkbox.config(text=self.input_profile_label_text)
 
         buttons = gui_config.get("buttons", {})
         button_widgets = {
@@ -497,6 +510,7 @@ class SecretShopGUI:
             return
         
         self.adb_controller = ADBController()
+        self._apply_input_profile()
         
         if self.adb_controller.connect(ip, port):
             logger.info("ADB 테스트 통신 확인 중...")
@@ -518,6 +532,15 @@ class SecretShopGUI:
         else:
             self.connection_status.config(text="● 연결 실패", foreground="red")
             logger.error(f"❌ ADB 연결 실패: {ip}:{port} - 앱플레이어 실행 상태와 ADB 브릿지/ADB 디버깅 옵션을 확인하세요")
+
+    def _on_input_profile_changed(self):
+        self._apply_input_profile()
+
+    def _apply_input_profile(self):
+        if not self.adb_controller:
+            return
+        profile = "mumu" if self.mumu_mode_var.get() else "default"
+        self.adb_controller.set_input_profile(profile)
             
     def _start_bot(self):
         """봇 시작"""
@@ -590,6 +613,7 @@ class SecretShopGUI:
         self.buy_button_threshold.config(state=tk.DISABLED)
         self.refresh_button_threshold.config(state=tk.DISABLED)
         self.debug_checkbox.config(state=tk.DISABLED)
+        self.mumu_checkbox.config(state=tk.DISABLED)
         
         # 통계 초기화
         self._update_stats({
@@ -826,6 +850,7 @@ class SecretShopGUI:
         self.buy_button_threshold.config(state=tk.NORMAL)
         self.refresh_button_threshold.config(state=tk.NORMAL)
         self.debug_checkbox.config(state=tk.NORMAL)
+        self.mumu_checkbox.config(state=tk.NORMAL)
     
     def _test_image_matching(self):
         """이미지 매칭 테스트"""

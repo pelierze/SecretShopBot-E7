@@ -28,6 +28,7 @@ class ADBController:
             device_id: ADB 디바이스 ID (None일 경우 자동 감지)
         """
         self.device_id = device_id
+        self.input_profile = "default"
         
         # 프로젝트 내부의 ADB 경로 확인
         project_root = get_resource_root()
@@ -46,6 +47,15 @@ class ADBController:
                 # 실패 시 시스템 PATH의 ADB 사용 시도
                 self.adb_path = "adb"
                 logger.warning("ADB 다운로드 실패. 시스템 PATH의 ADB를 사용합니다.")
+
+    def set_input_profile(self, profile: Optional[str]) -> None:
+        """입력 호환성 프로필 설정."""
+        normalized = (profile or "default").strip().lower()
+        if normalized not in {"default", "mumu"}:
+            logger.warning("알 수 없는 입력 프로필 '%s' - 기본 프로필을 사용합니다.", profile)
+            normalized = "default"
+        self.input_profile = normalized
+        logger.info("ADB 입력 프로필 설정: %s", self.input_profile)
     
     def _run_adb(self, args: list[str], text: bool = False) -> subprocess.CompletedProcess:
         """Run adb without flashing a console window on Windows."""
@@ -229,35 +239,90 @@ class ADBController:
             실행 성공 여부
         """
         try:
-            commands = [
-                [
-                    "-s", self.device_id, "shell", "input", "touchscreen", "swipe",
-                    str(x1), str(y1), str(x2), str(y2), str(duration)
-                ],
-                [
-                    "-s", self.device_id, "shell", "input", "swipe",
-                    str(x1), str(y1), str(x2), str(y2), str(duration)
-                ],
-                [
-                    "-s", self.device_id, "shell", "input", "swipe",
-                    str(x1), str(y1), str(x2), str(y2)
-                ],
-            ]
+            if self.input_profile == "mumu":
+                success, last_output = self._swipe_mumu_compat(x1, y1, x2, y2, duration)
+            else:
+                success, last_output = self._swipe_standard(x1, y1, x2, y2, duration)
 
-            last_output = ""
-            for command in commands:
-                result = self._run_adb(command)
-                if result.returncode == 0:
-                    logger.debug(f"스와이프: ({x1}, {y1}) -> ({x2}, {y2}), duration={duration}")
-                    time.sleep(delay)
-                    return True
-                last_output = self._format_completed_output(result)
+            if success:
+                logger.debug(
+                    "스와이프(%s): (%s, %s) -> (%s, %s), duration=%s",
+                    self.input_profile,
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    duration,
+                )
+                time.sleep(delay)
+                return True
 
             logger.error(f"스와이프 실행 실패: {last_output}")
             return False
         except Exception as e:
             logger.error(f"스와이프 실행 중 오류: {e}")
             return False
+
+    def _swipe_standard(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> tuple[bool, str]:
+        commands = [
+            [
+                "-s", self.device_id, "shell", "input", "touchscreen", "swipe",
+                str(x1), str(y1), str(x2), str(y2), str(duration)
+            ],
+            [
+                "-s", self.device_id, "shell", "input", "swipe",
+                str(x1), str(y1), str(x2), str(y2), str(duration)
+            ],
+            [
+                "-s", self.device_id, "shell", "input", "swipe",
+                str(x1), str(y1), str(x2), str(y2)
+            ],
+        ]
+        return self._run_swipe_command_list(commands)
+
+    def _swipe_mumu_compat(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> tuple[bool, str]:
+        success, output = self._swipe_with_motionevent(x1, y1, x2, y2, duration)
+        if success:
+            return True, output
+
+        logger.warning("MuMu 호환 드래그가 실패해 기본 스와이프 명령으로 재시도합니다: %s", output)
+        return self._swipe_standard(x1, y1, x2, y2, duration)
+
+    def _run_swipe_command_list(self, commands: list[list[str]]) -> tuple[bool, str]:
+        last_output = ""
+        for command in commands:
+            result = self._run_adb(command)
+            if result.returncode == 0:
+                return True, ""
+            last_output = self._format_completed_output(result)
+        return False, last_output
+
+    def _swipe_with_motionevent(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> tuple[bool, str]:
+        steps = max(4, min(12, duration // 100 if duration > 0 else 6))
+        step_delay = max(0.01, duration / max(steps, 1) / 1000.0)
+
+        events = [
+            ["-s", self.device_id, "shell", "input", "motionevent", "DOWN", str(x1), str(y1)],
+        ]
+        for step in range(1, steps):
+            progress = step / steps
+            move_x = int(round(x1 + (x2 - x1) * progress))
+            move_y = int(round(y1 + (y2 - y1) * progress))
+            events.append(
+                ["-s", self.device_id, "shell", "input", "motionevent", "MOVE", str(move_x), str(move_y)]
+            )
+        events.append(["-s", self.device_id, "shell", "input", "motionevent", "UP", str(x2), str(y2)])
+
+        last_output = ""
+        for index, event in enumerate(events):
+            result = self._run_adb(event)
+            if result.returncode != 0:
+                last_output = self._format_completed_output(result)
+                return False, last_output
+            if index < len(events) - 1:
+                time.sleep(step_delay)
+
+        return True, ""
     
     def screenshot(self, save_path: str) -> bool:
         """
