@@ -119,8 +119,8 @@ class SecretShopBot:
         
         # 이미지별 임계값 설정
         default_thresholds = {
-            "mystic_medal": 0.92,
-            "covenant_bookmark": 0.92,
+            "mystic_medal": 0.95,
+            "covenant_bookmark": 0.95,
             "purchase_button": 0.92,
             "buy_button": 0.92,
             "refresh_button": 0.92,
@@ -374,7 +374,14 @@ class SecretShopBot:
             )
             if result:
                 found_items[item_name] = result
-                logger.info(f"⭐ {self._item_label(item_name)} 발견: {result}")
+                similarity = self.matcher.get_similarity_at_location(
+                    str(self.screenshot_path),
+                    str(image_path),
+                    result,
+                )
+                logger.info(
+                    f"⭐ {self._item_label(item_name)} 발견: {result} (매칭률: {similarity * 100:.1f}%)"
+                )
         
         if found_items:
             logger.info(f"🔍 스캔 완료 - 발견한 아이템: {list(found_items.keys())}")
@@ -626,10 +633,13 @@ class SecretShopBot:
         
         # 1단계: 갱신 버튼 찾기 및 클릭
         if self._click_button("refresh"):
-            time.sleep(self._timing("refresh_confirm_delay", 0.5))
-            
-            # 2단계: 확인 버튼 클릭
-            if self._click_button("refresh_confirm"):
+            # 2단계: 확인 버튼이 실제로 뜰 때까지 잠시 재시도
+            if self._click_button_with_retry(
+                "refresh_confirm",
+                attempts=int(self.timings.get("refresh_confirm_attempts", 5)),
+                initial_delay=self._timing("refresh_confirm_delay", 0.5),
+                retry_interval=self._timing("refresh_confirm_retry_interval", 0.3),
+            ):
                 logger.info("✅ 상점 갱신 성공")
                 time.sleep(self._timing("after_refresh", 0.8))
                 return True
@@ -654,6 +664,26 @@ class SecretShopBot:
                     shutil.copy(self.screenshot_path, debug_path)
                     logger.error(f"💡 디버그 스크린샷: {debug_path}")
             return False
+
+    def _click_button_with_retry(
+        self,
+        button_type: str,
+        attempts: int = 1,
+        initial_delay: float = 0.0,
+        retry_interval: float = 0.0,
+    ) -> bool:
+        attempts = max(1, int(attempts))
+        if initial_delay > 0:
+            time.sleep(initial_delay)
+
+        for attempt in range(attempts):
+            if self.user_action == "stop":
+                return False
+            if self._click_button(button_type):
+                return True
+            if attempt < attempts - 1 and retry_interval > 0:
+                time.sleep(retry_interval)
+        return False
     
     def _click_button(self, button_type: str) -> bool:
         """

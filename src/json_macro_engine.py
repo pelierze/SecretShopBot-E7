@@ -98,6 +98,11 @@ class JsonMacroEngine:
         self.stats["start_time"] = time.time()
         macro_name = self.macro_definition.get("name", self.macro_definition.get("id", "macro"))
         logger.info("JSON 매크로 시작: %s", macro_name)
+        if buy_count_per_item != 1:
+            logger.info(
+                "JSON steps 매크로는 '구매 완료 검증 횟수' 대신 각 step 구성을 사용합니다. 현재 입력값 %s는 실행 로직에 직접 반영되지 않습니다.",
+                buy_count_per_item,
+            )
 
         try:
             for run_index in range(max_refresh_count):
@@ -125,14 +130,17 @@ class JsonMacroEngine:
             if action == "log":
                 logger.info(step.get("message", ""))
             elif action == "wait":
-                time.sleep(float(step.get("seconds", 0)))
+                if not self._sleep_with_stop(float(step.get("seconds", 0))):
+                    return False
             elif action == "screenshot":
-                self._screenshot()
+                if not self._screenshot():
+                    return False
             elif action == "tap_image":
                 if not self._tap_image(step):
                     return False
             elif action == "swipe":
-                self._swipe(step)
+                if not self._swipe(step):
+                    return False
             elif action == "repeat":
                 count = int(step.get("count", 1))
                 for _ in range(count):
@@ -144,7 +152,9 @@ class JsonMacroEngine:
         return True
 
     def _tap_image(self, step: dict) -> bool:
-        self._screenshot()
+        if not self._screenshot():
+            logger.error("스크린샷에 실패해 tap_image 단계를 중지합니다.")
+            return False
         image_path = self._resolve_image_path(step)
         required = bool(step.get("required", True))
         if not image_path:
@@ -166,7 +176,9 @@ class JsonMacroEngine:
             return not required
 
         center_x, center_y = self.matcher.get_center(result)
-        self.adb.tap(center_x, center_y, delay=0.3)
+        if not self.adb.tap(center_x, center_y, delay=0.3):
+            logger.error("입력 탭 명령이 실패했습니다: %s", image_path.name)
+            return False
         logger.debug("JSON tap_image: %s (%s, %s)", image_path.name, center_x, center_y)
         return True
 
@@ -176,7 +188,7 @@ class JsonMacroEngine:
         time.sleep(float(self.timings.get("after_screenshot", 0.2)))
         return result
 
-    def _swipe(self, step: dict) -> None:
+    def _swipe(self, step: dict) -> bool:
         defaults = self.automation_settings.get("swipe", {})
         x_ratio = float(step.get("x_ratio", defaults.get("x_ratio", 0.75)))
         start_y_ratio = float(step.get("start_y_ratio", defaults.get("start_y_ratio", 0.75)))
@@ -186,7 +198,10 @@ class JsonMacroEngine:
         x = int(self.screen_width * x_ratio)
         start_y = int(self.screen_height * start_y_ratio)
         end_y = int(self.screen_height * end_y_ratio)
-        self.adb.swipe(x, start_y, x, end_y, duration=duration_ms, delay=0.5)
+        if not self.adb.swipe(x, start_y, x, end_y, duration=duration_ms, delay=0.5):
+            logger.error("JSON swipe 단계가 실패했습니다.")
+            return False
+        return True
 
     def _resolve_image_path(self, step: dict) -> Optional[Path]:
         image = step.get("image")
@@ -218,7 +233,8 @@ class JsonMacroEngine:
             "purchase": "purchase_button",
             "buy": "buy_button",
         }.get(target, target)
-        return float(self.thresholds.get(threshold_key, 0.92))
+        default_threshold = 0.95 if threshold_key in {"mystic_medal", "covenant_bookmark"} else 0.92
+        return float(self.thresholds.get(threshold_key, default_threshold))
 
     def _find_image_file(self, directory: Path, base_name: str) -> Optional[Path]:
         exact_path = directory / base_name
@@ -235,6 +251,16 @@ class JsonMacroEngine:
     def _wait_if_paused(self) -> None:
         while self.paused and self.user_action != "stop":
             time.sleep(0.1)
+
+    def _sleep_with_stop(self, seconds: float) -> bool:
+        end_time = time.time() + max(0.0, seconds)
+        while time.time() < end_time:
+            if self._should_stop():
+                logger.info("⛔ 대기 중 중지 요청을 감지했습니다.")
+                return False
+            self._wait_if_paused()
+            time.sleep(min(0.1, end_time - time.time()))
+        return not self._should_stop()
 
     def _should_stop(self) -> bool:
         return self.user_action == "stop"

@@ -49,8 +49,8 @@
     "purchase_verification_count": 3
   },
   "thresholds": {
-    "mystic_medal": 92,
-    "covenant_bookmark": 92,
+    "mystic_medal": 95,
+    "covenant_bookmark": 95,
     "purchase_button": 92,
     "buy_button": 92,
     "refresh_button": 92
@@ -91,6 +91,8 @@
       "after_screenshot": 0.3,
       "after_scroll": 0.5,
       "refresh_confirm_delay": 0.5,
+      "refresh_confirm_attempts": 5,
+      "refresh_confirm_retry_interval": 0.3,
       "after_refresh": 0.8,
       "refresh_retry": 2.0,
       "after_purchase_tap": 0.5,

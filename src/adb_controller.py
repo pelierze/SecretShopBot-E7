@@ -6,6 +6,7 @@ import time
 import os
 import sys
 import re
+import socket
 from typing import Tuple, Optional
 from pathlib import Path
 import logging
@@ -83,6 +84,64 @@ class ADBController:
             stderr = stderr.decode("utf-8", errors="replace")
         return f"{stdout}\n{stderr}".strip()
 
+    @staticmethod
+    def _is_network_device_id(device_id: Optional[str]) -> bool:
+        if not device_id or ":" not in device_id:
+            return False
+        host, _, port = device_id.rpartition(":")
+        return bool(host and port.isdigit())
+
+    def _can_connect_local_port(self, port: int) -> bool:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                return True
+        except OSError:
+            return False
+
+    def _ensure_local_device_connections(self) -> None:
+        known_ports = (5555, 5557, 62001, 7555, 16384, 16416, 21503, 21513)
+        for port in known_ports:
+            if not self._can_connect_local_port(port):
+                continue
+            self._run_adb(["connect", f"127.0.0.1:{port}"], text=True)
+
+    def _get_device_identity(self, device_id: str) -> str:
+        probes = [
+            ["-s", device_id, "shell", "settings", "get", "secure", "android_id"],
+            ["-s", device_id, "shell", "getprop", "ro.serialno"],
+            ["-s", device_id, "shell", "getprop", "ro.product.model"],
+        ]
+        values = []
+        for probe in probes:
+            try:
+                result = self._run_adb(probe, text=True)
+            except Exception:
+                continue
+            output = self._format_completed_output(result).strip()
+            if result.returncode == 0 and output and output.lower() != "null":
+                values.append(output)
+        return "|".join(values) if values else device_id
+
+    @staticmethod
+    def _device_preference_key(device: dict) -> tuple[int, str]:
+        device_id = device.get("id", "")
+        if device_id.startswith("emulator-"):
+            return (0, device_id)
+        if device_id.startswith("127.0.0.1:16384"):
+            return (1, device_id)
+        if ADBController._is_network_device_id(device_id):
+            return (2, device_id)
+        return (3, device_id)
+
+    @staticmethod
+    def _dedupe_group_key(device: dict, identity: str) -> str:
+        device_id = device.get("id", "")
+        if device_id.startswith("emulator-"):
+            return f"emulator:{device_id}"
+        if ADBController._is_network_device_id(device_id):
+            return f"network:{identity}"
+        return f"device:{device_id}"
+
     def _download_adb(self, project_root: Path) -> bool:
         """
         ADB 자동 다운로드
@@ -159,6 +218,30 @@ class ADBController:
             logger.error(f"ADB 연결 중 오류: {e}")
             return False
 
+    def connect_device(self, device_id: str) -> bool:
+        """Connect to an already-visible ADB device by serial/device id."""
+        normalized = (device_id or "").strip()
+        if not normalized:
+            logger.error("ADB device id is empty.")
+            return False
+
+        if self._is_network_device_id(normalized):
+            host, _, port = normalized.rpartition(":")
+            return self.connect(host, int(port))
+
+        try:
+            result = self._run_adb(["-s", normalized, "get-state"], text=True)
+            output = self._format_completed_output(result).lower()
+            if result.returncode == 0 and "device" in output:
+                self.device_id = normalized
+                logger.info("ADB direct device selection successful: %s", self.device_id)
+                return True
+            logger.error("ADB direct device selection failed: %s", output)
+            return False
+        except Exception as e:
+            logger.error("ADB direct device selection error: %s", e)
+            return False
+
     def test_connection(self) -> tuple[bool, str]:
         """Verify that the connected device accepts ADB shell commands."""
         if not self.device_id:
@@ -181,21 +264,51 @@ class ADBController:
             디바이스 정보 리스트 [{'id': 'device_id', 'status': 'device'}, ...]
         """
         try:
-            result = self._run_adb(["devices"], text=True)
+            self._ensure_local_device_connections()
+            result = self._run_adb(["devices", "-l"], text=True)
             
             devices = []
-            lines = result.stdout.strip().split('\n')[1:]  # 첫 줄(헤더) 제외
-            
+            lines = result.stdout.strip().split("\n")[1:]
+
             for line in lines:
-                if '\t' in line:
-                    parts = line.split('\t')
-                    if len(parts) >= 2:
-                        device_id = parts[0].strip()
-                        status = parts[1].strip()
-                        if device_id:  # 빈 라인 제외
-                            devices.append({'id': device_id, 'status': status})
-                    
-            return devices
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                device_id = parts[0].strip()
+                status = parts[1].strip()
+                device = {"id": device_id, "status": status}
+                for token in parts[2:]:
+                    if ":" not in token:
+                        continue
+                    key, value = token.split(":", 1)
+                    if key and value:
+                        device[key] = value
+                if device_id:
+                    devices.append(device)
+
+            identities = {
+                device["id"]: self._get_device_identity(device["id"])
+                for device in devices
+            }
+            emulator_identities = {
+                identity
+                for device_id, identity in identities.items()
+                if device_id.startswith("emulator-")
+            }
+
+            unique_devices = {}
+            for device in devices:
+                device_id = device["id"]
+                identity = identities[device_id]
+                if self._is_network_device_id(device_id) and identity in emulator_identities:
+                    continue
+
+                group_key = self._dedupe_group_key(device, identity)
+                current = unique_devices.get(group_key)
+                if current is None or self._device_preference_key(device) < self._device_preference_key(current):
+                    unique_devices[group_key] = device
+
+            return sorted(unique_devices.values(), key=self._device_preference_key)
         except Exception as e:
             logger.error(f"디바이스 목록 조회 중 오류: {e}")
             return []
@@ -430,7 +543,7 @@ class ADBController:
             )
             if result.returncode == 0 and match:
                 width, height = map(int, match.groups())
-                logger.info(f"?붾㈃ ?낅젰 ?ш린: {width}x{height}")
+                logger.info("화면 입력 크기: %sx%s", width, height)
                 return width, height
 
             result = self._run_adb(["-s", self.device_id, "shell", "wm", "size"], text=True)
@@ -454,10 +567,13 @@ class ADBController:
         """
         try:
             if self.device_id:
-                # 특정 디바이스만 연결 해제
-                result = self._run_adb(["disconnect", self.device_id], text=True)
-                logger.info(f"디바이스 연결 해제: {self.device_id}")
-                logger.debug(result.stdout)
+                if self._is_network_device_id(self.device_id):
+                    result = self._run_adb(["disconnect", self.device_id], text=True)
+                    logger.info(f"디바이스 연결 해제: {self.device_id}")
+                    logger.debug(result.stdout)
+                else:
+                    logger.info("ADB 장치 선택 해제: %s", self.device_id)
+                self.device_id = None
             return True
         except Exception as e:
             logger.error(f"연결 해제 중 오류: {e}")
