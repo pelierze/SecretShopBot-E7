@@ -113,29 +113,45 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(ocr_failure["option"], "speed")
         self.assertFalse(success)
 
-    def test_evaluate_target_matches_counts_candidate_options_in_count_mode(self):
+    def test_evaluate_target_matches_counts_exact_value_matches_in_count_mode(self):
         bot = self._make_bot()
         bot.target_mode = EquipmentRerollBot.TARGET_MODE_COUNT
         bot.required_match_count = 2
         bot.target_specs = [
-            {"option": "speed", "value": None, "is_percent": False},
-            {"option": "attack", "value": None, "is_percent": False},
-            {"option": "life", "value": None, "is_percent": False},
+            {"option": "speed", "value": 4, "is_percent": False},
+            {"option": "attack", "value": 8, "is_percent": True},
+            {"option": "life", "value": 8, "is_percent": True},
         ]
 
         row_results = [
-            {"row_index": 0, "option": "speed", "value": None, "is_percent": False},
-            {"row_index": 1, "option": "effectiveness", "value": None, "is_percent": False},
-            {"row_index": 2, "option": "life", "value": None, "is_percent": False},
+            {"row_index": 0, "option": "speed", "value": 4, "is_percent": False},
+            {"row_index": 1, "option": "attack", "value": 6, "is_percent": True},
+            {"row_index": 2, "option": "life", "value": 8, "is_percent": True},
         ]
 
-        option_count, target_count, matched_rows, ocr_failure, success = bot._evaluate_target_matches(row_results)
+        option_count, target_count, matched_specs, ocr_failure, success = bot._evaluate_target_matches(row_results)
 
-        self.assertEqual(option_count, 2)
+        self.assertEqual(option_count, 3)
         self.assertEqual(target_count, 2)
-        self.assertEqual([row["option"] for row in matched_rows], ["speed", "life"])
+        self.assertEqual([spec["option"] for spec in matched_specs], ["speed", "life"])
         self.assertIsNone(ocr_failure)
         self.assertTrue(success)
+
+    def test_evaluate_target_matches_reports_ocr_failure_on_count_mode(self):
+        bot = self._make_bot()
+        bot.target_mode = EquipmentRerollBot.TARGET_MODE_COUNT
+        bot.required_match_count = 1
+        bot.target_specs = [{"option": "speed", "value": 4, "is_percent": False}]
+
+        row_results = [{"row_index": 0, "option": "speed", "value": None, "is_percent": False}]
+
+        option_count, target_count, matched_specs, ocr_failure, success = bot._evaluate_target_matches(row_results)
+
+        self.assertEqual(option_count, 1)
+        self.assertEqual(target_count, 0)
+        self.assertEqual(matched_specs, [])
+        self.assertEqual(ocr_failure["option"], "speed")
+        self.assertFalse(success)
 
     def test_click_image_with_retry_retries_until_success(self):
         bot = self._make_bot()

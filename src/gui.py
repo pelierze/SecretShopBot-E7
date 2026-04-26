@@ -575,15 +575,6 @@ class SessionView:
         row = self.reroll_target_rows[index]
         option_name = row["option_combo"].get() or "속도"
         rule = self._get_reroll_option_rule(option_name)
-        target_mode = self._get_reroll_target_mode()
-
-        if target_mode == self.REROLL_TARGET_MODE_COUNT:
-            row["value_entry"].config(state=tk.DISABLED)
-            if reset_defaults:
-                row["percent_var"].set(bool(rule.get("default_percent", False)))
-            row["percent_checkbox"].config(state=tk.DISABLED)
-            row["range_label"].config(text="수치 무시", state=tk.NORMAL if index < self._get_reroll_target_count() else tk.DISABLED)
-            return
 
         row["value_entry"].config(state=tk.NORMAL if not self.is_running and index < self._get_reroll_target_count() else tk.DISABLED)
 
@@ -957,24 +948,17 @@ class SessionView:
                     if option_name in seen_options:
                         raise ValueError(f"중복된 목표 옵션이 있습니다: {option_name}")
                     seen_options.add(option_name)
-                    if target_mode == self.REROLL_TARGET_MODE_EXACT:
-                        use_percent = row["percent_var"].get()
-                        target_range = self._get_reroll_target_range(option_name, use_percent)
-                        target_value = int(row["value_entry"].get())
-                        if not target_range[0] <= target_value <= target_range[1]:
-                            suffix = "%" if use_percent else ""
-                            raise ValueError(f"{option_name} 목표 수치는 {target_range[0]}~{target_range[1]}{suffix} 사이여야 합니다.")
-                        target_specs.append({
-                            "option": option_name,
-                            "value": target_value,
-                            "is_percent": use_percent,
-                        })
-                    else:
-                        target_specs.append({
-                            "option": option_name,
-                            "value": None,
-                            "is_percent": False,
-                        })
+                    use_percent = row["percent_var"].get()
+                    target_range = self._get_reroll_target_range(option_name, use_percent)
+                    target_value = int(row["value_entry"].get())
+                    if not target_range[0] <= target_value <= target_range[1]:
+                        suffix = "%" if use_percent else ""
+                        raise ValueError(f"{option_name} 목표 수치는 {target_range[0]}~{target_range[1]}{suffix} 사이여야 합니다.")
+                    target_specs.append({
+                        "option": option_name,
+                        "value": target_value,
+                        "is_percent": use_percent,
+                    })
             except ValueError as e:
                 messagebox.showerror("오류", f"장비 리롤 설정값이 올바르지 않습니다.\n{str(e)}")
                 return
