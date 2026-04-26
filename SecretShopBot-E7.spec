@@ -30,7 +30,17 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['pure-python-adb'],
+    excludes=[
+        'pure-python-adb',
+        'pytest',
+        'torch',
+        'torchvision',
+        'torchaudio',
+        'transformers',
+        'tensorflow',
+        'tensorboard',
+        'av',
+    ],
     noarchive=False,
     optimize=0,
 )
