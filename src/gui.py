@@ -123,6 +123,8 @@ class SessionView:
             "flat_range": None,
         },
     }
+    REROLL_MAX_TARGETS = 4
+    REROLL_MAX_LOCKED_OPTIONS = 2
 
     def __init__(self, app, index: int, parent):
         self.app = app
@@ -359,43 +361,74 @@ class SessionView:
         self.reroll_settings_frame = ttk.LabelFrame(self.reroll_tab, text="장비 옵션 리롤 설정", padding=10)
         self.reroll_settings_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        ttk.Label(self.reroll_settings_frame, text="대상 옵션:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.reroll_option_combo = ttk.Combobox(self.reroll_settings_frame, width=12, state="readonly")
-        self.reroll_option_combo["values"] = list(self.REROLL_OPTION_RULES.keys())
-        self.reroll_option_combo.current(0)
-        self.reroll_option_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
-        self.reroll_option_combo.bind("<<ComboboxSelected>>", self._on_reroll_option_changed)
+        ttk.Label(self.reroll_settings_frame, text="잠금 옵션 개수:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.reroll_locked_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
+        self.reroll_locked_count_combo["values"] = [str(index) for index in range(self.REROLL_MAX_LOCKED_OPTIONS + 1)]
+        self.reroll_locked_count_combo.current(0)
+        self.reroll_locked_count_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
+        self.reroll_locked_count_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
 
-        self.reroll_target_value_label = ttk.Label(self.reroll_settings_frame, text="목표 수치:")
-        self.reroll_target_value_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.reroll_target_speed_entry = ttk.Entry(self.reroll_settings_frame, width=10)
-        self.reroll_target_speed_entry.insert(0, "4")
-        self.reroll_target_speed_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        self.reroll_percent_var = tk.BooleanVar(value=False)
-        self.reroll_percent_checkbox = ttk.Checkbutton(
-            self.reroll_settings_frame,
-            text="% 옵션",
-            variable=self.reroll_percent_var,
-            command=self._update_reroll_option_controls,
-        )
-        self.reroll_percent_checkbox.grid(row=1, column=2, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="목표 옵션 개수:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
+        self.reroll_target_count_combo["values"] = [str(index) for index in range(1, self.REROLL_MAX_TARGETS + 1)]
+        self.reroll_target_count_combo.current(0)
+        self.reroll_target_count_combo.grid(row=0, column=3, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_count_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
 
-        ttk.Label(self.reroll_settings_frame, text="최대 리롤 횟수:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_rows = []
+        option_values = list(self.REROLL_OPTION_RULES.keys())
+        default_targets = ["속도", "공격력", "생명력", "방어력"]
+        for row_index in range(self.REROLL_MAX_TARGETS):
+            grid_row = row_index + 1
+            label = ttk.Label(self.reroll_settings_frame, text=f"목표 {row_index + 1}:")
+            label.grid(row=grid_row, column=0, sticky=tk.W, padx=5, pady=5)
+
+            option_combo = ttk.Combobox(self.reroll_settings_frame, width=12, state="readonly")
+            option_combo["values"] = option_values
+            option_combo.set(default_targets[row_index] if row_index < len(default_targets) else option_values[0])
+            option_combo.grid(row=grid_row, column=1, sticky=tk.W, padx=5, pady=5)
+            option_combo.bind("<<ComboboxSelected>>", lambda event, idx=row_index: self._on_reroll_target_option_changed(idx))
+
+            value_entry = ttk.Entry(self.reroll_settings_frame, width=10)
+            value_entry.grid(row=grid_row, column=2, sticky=tk.W, padx=5, pady=5)
+
+            percent_var = tk.BooleanVar(value=False)
+            percent_checkbox = ttk.Checkbutton(
+                self.reroll_settings_frame,
+                text="% 옵션",
+                variable=percent_var,
+                command=lambda idx=row_index: self._update_reroll_target_row_controls(idx),
+            )
+            percent_checkbox.grid(row=grid_row, column=3, sticky=tk.W, padx=5, pady=5)
+
+            range_label = ttk.Label(self.reroll_settings_frame, text="", foreground="gray")
+            range_label.grid(row=grid_row, column=4, sticky=tk.W, padx=5, pady=5)
+
+            self.reroll_target_rows.append({
+                "label": label,
+                "option_combo": option_combo,
+                "value_entry": value_entry,
+                "percent_var": percent_var,
+                "percent_checkbox": percent_checkbox,
+                "range_label": range_label,
+            })
+
+        ttk.Label(self.reroll_settings_frame, text="최대 리롤 횟수:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
         self.reroll_max_entry = ttk.Entry(self.reroll_settings_frame, width=10)
         self.reroll_max_entry.insert(0, "100")
-        self.reroll_max_entry.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
+        self.reroll_max_entry.grid(row=5, column=1, sticky=tk.W, padx=5, pady=5)
 
-        ttk.Label(self.reroll_settings_frame, text="리롤 전 대기 시간:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="리롤 전 대기 시간:").grid(row=5, column=2, sticky=tk.W, padx=5, pady=5)
         self.reroll_delay_entry = ttk.Entry(self.reroll_settings_frame, width=10)
         self.reroll_delay_entry.insert(0, "0.5")
-        self.reroll_delay_entry.grid(row=3, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(self.reroll_settings_frame, text="초").grid(row=3, column=2, sticky=tk.W)
+        self.reroll_delay_entry.grid(row=5, column=3, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="초").grid(row=5, column=4, sticky=tk.W)
 
-        ttk.Label(self.reroll_settings_frame, text="이미지 매칭 정확도:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="이미지 매칭 정확도:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=5)
         self.reroll_threshold_entry = ttk.Entry(self.reroll_settings_frame, width=10)
         self.reroll_threshold_entry.insert(0, "90")
-        self.reroll_threshold_entry.grid(row=4, column=1, sticky=tk.W, padx=5, pady=5)
-        ttk.Label(self.reroll_settings_frame, text="%").grid(row=4, column=2, sticky=tk.W)
+        self.reroll_threshold_entry.grid(row=6, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
 
         reroll_control_frame = ttk.Frame(self.reroll_tab, padding=10)
         reroll_control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -434,45 +467,85 @@ class SessionView:
         ttk.Label(stats_grid, text="목표 발견:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
         self.reroll_target_found_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
         self.reroll_target_found_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
-        self._update_reroll_option_controls()
+        self._update_reroll_target_count_controls()
 
-    def _get_reroll_option_rule(self):
-        return self.REROLL_OPTION_RULES.get(self.reroll_option_combo.get(), self.REROLL_OPTION_RULES["속도"])
+    def _get_reroll_option_rule(self, option_name):
+        return self.REROLL_OPTION_RULES.get(option_name, self.REROLL_OPTION_RULES["속도"])
 
-    def _on_reroll_option_changed(self, event):
-        self._update_reroll_option_controls()
+    def _get_reroll_target_range(self, option_name, use_percent):
+        rule = self._get_reroll_option_rule(option_name)
+        target_range = rule["percent_range"] if use_percent else rule["flat_range"]
+        if target_range is None:
+            target_range = rule["percent_range"] or rule["flat_range"] or (1, 999)
+        return target_range
 
-    def _update_reroll_option_controls(self):
-        rule = self._get_reroll_option_rule()
-        option_name = self.reroll_option_combo.get() or "속도"
-        self.reroll_target_value_label.config(text=f"{option_name} 목표 수치:")
+    def _get_reroll_locked_count(self):
+        try:
+            return int(self.reroll_locked_count_combo.get())
+        except (TypeError, ValueError):
+            return 0
+
+    def _get_reroll_target_count(self):
+        try:
+            return int(self.reroll_target_count_combo.get())
+        except (TypeError, ValueError):
+            return 1
+
+    def _get_reroll_max_selectable_targets(self):
+        return max(1, self.REROLL_MAX_TARGETS - self._get_reroll_locked_count())
+
+    def _on_reroll_target_count_changed(self, event):
+        self._update_reroll_target_count_controls()
+
+    def _on_reroll_target_option_changed(self, index):
+        self._update_reroll_target_row_controls(index)
+
+    def _update_reroll_target_count_controls(self):
+        max_targets = self._get_reroll_max_selectable_targets()
+        current_count = min(self._get_reroll_target_count(), max_targets)
+        self.reroll_target_count_combo["values"] = [str(index) for index in range(1, max_targets + 1)]
+        self.reroll_target_count_combo.set(str(current_count))
+
+        for index in range(self.REROLL_MAX_TARGETS):
+            row = self.reroll_target_rows[index]
+            enabled = index < current_count
+            state = tk.NORMAL if enabled and not self.is_running else tk.DISABLED
+            combo_state = "readonly" if enabled and not self.is_running else "disabled"
+            row["label"].config(state=state)
+            row["option_combo"].config(state=combo_state)
+            row["value_entry"].config(state=state)
+            row["range_label"].config(state=state)
+            if enabled:
+                self._update_reroll_target_row_controls(index)
+            else:
+                row["percent_checkbox"].config(state=tk.DISABLED)
+
+    def _update_reroll_target_row_controls(self, index):
+        row = self.reroll_target_rows[index]
+        option_name = row["option_combo"].get() or "속도"
+        rule = self._get_reroll_option_rule(option_name)
 
         if rule["force_percent"]:
-            self.reroll_percent_var.set(True)
-            self.reroll_percent_checkbox.config(state=tk.DISABLED)
+            row["percent_var"].set(True)
+            percent_state = tk.DISABLED
         elif not rule["allow_percent"]:
-            self.reroll_percent_var.set(False)
-            self.reroll_percent_checkbox.config(state=tk.DISABLED)
+            row["percent_var"].set(False)
+            percent_state = tk.DISABLED
         else:
-            if not self.is_running:
-                self.reroll_percent_checkbox.config(state=tk.NORMAL)
+            percent_state = tk.NORMAL if not self.is_running and index < self._get_reroll_target_count() else tk.DISABLED
+        row["percent_checkbox"].config(state=percent_state)
 
-        target_range = self._get_reroll_target_range()
-        current_value = self.reroll_target_speed_entry.get().strip()
+        target_range = self._get_reroll_target_range(option_name, row["percent_var"].get())
+        range_suffix = "%" if row["percent_var"].get() else ""
+        row["range_label"].config(text=f"허용 범위: {target_range[0]}~{target_range[1]}{range_suffix}")
+
+        current_value = row["value_entry"].get().strip()
         try:
             numeric_value = int(current_value)
         except ValueError:
             numeric_value = None
         if numeric_value is None or not (target_range[0] <= numeric_value <= target_range[1]):
-            self._replace_entry(self.reroll_target_speed_entry, target_range[0])
-
-    def _get_reroll_target_range(self):
-        rule = self._get_reroll_option_rule()
-        use_percent = self.reroll_percent_var.get()
-        target_range = rule["percent_range"] if use_percent else rule["flat_range"]
-        if target_range is None:
-            target_range = rule["percent_range"] or rule["flat_range"] or (1, 999)
-        return target_range
+            self._replace_entry(row["value_entry"], target_range[0])
 
     def refresh_macro_combo(self):
         labels = [macro.get("name", macro.get("id", "macro")) for macro in self.app.macro_definitions]
@@ -794,17 +867,39 @@ class SessionView:
                 return
 
             try:
-                target_speed = int(self.reroll_target_speed_entry.get())
                 max_rerolls = int(self.reroll_max_entry.get())
                 delay_before_reroll = float(self.reroll_delay_entry.get())
                 threshold = int(self.reroll_threshold_entry.get()) / 100.0
-                target_range = self._get_reroll_target_range()
-                if target_speed <= 0 or max_rerolls <= 0 or delay_before_reroll < 0:
+                active_target_count = self._get_reroll_target_count()
+                locked_option_count = self._get_reroll_locked_count()
+                if max_rerolls <= 0 or delay_before_reroll < 0:
                     raise ValueError()
-                if not target_range[0] <= target_speed <= target_range[1]:
-                    raise ValueError(f"목표 수치는 {target_range[0]}~{target_range[1]} 사이여야 합니다.")
+                if active_target_count < 1:
+                    raise ValueError("목표 옵션은 최소 1개 이상이어야 합니다.")
+                if active_target_count > self.REROLL_MAX_TARGETS - locked_option_count:
+                    raise ValueError(f"잠금 옵션 {locked_option_count}개일 때 목표 옵션은 최대 {self.REROLL_MAX_TARGETS - locked_option_count}개까지 설정할 수 있습니다.")
                 if not 0.7 <= threshold <= 0.99:
                     raise ValueError("이미지 매칭 정확도는 70~99 사이여야 합니다.")
+
+                target_specs = []
+                seen_options = set()
+                for index in range(active_target_count):
+                    row = self.reroll_target_rows[index]
+                    option_name = row["option_combo"].get()
+                    use_percent = row["percent_var"].get()
+                    target_range = self._get_reroll_target_range(option_name, use_percent)
+                    target_value = int(row["value_entry"].get())
+                    if not target_range[0] <= target_value <= target_range[1]:
+                        suffix = "%" if use_percent else ""
+                        raise ValueError(f"{option_name} 목표 수치는 {target_range[0]}~{target_range[1]}{suffix} 사이여야 합니다.")
+                    if option_name in seen_options:
+                        raise ValueError(f"중복된 목표 옵션이 있습니다: {option_name}")
+                    seen_options.add(option_name)
+                    target_specs.append({
+                        "option": option_name,
+                        "value": target_value,
+                        "is_percent": use_percent,
+                    })
             except ValueError as e:
                 messagebox.showerror("오류", f"장비 리롤 설정값이 올바르지 않습니다.\n{str(e)}")
                 return
@@ -812,12 +907,11 @@ class SessionView:
             self.runtime_dir.mkdir(parents=True, exist_ok=True)
             self.bot = EquipmentRerollBot(
                 self.adb_controller,
-                target_option=self.reroll_option_combo.get(),
-                target_speed=target_speed,
+                target_specs=target_specs,
+                locked_option_count=locked_option_count,
                 max_rerolls=max_rerolls,
                 delay_before_reroll=delay_before_reroll,
                 threshold=threshold,
-                target_is_percent=self.reroll_percent_var.get(),
                 debug_mode=self.debug_mode_var.get(),
                 runtime_dir=self.runtime_dir,
             )
@@ -1092,22 +1186,23 @@ class SessionView:
             f"{title}\n"
             f"- 스캔 횟수: {stats.get('attempts', 0)}회\n"
             f"- 리롤 횟수: {stats.get('rerolls', 0)}회\n"
-            f"- 속도 옵션 발견: {stats.get('option_found', 0)}회\n"
-            f"- 목표 발견: {stats.get('target_found', 0)}회\n"
+            f"- 대상 옵션 발견: {stats.get('option_found', 0)}개\n"
+            f"- 목표 일치: {stats.get('target_found', 0)}개\n"
             f"- 소요 시간: {elapsed}\n"
             f"{'=' * 42}"
         )
 
     def _set_reroll_settings_state(self, state):
-        self.reroll_option_combo.config(state="disabled" if state == tk.DISABLED else "readonly")
-        self.reroll_target_speed_entry.config(state=state)
-        if state == tk.DISABLED:
-            self.reroll_percent_checkbox.config(state=tk.DISABLED)
-        else:
-            self._update_reroll_option_controls()
+        combo_state = "disabled" if state == tk.DISABLED else "readonly"
+        self.reroll_locked_count_combo.config(state=combo_state)
+        self.reroll_target_count_combo.config(state=combo_state)
+        for row in self.reroll_target_rows:
+            row["option_combo"].config(state=combo_state if state != tk.DISABLED else "disabled")
+            row["value_entry"].config(state=state)
         self.reroll_max_entry.config(state=state)
         self.reroll_delay_entry.config(state=state)
         self.reroll_threshold_entry.config(state=state)
+        self._update_reroll_target_count_controls()
 
     def _test_image_matching(self):
         with log_session(self.name):
