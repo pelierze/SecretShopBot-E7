@@ -141,7 +141,7 @@ class SessionView:
         self.current_mode = None
         self.input_profile_label_text = "MuMu 앱플레이어 사용 (호환 드래그 사용)"
         self.buy_count_default_label_text = "구매 완료 검증 횟수:"
-        self.buy_count_default_unit_text = "회 (비활성화 버튼 확인 반복, 권장: 3회)"
+        self.buy_count_default_unit_text = "회"
         self.buy_count_steps_unit_text = "JSON steps 매크로는 이 값 대신 각 step 설정을 사용합니다."
 
         self.frame = ttk.Frame(parent)
@@ -186,6 +186,14 @@ class SessionView:
         self.device_combo.grid(row=1, column=1, columnspan=4, sticky=tk.W, padx=5, pady=5)
         self.device_combo.bind("<<ComboboxSelected>>", self._on_device_selected)
 
+        self.debug_mode_var = tk.BooleanVar(value=False)
+        self.debug_checkbox = ttk.Checkbutton(
+            self.connection_frame,
+            text="디버그 모드 (상세 로그)",
+            variable=self.debug_mode_var,
+        )
+        self.debug_checkbox.grid(row=1, column=5, columnspan=3, sticky=tk.W, padx=5, pady=5)
+
         self.mode_notebook = ttk.Notebook(self.frame)
         self.mode_notebook.pack(fill=tk.BOTH, expand=False, padx=10, pady=5)
         self.shop_tab = ttk.Frame(self.mode_notebook)
@@ -209,7 +217,7 @@ class SessionView:
         self.buy_count_entry = ttk.Entry(self.settings_frame, width=10)
         self.buy_count_entry.insert(0, "3")
         self.buy_count_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        self.buy_count_unit_label = ttk.Label(self.settings_frame, text="회 (비활성화 버튼 확인 반복, 권장: 3회)")
+        self.buy_count_unit_label = ttk.Label(self.settings_frame, text="회")
         self.buy_count_unit_label.grid(row=1, column=2, sticky=tk.W)
 
         self.threshold_header_label = ttk.Label(
@@ -217,50 +225,42 @@ class SessionView:
             text="=== 이미지 매칭 정확도 (70-99) ===",
             font=("Arial", 9, "bold"),
         )
-        self.threshold_header_label.grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(10, 5))
+        self.threshold_header_label.grid(row=0, column=3, columnspan=3, sticky=tk.W, padx=(30, 5), pady=(0, 5))
 
         self.mystic_medal_threshold_label = ttk.Label(self.settings_frame, text="신비의 메달:")
-        self.mystic_medal_threshold_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+        self.mystic_medal_threshold_label.grid(row=1, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.mystic_medal_threshold = ttk.Entry(self.settings_frame, width=8)
         self.mystic_medal_threshold.insert(0, "95")
-        self.mystic_medal_threshold.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=3, column=2, sticky=tk.W)
+        self.mystic_medal_threshold.grid(row=1, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=1, column=5, sticky=tk.W)
 
         self.covenant_bookmark_threshold_label = ttk.Label(self.settings_frame, text="성약의 책갈피:")
-        self.covenant_bookmark_threshold_label.grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
+        self.covenant_bookmark_threshold_label.grid(row=2, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.covenant_bookmark_threshold = ttk.Entry(self.settings_frame, width=8)
         self.covenant_bookmark_threshold.insert(0, "95")
-        self.covenant_bookmark_threshold.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=4, column=2, sticky=tk.W)
+        self.covenant_bookmark_threshold.grid(row=2, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=2, column=5, sticky=tk.W)
 
         self.purchase_button_threshold_label = ttk.Label(self.settings_frame, text="구입 버튼:")
-        self.purchase_button_threshold_label.grid(row=5, column=0, sticky=tk.W, padx=5, pady=2)
+        self.purchase_button_threshold_label.grid(row=3, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.purchase_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.purchase_button_threshold.insert(0, "92")
-        self.purchase_button_threshold.grid(row=5, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=5, column=2, sticky=tk.W)
+        self.purchase_button_threshold.grid(row=3, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=3, column=5, sticky=tk.W)
 
         self.buy_button_threshold_label = ttk.Label(self.settings_frame, text="구매 버튼:")
-        self.buy_button_threshold_label.grid(row=6, column=0, sticky=tk.W, padx=5, pady=2)
+        self.buy_button_threshold_label.grid(row=4, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.buy_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.buy_button_threshold.insert(0, "92")
-        self.buy_button_threshold.grid(row=6, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
+        self.buy_button_threshold.grid(row=4, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=4, column=5, sticky=tk.W)
 
         self.refresh_button_threshold_label = ttk.Label(self.settings_frame, text="갱신 버튼:")
-        self.refresh_button_threshold_label.grid(row=7, column=0, sticky=tk.W, padx=5, pady=2)
+        self.refresh_button_threshold_label.grid(row=5, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.refresh_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.refresh_button_threshold.insert(0, "92")
-        self.refresh_button_threshold.grid(row=7, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=7, column=2, sticky=tk.W)
-
-        self.debug_mode_var = tk.BooleanVar(value=False)
-        self.debug_checkbox = ttk.Checkbutton(
-            self.settings_frame,
-            text="디버그 모드 (상세 로그)",
-            variable=self.debug_mode_var,
-        )
-        self.debug_checkbox.grid(row=8, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        self.refresh_button_threshold.grid(row=5, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=5, column=5, sticky=tk.W)
 
         self.mumu_mode_var = tk.BooleanVar(value=False)
         self.mumu_checkbox = ttk.Checkbutton(
@@ -269,7 +269,7 @@ class SessionView:
             variable=self.mumu_mode_var,
             command=self._on_input_profile_changed,
         )
-        self.mumu_checkbox.grid(row=9, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+        self.mumu_checkbox.grid(row=6, column=3, columnspan=3, sticky=tk.W, padx=(30, 5), pady=5)
 
         control_frame = ttk.Frame(self.shop_tab, padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -317,29 +317,29 @@ class SessionView:
         self.mystic_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
 
         self.bookmark_title_label = ttk.Label(stats_grid, text="성약의 책갈피:")
-        self.bookmark_title_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_title_label.grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
         self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
-        self.bookmark_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
 
         self.elapsed_time_title_label = ttk.Label(stats_grid, text="경과 시간:")
-        self.elapsed_time_title_label.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
+        self.elapsed_time_title_label.grid(row=0, column=6, sticky=tk.W, padx=5, pady=2)
         self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="blue", font=("Arial", 10, "bold"))
-        self.elapsed_time_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
+        self.elapsed_time_label.grid(row=0, column=7, sticky=tk.W, padx=5, pady=2)
 
         self.sky_stone_title_label = ttk.Label(stats_grid, text="하늘석 사용량:")
-        self.sky_stone_title_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
+        self.sky_stone_title_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
         self.sky_stone_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
-        self.sky_stone_label.grid(row=2, column=1, sticky=tk.W, padx=5, pady=2)
+        self.sky_stone_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
 
         self.bookmark_efficiency_title_label = ttk.Label(stats_grid, text="성약 획득량/하늘석:")
-        self.bookmark_efficiency_title_label.grid(row=2, column=2, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_efficiency_title_label.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
         self.bookmark_efficiency_label = ttk.Label(stats_grid, text="-", foreground="blue", font=("Arial", 10, "bold"))
-        self.bookmark_efficiency_label.grid(row=2, column=3, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_efficiency_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
 
         self.mystic_efficiency_title_label = ttk.Label(stats_grid, text="신비 획득량/하늘석:")
-        self.mystic_efficiency_title_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+        self.mystic_efficiency_title_label.grid(row=1, column=4, sticky=tk.W, padx=5, pady=2)
         self.mystic_efficiency_label = ttk.Label(stats_grid, text="-", foreground="blue", font=("Arial", 10, "bold"))
-        self.mystic_efficiency_label.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
+        self.mystic_efficiency_label.grid(row=1, column=5, sticky=tk.W, padx=5, pady=2)
 
         self._create_reroll_widgets()
 
