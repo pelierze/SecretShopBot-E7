@@ -39,6 +39,7 @@ class JsonMacroEngine:
         thresholds: dict = None,
         automation_settings: dict = None,
         debug_mode: bool = False,
+        runtime_dir=None,
     ):
         self.adb = adb_controller
         self.macro_definition = macro_definition
@@ -46,13 +47,14 @@ class JsonMacroEngine:
         self.automation_settings = automation_settings or {}
         self.debug_mode = debug_mode
         self.resource_dir = get_resource_root()
-        self.runtime_dir = get_runtime_root()
+        self.runtime_dir = Path(runtime_dir) if runtime_dir else get_runtime_root() / "logs"
+        self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.matcher = ImageMatcher(threshold=0.92)
         self.macro_settings = self.automation_settings.get("macro", {})
         self.items = self._build_items()
         self.buttons = self._build_buttons()
         self.timings = self.macro_settings.get("timings", {})
-        self.screenshot_path = self.runtime_dir / "logs" / "current_screen.png"
+        self.screenshot_path = self.runtime_dir / "current_screen.png"
         self.paused = False
         self.user_action = None
         self.screen_width, self.screen_height = self.adb.get_screen_size()
@@ -183,7 +185,7 @@ class JsonMacroEngine:
         return True
 
     def _screenshot(self) -> bool:
-        self.screenshot_path.parent.mkdir(exist_ok=True)
+        self.screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         result = self.adb.screenshot(str(self.screenshot_path))
         time.sleep(float(self.timings.get("after_screenshot", 0.2)))
         return result

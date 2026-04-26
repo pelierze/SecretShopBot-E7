@@ -3,6 +3,8 @@ import threading
 import time
 import types
 import unittest
+import tempfile
+from pathlib import Path
 
 
 def _install_fake_dependencies():
@@ -55,6 +57,17 @@ class FakeADB:
 
 
 class JsonMacroEngineTest(unittest.TestCase):
+    def test_runtime_dir_uses_session_specific_screenshot_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            engine = JsonMacroEngine(
+                FakeADB(),
+                macro_definition={"id": "steps", "steps": []},
+                automation_settings={},
+                runtime_dir=temp_dir,
+            )
+
+            self.assertEqual(engine.screenshot_path, Path(temp_dir) / "current_screen.png")
+
     def test_wait_step_honors_stop_while_sleeping(self):
         engine = JsonMacroEngine(
             FakeADB(),

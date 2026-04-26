@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 from pathlib import Path
+import tempfile
 
 from src.secret_shop_bot import SecretShopBot
 
@@ -9,9 +10,17 @@ class DummyADB:
     def __init__(self, result=True):
         self.result = result
         self.calls = []
+        self.taps = []
 
     def screenshot(self, *args, **kwargs):
         return True
+
+    def tap(self, *args, **kwargs):
+        self.taps.append((args, kwargs))
+        return True
+
+    def get_screen_size(self):
+        return (1280, 720)
 
     def swipe(self, *args, **kwargs):
         self.calls.append((args, kwargs))
@@ -31,6 +40,11 @@ class DummyMatcher:
 
 
 class SecretShopBotScrollTest(unittest.TestCase):
+    def test_runtime_dir_uses_session_specific_screenshot_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bot = SecretShopBot(DummyADB(), runtime_dir=temp_dir, automation_settings={})
+            self.assertEqual(bot.screenshot_path, Path(temp_dir) / "current_screen.png")
+
     def test_scroll_down_calls_single_swipe_once(self):
         bot = object.__new__(SecretShopBot)
         bot.adb = DummyADB()

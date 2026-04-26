@@ -580,6 +580,7 @@ class SessionView:
                     thresholds=thresholds,
                     debug_mode=debug_mode,
                     automation_settings=self.app.remote_settings,
+                    runtime_dir=self.runtime_dir,
                 )
             else:
                 self.bot = SecretShopBot(
@@ -587,6 +588,7 @@ class SessionView:
                     thresholds=thresholds,
                     debug_mode=debug_mode,
                     automation_settings=self.app.remote_settings,
+                    runtime_dir=self.runtime_dir,
                 )
 
             self.is_running = True

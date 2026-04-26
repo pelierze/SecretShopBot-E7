@@ -89,6 +89,7 @@ class SecretShopBot:
         thresholds: dict = None,
         debug_mode: bool = False,
         automation_settings: dict = None,
+        runtime_dir = None,
     ):
         """
         Args:
@@ -106,7 +107,8 @@ class SecretShopBot:
         """
         self.adb = adb_controller
         self.resource_dir = Path(base_dir) if base_dir else get_resource_root()
-        self.runtime_dir = get_runtime_root()
+        self.runtime_dir = Path(runtime_dir) if runtime_dir else get_runtime_root() / "logs"
+        self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.debug_mode = debug_mode
         self.automation_settings = automation_settings or {}
         self.macro_settings = self.automation_settings.get("macro", {})
@@ -131,7 +133,7 @@ class SecretShopBot:
         self.matcher = ImageMatcher(threshold=0.92)
         
         # 스크린샷 임시 저장 경로
-        self.screenshot_path = self.runtime_dir / "logs" / "current_screen.png"
+        self.screenshot_path = self.runtime_dir / "current_screen.png"
         
         # 통계
         self.stats = {
@@ -225,6 +227,15 @@ class SecretShopBot:
 
     def _item_label(self, item_name: str) -> str:
         return self.item_definitions.get(item_name, {}).get("label", item_name)
+
+    def _capture_screenshot(self, context: str) -> bool:
+        screenshot_path = Path(self.screenshot_path)
+        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+        self.screenshot_path = screenshot_path
+        if self.adb.screenshot(str(self.screenshot_path)):
+            return True
+        logger.error("스크린샷 촬영 실패: %s", context)
+        return False
         
     def run(self, max_refresh_count: int, buy_count_per_item: int) -> Dict:
         """
@@ -354,7 +365,8 @@ class SecretShopBot:
             return {}
         
         # 스크린샷 촬영
-        self.adb.screenshot(str(self.screenshot_path))
+        if not self._capture_screenshot(f"상점 스캔 {page_num}페이지"):
+            return {}
         time.sleep(self._timing("after_screenshot", 0.3))
         
         found_items = {}
@@ -424,6 +436,14 @@ class SecretShopBot:
         
         # 구입 버튼 클릭
         btn_center_x, btn_center_y = self.matcher.get_center(purchase_btn)
+        logger.info(
+            "구입 버튼 탭 - 아이템: %s, 아이템 영역: %s, 버튼 영역: %s, 좌표: (%s, %s)",
+            item_name,
+            item_location,
+            purchase_btn,
+            btn_center_x,
+            btn_center_y,
+        )
         self.adb.tap(btn_center_x, btn_center_y, delay=0.5)
         time.sleep(self._timing("after_purchase_tap", 0.5))  # 구매 팝업이 뜰 때까지 대기
         
@@ -439,7 +459,8 @@ class SecretShopBot:
         buy_button_wait_attempts = int(self.timings.get("buy_button_wait_attempts", 4))
         wait_interval = self._timing("buy_button_wait_interval", 0.5)
         for wait_attempt in range(buy_button_wait_attempts):
-            self.adb.screenshot(str(self.screenshot_path))
+            if not self._capture_screenshot(f"구매 버튼 대기 - {item_name}"):
+                return False
             time.sleep(self._timing("after_screenshot", 0.2))
             
             buy_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.button_images["buy"])
@@ -517,7 +538,8 @@ class SecretShopBot:
             None: 버튼을 찾을 수 없음
         """
         # 스크린샷 촬영
-        self.adb.screenshot(str(self.screenshot_path))
+        if not self._capture_screenshot("구입 버튼 탐색"):
+            return None
         time.sleep(self._timing("after_screenshot", 0.2))
         
         # 구입 버튼 이미지 경로 (활성화)
@@ -658,7 +680,7 @@ class SecretShopBot:
                     logger.error(f"💡 이미지 매칭 정확도를 낮춰보세요 (현재: {int(self.matcher.threshold*100)}%)")
                     
                     # 디버깅용 스크린샷 저장
-                    debug_path = self.runtime_dir / "logs" / "debug_refresh_button.png"
+                    debug_path = self.runtime_dir / "debug_refresh_button.png"
                     debug_path.parent.mkdir(exist_ok=True)
                     import shutil
                     shutil.copy(self.screenshot_path, debug_path)
@@ -704,7 +726,8 @@ class SecretShopBot:
             return False
         
         # 스크린샷 촬영
-        self.adb.screenshot(str(self.screenshot_path))
+        if not self._capture_screenshot(f"버튼 탐색 - {button_type}"):
+            return False
         time.sleep(self._timing("after_screenshot", 0.2))
         
         # 버튼 이미지 경로 선택
@@ -749,7 +772,8 @@ class SecretShopBot:
             구매 완료 여부 (비활성화된 버튼이 보이면 True)
         """
         # 스크린샷 촬영
-        self.adb.screenshot(str(self.screenshot_path))
+        if not self._capture_screenshot("구매 완료 검증"):
+            return False
         time.sleep(self._timing("after_screenshot", 0.2))
         
         # 비활성화된 구입 버튼 찾기 (약간 낮은 임계값 사용)
