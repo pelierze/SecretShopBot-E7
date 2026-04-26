@@ -7,8 +7,8 @@
     "purchase_verification_count": 3
   },
   "thresholds": {
-    "mystic_medal": 92,
-    "covenant_bookmark": 92,
+    "mystic_medal": 95,
+    "covenant_bookmark": 95,
     "purchase_button": 92,
     "buy_button": 92,
     "refresh_button": 92

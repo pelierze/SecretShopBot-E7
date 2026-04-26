@@ -69,6 +69,10 @@ class TextHandler(logging.Handler):
 class SessionView:
     """하나의 앱플레이어/봇 세션을 관리합니다."""
 
+    SKY_STONES_PER_REFRESH = 3
+    MYSTIC_MEDALS_PER_PURCHASE = 50
+    COVENANT_BOOKMARKS_PER_PURCHASE = 5
+
     def __init__(self, app, index: int, parent):
         self.app = app
         self.index = index
@@ -159,14 +163,14 @@ class SessionView:
         self.mystic_medal_threshold_label = ttk.Label(self.settings_frame, text="신비의 메달:")
         self.mystic_medal_threshold_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
         self.mystic_medal_threshold = ttk.Entry(self.settings_frame, width=8)
-        self.mystic_medal_threshold.insert(0, "92")
+        self.mystic_medal_threshold.insert(0, "95")
         self.mystic_medal_threshold.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
         ttk.Label(self.settings_frame, text="%").grid(row=3, column=2, sticky=tk.W)
 
         self.covenant_bookmark_threshold_label = ttk.Label(self.settings_frame, text="성약의 책갈피:")
         self.covenant_bookmark_threshold_label.grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
         self.covenant_bookmark_threshold = ttk.Entry(self.settings_frame, width=8)
-        self.covenant_bookmark_threshold.insert(0, "92")
+        self.covenant_bookmark_threshold.insert(0, "95")
         self.covenant_bookmark_threshold.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
         ttk.Label(self.settings_frame, text="%").grid(row=4, column=2, sticky=tk.W)
 
@@ -262,6 +266,21 @@ class SessionView:
         self.elapsed_time_title_label.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
         self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="blue", font=("Arial", 10, "bold"))
         self.elapsed_time_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
+
+        self.sky_stone_title_label = ttk.Label(stats_grid, text="하늘석 사용량:")
+        self.sky_stone_title_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
+        self.sky_stone_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.sky_stone_label.grid(row=2, column=1, sticky=tk.W, padx=5, pady=2)
+
+        self.bookmark_efficiency_title_label = ttk.Label(stats_grid, text="성약 획득량/하늘석:")
+        self.bookmark_efficiency_title_label.grid(row=2, column=2, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_efficiency_label = ttk.Label(stats_grid, text="-", foreground="blue", font=("Arial", 10, "bold"))
+        self.bookmark_efficiency_label.grid(row=2, column=3, sticky=tk.W, padx=5, pady=2)
+
+        self.mystic_efficiency_title_label = ttk.Label(stats_grid, text="신비 획득량/하늘석:")
+        self.mystic_efficiency_title_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+        self.mystic_efficiency_label = ttk.Label(stats_grid, text="-", foreground="blue", font=("Arial", 10, "bold"))
+        self.mystic_efficiency_label.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
 
         self.log_frame = ttk.LabelFrame(self.frame, text="로그", padding=10)
         self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -376,6 +395,9 @@ class SessionView:
             "mystic_medal": self.mystic_title_label,
             "covenant_bookmark": self.bookmark_title_label,
             "elapsed_time": self.elapsed_time_title_label,
+            "sky_stone_usage": self.sky_stone_title_label,
+            "covenant_per_sky_stone": self.bookmark_efficiency_title_label,
+            "mystic_per_sky_stone": self.mystic_efficiency_title_label,
         }
         for key, widget in stat_widgets.items():
             if key in stats:
@@ -706,9 +728,15 @@ class SessionView:
 
     def _update_stats(self, stats):
         completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
+        sky_stone_usage = self._calculate_sky_stone_usage(stats)
+        mystic_amount = self._calculate_item_amount(stats, "mystic_medal_bought")
+        bookmark_amount = self._calculate_item_amount(stats, "covenant_bookmark_bought")
         self.total_refresh_label.config(text=str(completed_runs))
         self.mystic_label.config(text=str(stats.get("mystic_medal_bought", 0)))
         self.bookmark_label.config(text=str(stats.get("covenant_bookmark_bought", 0)))
+        self.sky_stone_label.config(text=str(sky_stone_usage))
+        self.bookmark_efficiency_label.config(text=self._format_efficiency(bookmark_amount, sky_stone_usage))
+        self.mystic_efficiency_label.config(text=self._format_efficiency(mystic_amount, sky_stone_usage))
 
         if stats.get("start_time"):
             if stats.get("end_time"):
@@ -727,6 +755,9 @@ class SessionView:
         successful_refreshes = stats.get("successful_refreshes", max(completed_runs - 1, 0))
         mystic_count = stats.get("mystic_medal_bought", 0)
         bookmark_count = stats.get("covenant_bookmark_bought", 0)
+        sky_stone_usage = self._calculate_sky_stone_usage(stats)
+        mystic_amount = self._calculate_item_amount(stats, "mystic_medal_bought")
+        bookmark_amount = self._calculate_item_amount(stats, "covenant_bookmark_bought")
         elapsed = self._format_elapsed_seconds(stats.get("elapsed_time", 0))
         return (
             f"\n{'=' * 42}\n"
@@ -735,9 +766,39 @@ class SessionView:
             f"- 갱신 성공: {successful_refreshes}회\n"
             f"- 신비의 메달 구매: {mystic_count}개\n"
             f"- 성약의 책갈피 구매: {bookmark_count}개\n"
+            f"- 하늘석 사용량: {sky_stone_usage}개\n"
+            f"- 신비의 메달 획득량/하늘석: {self._format_efficiency(mystic_amount, sky_stone_usage)}\n"
+            f"- 성약의 책갈피 획득량/하늘석: {self._format_efficiency(bookmark_amount, sky_stone_usage)}\n"
             f"- 소요 시간: {elapsed}\n"
             f"{'=' * 42}"
         )
+
+    def _calculate_sky_stone_usage(self, stats):
+        reroll_count = stats.get("successful_refreshes")
+        if reroll_count is None:
+            completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
+            reroll_count = max(completed_runs - 1, 0)
+        try:
+            reroll_count = int(reroll_count)
+        except (TypeError, ValueError):
+            reroll_count = 0
+        return max(reroll_count, 0) * self.SKY_STONES_PER_REFRESH
+
+    def _calculate_item_amount(self, stats, stat_key):
+        amount_per_purchase = {
+            "mystic_medal_bought": self.MYSTIC_MEDALS_PER_PURCHASE,
+            "covenant_bookmark_bought": self.COVENANT_BOOKMARKS_PER_PURCHASE,
+        }.get(stat_key, 1)
+        try:
+            purchase_count = int(stats.get(stat_key, 0))
+        except (TypeError, ValueError):
+            purchase_count = 0
+        return max(purchase_count, 0) * amount_per_purchase
+
+    def _format_efficiency(self, item_amount, sky_stone_usage):
+        if sky_stone_usage <= 0:
+            return "-"
+        return f"{item_amount / sky_stone_usage:.4f}"
 
     def _format_elapsed_seconds(self, seconds):
         try:

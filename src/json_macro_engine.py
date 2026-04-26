@@ -233,7 +233,8 @@ class JsonMacroEngine:
             "purchase": "purchase_button",
             "buy": "buy_button",
         }.get(target, target)
-        return float(self.thresholds.get(threshold_key, 0.92))
+        default_threshold = 0.95 if threshold_key in {"mystic_medal", "covenant_bookmark"} else 0.92
+        return float(self.thresholds.get(threshold_key, default_threshold))
 
     def _find_image_file(self, directory: Path, base_name: str) -> Optional[Path]:
         exact_path = directory / base_name
