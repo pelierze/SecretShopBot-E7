@@ -1,4 +1,3 @@
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -75,7 +74,39 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(bot._normalize_target_option("효과저항"), "effect_resistance")
         self.assertEqual(bot._normalize_target_option("효과적중"), "effectiveness")
 
-    def test_find_target_option_row_matches_only_inside_right_panel_rows(self):
+    def test_evaluate_target_matches_counts_exact_matches(self):
+        bot = self._make_bot()
+        bot.target_specs = [
+            {"option": "speed", "value": 4, "is_percent": False},
+            {"option": "attack", "value": 5, "is_percent": True},
+        ]
+
+        row_results = [
+            {"row_index": 0, "option": "speed", "value": 4, "is_percent": False},
+            {"row_index": 1, "option": "attack", "value": 5, "is_percent": True},
+        ]
+
+        option_count, target_count, exact_matches, ocr_failure = bot._evaluate_target_matches(row_results)
+
+        self.assertEqual(option_count, 2)
+        self.assertEqual(target_count, 2)
+        self.assertEqual(len(exact_matches), 2)
+        self.assertIsNone(ocr_failure)
+
+    def test_evaluate_target_matches_reports_ocr_failure_on_desired_option(self):
+        bot = self._make_bot()
+        bot.target_specs = [{"option": "speed", "value": 4, "is_percent": False}]
+
+        row_results = [{"row_index": 0, "option": "speed", "value": None, "is_percent": False}]
+
+        option_count, target_count, exact_matches, ocr_failure = bot._evaluate_target_matches(row_results)
+
+        self.assertEqual(option_count, 1)
+        self.assertEqual(target_count, 0)
+        self.assertEqual(exact_matches, [])
+        self.assertEqual(ocr_failure["option"], "speed")
+
+    def test_find_best_target_option_in_row_matches_target_template(self):
         bot = self._make_bot()
         screen = np.zeros((720, 1280, 3), dtype=np.uint8)
         rows = bot._get_row_bounds(1280, 720)
@@ -90,17 +121,10 @@ class EquipmentRerollBotTest(unittest.TestCase):
         insert_y = row_y1 + 8
         screen[insert_y:insert_y + template.shape[0], insert_x:insert_x + template.shape[1]] = template
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            template_path = Path(temp_dir) / "speed_option.png"
-            success, encoded = cv2.imencode(".png", template)
-            self.assertTrue(success)
-            encoded.tofile(str(template_path))
+        result = bot._find_best_target_option_in_row(screen, target_row, {"speed": template}, row_index=2)
 
-            row_index, option_box, row_bounds = bot._find_target_option_row(screen, template_path)
-
-        self.assertEqual(row_index, 2)
-        self.assertEqual(row_bounds, target_row)
-        self.assertEqual(option_box[:2], (insert_x, insert_y))
+        self.assertEqual(result["option"], "speed")
+        self.assertEqual(result["box"][:2], (insert_x, insert_y))
 
 
 if __name__ == "__main__":

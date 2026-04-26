@@ -1,9 +1,9 @@
 """
 Equipment option reroll automation.
 
-This module scans only the rerolled option panel on the right side of the
-comparison dialog. It finds the target option via template matching and reads
-the numeric value from the same row via OCR.
+This module scans the rerolled option panel on the right side of the comparison
+dialog. It supports multiple desired option/value pairs and stops when every
+configured target is present among the rerolled rows.
 """
 from __future__ import annotations
 
@@ -36,10 +36,11 @@ def get_runtime_root() -> Path:
 
 
 class EquipmentRerollBot:
-    """Automates equipment option rerolling on the right-hand option panel."""
+    """Automates multi-target equipment option rerolling."""
 
     ASSET_DIR = "images/equipment_options"
     REROLL_BUTTON_IMAGE = "reroll_button.png"
+
     OPTION_IMAGE_MAP = {
         "speed": "speed_option.png",
         "attack": "attack_option.png",
@@ -50,9 +51,45 @@ class EquipmentRerollBot:
         "effect_resistance": "effect-resistance_option.png",
         "effectiveness": "effectiveness_option.png",
     }
+    OPTION_LABEL_MAP = {
+        "speed": "속도",
+        "attack": "공격력",
+        "life": "생명력",
+        "defense": "방어력",
+        "crit_chance": "치명타 확률",
+        "crit_damage": "치명타 피해",
+        "effect_resistance": "효과저항",
+        "effectiveness": "효과적중",
+    }
+    OPTION_ALIAS_MAP = {
+        "속도": "speed",
+        "speed": "speed",
+        "공격력": "attack",
+        "attack": "attack",
+        "생명력": "life",
+        "life": "life",
+        "방어력": "defense",
+        "방어": "defense",
+        "defense": "defense",
+        "defence": "defense",
+        "치명타 확률": "crit_chance",
+        "치확": "crit_chance",
+        "crit chance": "crit_chance",
+        "crit_chance": "crit_chance",
+        "치명타 피해": "crit_damage",
+        "치피": "crit_damage",
+        "crit damage": "crit_damage",
+        "crit_damage": "crit_damage",
+        "효과저항": "effect_resistance",
+        "저항": "effect_resistance",
+        "effect resistance": "effect_resistance",
+        "effect_resistance": "effect_resistance",
+        "효과적중": "effectiveness",
+        "적중": "effectiveness",
+        "effectiveness": "effectiveness",
+        "effect hit": "effectiveness",
+    }
 
-    # Ratios tuned for the 1280x720 reroll comparison screen shared by the user.
-    # The region covers only the rerolled option list on the right side.
     OPTION_PANEL_BOUNDS = {
         "left": 0.405,
         "top": 0.18,
@@ -71,23 +108,21 @@ class EquipmentRerollBot:
     def __init__(
         self,
         adb_controller: ADBController,
-        target_speed: int,
+        target_specs: List[Dict],
+        locked_option_count: int,
         max_rerolls: int,
         delay_before_reroll: float,
         threshold: float = 0.9,
-        target_is_percent: bool = False,
         debug_mode: bool = False,
         base_dir: str = None,
         runtime_dir=None,
-        target_option: str = "speed",
     ):
         self.adb = adb_controller
-        self.target_option = self._normalize_target_option(target_option)
-        self.target_speed = target_speed
+        self.target_specs = self._normalize_target_specs(target_specs)
+        self.locked_option_count = max(0, int(locked_option_count))
         self.max_rerolls = max_rerolls
         self.delay_before_reroll = delay_before_reroll
         self.threshold = threshold
-        self.target_is_percent = target_is_percent
         self.debug_mode = debug_mode
         self.resource_dir = Path(base_dir) if base_dir else get_resource_root()
         self.runtime_dir = Path(runtime_dir) if runtime_dir else get_runtime_root() / "logs"
@@ -107,49 +142,29 @@ class EquipmentRerollBot:
             "elapsed_time": 0,
         }
 
-    def _normalize_target_option(self, target_option: str) -> str:
-        if target_option is None:
+    def _normalize_target_option(self, option_name: str) -> str:
+        if option_name is None:
             return "speed"
-        normalized = target_option.strip().lower()
-        alias_map = {
-            "속도": "speed",
-            "speed": "speed",
-            "공격력": "attack",
-            "attack": "attack",
-            "생명력": "life",
-            "life": "life",
-            "방어력": "defense",
-            "defense": "defense",
-            "defence": "defense",
-            "치명타 확률": "crit_chance",
-            "치명확률": "crit_chance",
-            "crit chance": "crit_chance",
-            "crit_chance": "crit_chance",
-            "치명타 피해": "crit_damage",
-            "치피": "crit_damage",
-            "crit damage": "crit_damage",
-            "crit_damage": "crit_damage",
-            "효과저항": "effect_resistance",
-            "effect resistance": "effect_resistance",
-            "effect_resistance": "effect_resistance",
-            "효과적중": "effectiveness",
-            "effectiveness": "effectiveness",
-            "effect hit": "effectiveness",
-        }
-        return alias_map.get(normalized, normalized)
+        normalized = option_name.strip().lower()
+        return self.OPTION_ALIAS_MAP.get(normalized, normalized)
 
-    def _target_option_label(self) -> str:
-        label_map = {
-            "speed": "속도",
-            "attack": "공격력",
-            "life": "생명력",
-            "defense": "방어력",
-            "crit_chance": "치명타 확률",
-            "crit_damage": "치명타 피해",
-            "effect_resistance": "효과저항",
-            "effectiveness": "효과적중",
-        }
-        return label_map.get(self.target_option, self.target_option)
+    def _target_option_label(self, option_key: str) -> str:
+        return self.OPTION_LABEL_MAP.get(option_key, option_key)
+
+    def _format_target_spec(self, spec: Dict) -> str:
+        return f"{self._target_option_label(spec['option'])} {spec['value']}{'%' if spec['is_percent'] else ''}"
+
+    def _normalize_target_specs(self, target_specs: List[Dict]) -> List[Dict]:
+        normalized_specs = []
+        for spec in target_specs:
+            normalized_specs.append(
+                {
+                    "option": self._normalize_target_option(spec.get("option")),
+                    "value": int(spec.get("value")),
+                    "is_percent": bool(spec.get("is_percent")),
+                }
+            )
+        return normalized_specs
 
     def _find_image_file(self, base_name: str) -> Optional[Path]:
         directory = self.resource_dir / self.ASSET_DIR
@@ -168,11 +183,10 @@ class EquipmentRerollBot:
         return None
 
     def _required_images(self) -> Dict[str, Optional[Path]]:
-        option_image = self.OPTION_IMAGE_MAP.get(self.target_option)
-        images = {
-            "target_option": self._find_image_file(option_image) if option_image else None,
-            "reroll_button": self._find_image_file(self.REROLL_BUTTON_IMAGE),
-        }
+        images = {"reroll_button": self._find_image_file(self.REROLL_BUTTON_IMAGE)}
+        for option_key in {spec["option"] for spec in self.target_specs}:
+            image_name = self.OPTION_IMAGE_MAP.get(option_key)
+            images[f"option:{option_key}"] = self._find_image_file(image_name) if image_name else None
         return images
 
     def _validate_images(self) -> Optional[Dict[str, Path]]:
@@ -181,7 +195,6 @@ class EquipmentRerollBot:
         if missing:
             logger.error("장비 리롤 이미지가 준비되지 않았습니다: %s", ", ".join(missing))
             logger.error("필요한 폴더: %s", self.resource_dir / self.ASSET_DIR)
-            logger.error("숫자 이미지는 더 이상 필요하지 않으며 옵션 이미지와 버튼 이미지만 준비하면 됩니다.")
             return None
         return {name: path for name, path in images.items() if path}
 
@@ -191,11 +204,11 @@ class EquipmentRerollBot:
         if not images:
             return self._finish_stats()
 
+        target_summary = ", ".join(self._format_target_spec(spec) for spec in self.target_specs)
         logger.info(
-            "장비 옵션 리롤 시작 - 대상 옵션: %s%s, 목표 수치: %s, 최대 리롤: %s회, 리롤 전 대기: %.1f초",
-            self._target_option_label(),
-            "%" if self.target_is_percent else "",
-            self.target_speed,
+            "장비 옵션 리롤 시작 - 잠금 옵션: %s개, 목표: %s, 최대 리롤: %s회, 리롤 전 대기 %.1f초",
+            self.locked_option_count,
+            target_summary,
             self.max_rerolls,
             self.delay_before_reroll,
         )
@@ -218,48 +231,39 @@ class EquipmentRerollBot:
             if screen is None:
                 return self._finish_stats()
 
-            match = self._find_target_option_row(screen, images["target_option"])
-            if match is not None:
-                self.stats["option_found"] += 1
-                row_index, option_box, row_bounds = match
-                detected_value, detected_has_percent = self._read_row_numeric_value(screen, row_bounds, option_box, row_index)
+            row_results = self._scan_target_rows(screen, images)
+            option_match_count, target_match_count, exact_matches, ocr_failure = self._evaluate_target_matches(row_results)
+            self.stats["option_found"] = option_match_count
+            self.stats["target_found"] = target_match_count
+
+            if exact_matches:
+                logger.info("현재 일치한 목표: %s", ", ".join(self._format_target_spec(spec) for spec in exact_matches))
+
+            if target_match_count == len(self.target_specs):
+                logger.info("모든 목표 옵션 조합을 찾았습니다.")
+                return self._finish_stats()
+
+            if ocr_failure is not None:
                 logger.info(
-                    "대상 옵션 발견 - 행 %s, 위치: %s, 인식 숫자: %s%s",
-                    row_index + 1,
-                    option_box,
-                    detected_value if detected_value is not None else "없음",
-                    "%" if detected_value is not None and detected_has_percent else "",
+                    "대상 옵션 '%s'은(는) 찾았지만 숫자 OCR에 실패했습니다. 안전을 위해 즉시 중지합니다.",
+                    self._target_option_label(ocr_failure["option"]),
                 )
-                if detected_value == self.target_speed and detected_has_percent == self.target_is_percent:
-                    self.stats["target_found"] += 1
-                    logger.info("목표 수치 %s%s를 찾았습니다.", self.target_speed, "%" if self.target_is_percent else "")
-                    return self._finish_stats()
-                if detected_value is None:
-                    logger.info(
-                        "대상 옵션 '%s'은(는) 찾았지만 숫자 OCR에 실패했습니다. 안전을 위해 즉시 중지합니다.",
-                        self._target_option_label(),
-                    )
-                    return self._finish_stats()
-                if detected_has_percent != self.target_is_percent:
-                    logger.info(
-                        "대상 옵션 '%s'은(는) 찾았지만 %% 여부가 다릅니다. 목표: %s, 현재: %s",
-                        self._target_option_label(),
-                        "%" if self.target_is_percent else "고정 수치",
-                        "%" if detected_has_percent else "고정 수치",
-                    )
-                else:
-                    logger.info(
-                        "대상 옵션 '%s'은(는) 찾았지만 목표 수치 %s%s가 아닙니다. 현재 수치: %s%s",
-                        self._target_option_label(),
-                        self.target_speed,
-                        "%" if self.target_is_percent else "",
-                        detected_value,
-                        "%" if detected_has_percent else "",
-                    )
-            else:
+                return self._finish_stats()
+
+            missing_specs = [
+                spec
+                for spec in self.target_specs
+                if not any(
+                    match["option"] == spec["option"]
+                    and match["value"] == spec["value"]
+                    and match["is_percent"] == spec["is_percent"]
+                    for match in exact_matches
+                )
+            ]
+            if missing_specs:
                 logger.info(
-                    "대상 옵션 '%s'을(를) 우측 리롤 패널에서 찾지 못했습니다.",
-                    self._target_option_label(),
+                    "아직 목표 조합이 완성되지 않았습니다. 남은 목표: %s",
+                    ", ".join(self._format_target_spec(spec) for spec in missing_specs),
                 )
 
             if attempt >= self.max_rerolls:
@@ -294,39 +298,104 @@ class EquipmentRerollBot:
             logger.error("리롤 스크린샷 캡처 중 오류: %s", e, exc_info=self.debug_mode)
             return None
 
-    def _find_target_option_row(
+    def _scan_target_rows(self, screen: np.ndarray, images: Dict[str, Path]) -> List[Dict]:
+        rows = self._get_row_bounds(screen.shape[1], screen.shape[0])
+        target_templates = {
+            key.split(":", 1)[1]: read_image(str(path), cv2.IMREAD_COLOR)
+            for key, path in images.items()
+            if key.startswith("option:")
+        }
+
+        results = []
+        for row_index, bounds in enumerate(rows):
+            best_match = self._find_best_target_option_in_row(screen, bounds, target_templates, row_index)
+            if best_match is None:
+                continue
+
+            value, has_percent = self._read_row_numeric_value(screen, bounds, best_match["box"], row_index)
+            results.append(
+                {
+                    "row_index": row_index,
+                    "option": best_match["option"],
+                    "box": best_match["box"],
+                    "value": value,
+                    "is_percent": has_percent,
+                }
+            )
+            logger.info(
+                "대상 옵션 발견 - 행 %s, 옵션: %s, 위치: %s, 인식 숫자: %s%s",
+                row_index + 1,
+                self._target_option_label(best_match["option"]),
+                best_match["box"],
+                value if value is not None else "없음",
+                "%" if value is not None and has_percent else "",
+            )
+        return results
+
+    def _find_best_target_option_in_row(
         self,
         screen: np.ndarray,
-        option_image_path: Path,
-    ) -> Optional[Tuple[int, Tuple[int, int, int, int], Tuple[int, int, int, int]]]:
-        rows = self._get_row_bounds(screen.shape[1], screen.shape[0])
-        template = read_image(str(option_image_path), cv2.IMREAD_COLOR)
-        if template is None:
-            logger.error("옵션 템플릿을 불러오지 못했습니다: %s", option_image_path)
-            return None
+        row_bounds: Tuple[int, int, int, int],
+        target_templates: Dict[str, np.ndarray],
+        row_index: int,
+    ) -> Optional[Dict]:
+        x1, y1, x2, y2 = row_bounds
+        row_image = screen[y1:y2, x1:x2]
+        best_option = None
+        best_box = None
+        best_similarity = 0.0
 
-        for row_index, bounds in enumerate(rows):
-            x1, y1, x2, y2 = bounds
-            row_image = screen[y1:y2, x1:x2]
+        for option_key, template in target_templates.items():
+            if template is None:
+                continue
+
             option_scan_width = max(int((x2 - x1) * self.OPTION_MATCH_WIDTH_RATIO), template.shape[1])
             option_scan = row_image[:, :option_scan_width]
             location, similarity = self._match_template_in_image(option_scan, template)
+
             if self.debug_mode:
-                self._save_debug_image(f"row_{row_index + 1}_option_scan.png", option_scan)
-            if location is None:
-                logger.debug("행 %s에서 대상 옵션을 찾지 못했습니다.", row_index + 1)
+                self._save_debug_image(f"row_{row_index + 1}_{option_key}_scan.png", option_scan)
+
+            if location is None or similarity <= best_similarity:
                 continue
 
             local_x, local_y, width, height = location
-            global_box = (x1 + local_x, y1 + local_y, width, height)
-            logger.info(
-                "행 %s에서 대상 옵션 매칭 성공 - 신뢰도 %.1f%%, 위치 %s",
-                row_index + 1,
-                similarity * 100,
-                global_box,
-            )
-            return row_index, global_box, bounds
-        return None
+            best_option = option_key
+            best_box = (x1 + local_x, y1 + local_y, width, height)
+            best_similarity = similarity
+
+        if best_option is None:
+            return None
+
+        logger.info(
+            "행 %s에서 대상 옵션 매칭 성공 - 옵션: %s, 신뢰도 %.1f%%, 위치 %s",
+            row_index + 1,
+            self._target_option_label(best_option),
+            best_similarity * 100,
+            best_box,
+        )
+        return {"option": best_option, "box": best_box, "similarity": best_similarity}
+
+    def _evaluate_target_matches(self, row_results: List[Dict]) -> Tuple[int, int, List[Dict], Optional[Dict]]:
+        desired_options = {spec["option"] for spec in self.target_specs}
+        option_match_count = sum(1 for result in row_results if result["option"] in desired_options)
+        exact_matches = []
+        used_rows = set()
+
+        for spec in self.target_specs:
+            for row in row_results:
+                if row["row_index"] in used_rows:
+                    continue
+                if row["option"] != spec["option"]:
+                    continue
+                if row["value"] is None:
+                    return option_match_count, len(exact_matches), exact_matches, row
+                if row["value"] == spec["value"] and row["is_percent"] == spec["is_percent"]:
+                    exact_matches.append(spec)
+                    used_rows.add(row["row_index"])
+                    break
+
+        return option_match_count, len(exact_matches), exact_matches, None
 
     def _match_template_in_image(
         self,
@@ -342,8 +411,8 @@ class EquipmentRerollBot:
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
         if max_val < self.threshold:
             return None, float(max_val)
-        h, w = template.shape[:2]
-        return (max_loc[0], max_loc[1], w, h), float(max_val)
+        height, width = template.shape[:2]
+        return (max_loc[0], max_loc[1], width, height), float(max_val)
 
     def _get_row_bounds(self, screen_width: int, screen_height: int) -> List[Tuple[int, int, int, int]]:
         x1 = int(screen_width * self.OPTION_PANEL_BOUNDS["left"])
@@ -468,18 +537,22 @@ class EquipmentRerollBot:
                     continue
                 text = str(item[0])
                 confidence = float(item[1])
+
             has_percent = "%" in text
             digits = "".join(ch for ch in text if ch.isdigit())
             if not digits or confidence < self.OCR_MIN_CONFIDENCE:
                 continue
+
             try:
                 value = int(digits)
             except ValueError:
                 continue
+
             if confidence > best_confidence:
                 best_candidate = value
                 best_confidence = confidence
                 best_has_percent = has_percent
+
         return best_candidate, best_confidence, best_has_percent
 
     def _save_debug_image(self, name: str, image: np.ndarray):
