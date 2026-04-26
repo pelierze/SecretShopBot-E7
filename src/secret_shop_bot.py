@@ -119,8 +119,8 @@ class SecretShopBot:
         
         # 이미지별 임계값 설정
         default_thresholds = {
-            "mystic_medal": 0.92,
-            "covenant_bookmark": 0.92,
+            "mystic_medal": 0.95,
+            "covenant_bookmark": 0.95,
             "purchase_button": 0.92,
             "buy_button": 0.92,
             "refresh_button": 0.92,
@@ -374,7 +374,14 @@ class SecretShopBot:
             )
             if result:
                 found_items[item_name] = result
-                logger.info(f"⭐ {self._item_label(item_name)} 발견: {result}")
+                similarity = self.matcher.get_similarity_at_location(
+                    str(self.screenshot_path),
+                    str(image_path),
+                    result,
+                )
+                logger.info(
+                    f"⭐ {self._item_label(item_name)} 발견: {result} (매칭률: {similarity * 100:.1f}%)"
+                )
         
         if found_items:
             logger.info(f"🔍 스캔 완료 - 발견한 아이템: {list(found_items.keys())}")
