@@ -2,8 +2,8 @@
 Equipment option reroll automation.
 
 This module scans the rerolled option panel on the right side of the comparison
-dialog. It supports multiple desired option/value pairs and stops when every
-configured target is present among the rerolled rows.
+dialog. It supports both exact option/value matching and "stop when any N of the
+selected options appear" matching.
 """
 from __future__ import annotations
 
@@ -37,6 +37,9 @@ def get_runtime_root() -> Path:
 
 class EquipmentRerollBot:
     """Automates multi-target equipment option rerolling."""
+
+    TARGET_MODE_EXACT = "exact"
+    TARGET_MODE_COUNT = "count"
 
     ASSET_DIR = "images/equipment_options"
     REROLL_BUTTON_IMAGE = "reroll_button.png"
@@ -109,6 +112,8 @@ class EquipmentRerollBot:
         self,
         adb_controller: ADBController,
         target_specs: List[Dict],
+        target_mode: str,
+        required_match_count: int,
         locked_option_count: int,
         max_rerolls: int,
         delay_before_reroll: float,
@@ -119,6 +124,8 @@ class EquipmentRerollBot:
     ):
         self.adb = adb_controller
         self.target_specs = self._normalize_target_specs(target_specs)
+        self.target_mode = target_mode if target_mode in (self.TARGET_MODE_EXACT, self.TARGET_MODE_COUNT) else self.TARGET_MODE_EXACT
+        self.required_match_count = max(1, int(required_match_count))
         self.locked_option_count = max(0, int(locked_option_count))
         self.max_rerolls = max_rerolls
         self.delay_before_reroll = delay_before_reroll
@@ -152,15 +159,19 @@ class EquipmentRerollBot:
         return self.OPTION_LABEL_MAP.get(option_key, option_key)
 
     def _format_target_spec(self, spec: Dict) -> str:
-        return f"{self._target_option_label(spec['option'])} {spec['value']}{'%' if spec['is_percent'] else ''}"
+        if spec.get("value") is None:
+            return self._target_option_label(spec["option"])
+        suffix = "%" if spec.get("is_percent") else ""
+        return f"{self._target_option_label(spec['option'])} {spec['value']}{suffix}"
 
     def _normalize_target_specs(self, target_specs: List[Dict]) -> List[Dict]:
         normalized_specs = []
         for spec in target_specs:
+            raw_value = spec.get("value")
             normalized_specs.append(
                 {
                     "option": self._normalize_target_option(spec.get("option")),
-                    "value": int(spec.get("value")),
+                    "value": int(raw_value) if raw_value is not None else None,
                     "is_percent": bool(spec.get("is_percent")),
                 }
             )
@@ -205,9 +216,11 @@ class EquipmentRerollBot:
             return self._finish_stats()
 
         target_summary = ", ".join(self._format_target_spec(spec) for spec in self.target_specs)
+        mode_label = "정확히 일치" if self.target_mode == self.TARGET_MODE_EXACT else f"옵션 개수 충족 ({self.required_match_count}개)"
         logger.info(
-            "장비 옵션 리롤 시작 - 잠금 옵션: %s개, 목표: %s, 최대 리롤: %s회, 리롤 전 대기 %.1f초",
+            "장비 옵션 리롤 시작 - 잠금 옵션: %s개, 중지 방식: %s, 목표: %s, 최대 리롤: %s회, 리롤 전 대기 %.1f초",
             self.locked_option_count,
+            mode_label,
             target_summary,
             self.max_rerolls,
             self.delay_before_reroll,
@@ -231,16 +244,23 @@ class EquipmentRerollBot:
             if screen is None:
                 return self._finish_stats()
 
-            row_results = self._scan_target_rows(screen, images)
-            option_match_count, target_match_count, exact_matches, ocr_failure = self._evaluate_target_matches(row_results)
+            read_numeric = self.target_mode == self.TARGET_MODE_EXACT
+            row_results = self._scan_target_rows(screen, images, read_numeric=read_numeric)
+            option_match_count, target_match_count, matched_results, ocr_failure, success = self._evaluate_target_matches(row_results)
             self.stats["option_found"] = option_match_count
             self.stats["target_found"] = target_match_count
 
-            if exact_matches:
-                logger.info("현재 일치한 목표: %s", ", ".join(self._format_target_spec(spec) for spec in exact_matches))
+            if matched_results:
+                if self.target_mode == self.TARGET_MODE_EXACT:
+                    logger.info("현재 일치한 목표: %s", ", ".join(self._format_target_spec(spec) for spec in matched_results))
+                else:
+                    logger.info("현재 발견한 후보 옵션: %s", ", ".join(self._target_option_label(row["option"]) for row in matched_results))
 
-            if target_match_count == len(self.target_specs):
-                logger.info("모든 목표 옵션 조합을 찾았습니다.")
+            if success:
+                if self.target_mode == self.TARGET_MODE_EXACT:
+                    logger.info("모든 목표 옵션 조합을 찾았습니다.")
+                else:
+                    logger.info("지정한 후보 옵션이 %s개 이상 발견되어 중지합니다.", self.required_match_count)
                 return self._finish_stats()
 
             if ocr_failure is not None:
@@ -250,20 +270,27 @@ class EquipmentRerollBot:
                 )
                 return self._finish_stats()
 
-            missing_specs = [
-                spec
-                for spec in self.target_specs
-                if not any(
-                    match["option"] == spec["option"]
-                    and match["value"] == spec["value"]
-                    and match["is_percent"] == spec["is_percent"]
-                    for match in exact_matches
-                )
-            ]
-            if missing_specs:
+            if self.target_mode == self.TARGET_MODE_EXACT:
+                missing_specs = [
+                    spec
+                    for spec in self.target_specs
+                    if not any(
+                        match["option"] == spec["option"]
+                        and match["value"] == spec["value"]
+                        and match["is_percent"] == spec["is_percent"]
+                        for match in matched_results
+                    )
+                ]
+                if missing_specs:
+                    logger.info(
+                        "아직 목표 조합이 완성되지 않았습니다. 남은 목표: %s",
+                        ", ".join(self._format_target_spec(spec) for spec in missing_specs),
+                    )
+            else:
                 logger.info(
-                    "아직 목표 조합이 완성되지 않았습니다. 남은 목표: %s",
-                    ", ".join(self._format_target_spec(spec) for spec in missing_specs),
+                    "후보 옵션 %s/%s개를 찾았습니다. 아직 중지 조건에 도달하지 않았습니다.",
+                    target_match_count,
+                    self.required_match_count,
                 )
 
             if attempt >= self.max_rerolls:
@@ -298,7 +325,7 @@ class EquipmentRerollBot:
             logger.error("리롤 스크린샷 캡처 중 오류: %s", e, exc_info=self.debug_mode)
             return None
 
-    def _scan_target_rows(self, screen: np.ndarray, images: Dict[str, Path]) -> List[Dict]:
+    def _scan_target_rows(self, screen: np.ndarray, images: Dict[str, Path], read_numeric: bool) -> List[Dict]:
         rows = self._get_row_bounds(screen.shape[1], screen.shape[0])
         target_templates = {
             key.split(":", 1)[1]: read_image(str(path), cv2.IMREAD_COLOR)
@@ -312,7 +339,11 @@ class EquipmentRerollBot:
             if best_match is None:
                 continue
 
-            value, has_percent = self._read_row_numeric_value(screen, bounds, best_match["box"], row_index)
+            if read_numeric:
+                value, has_percent = self._read_row_numeric_value(screen, bounds, best_match["box"], row_index)
+            else:
+                value, has_percent = None, False
+
             results.append(
                 {
                     "row_index": row_index,
@@ -322,13 +353,13 @@ class EquipmentRerollBot:
                     "is_percent": has_percent,
                 }
             )
+            detected_value = f"{value}{'%' if has_percent else ''}" if value is not None else "없음"
             logger.info(
-                "대상 옵션 발견 - 행 %s, 옵션: %s, 위치: %s, 인식 숫자: %s%s",
+                "대상 옵션 발견 - 행 %s, 옵션: %s, 위치: %s, 인식 숫자: %s",
                 row_index + 1,
                 self._target_option_label(best_match["option"]),
                 best_match["box"],
-                value if value is not None else "없음",
-                "%" if value is not None and has_percent else "",
+                detected_value,
             )
         return results
 
@@ -376,12 +407,17 @@ class EquipmentRerollBot:
         )
         return {"option": best_option, "box": best_box, "similarity": best_similarity}
 
-    def _evaluate_target_matches(self, row_results: List[Dict]) -> Tuple[int, int, List[Dict], Optional[Dict]]:
+    def _evaluate_target_matches(self, row_results: List[Dict]) -> Tuple[int, int, List[Dict], Optional[Dict], bool]:
         desired_options = {spec["option"] for spec in self.target_specs}
-        option_match_count = sum(1 for result in row_results if result["option"] in desired_options)
+        matched_rows = [row for row in row_results if row["option"] in desired_options]
+        option_match_count = len(matched_rows)
+
+        if self.target_mode == self.TARGET_MODE_COUNT:
+            target_match_count = len(matched_rows)
+            return option_match_count, target_match_count, matched_rows, None, target_match_count >= self.required_match_count
+
         exact_matches = []
         used_rows = set()
-
         for spec in self.target_specs:
             for row in row_results:
                 if row["row_index"] in used_rows:
@@ -389,13 +425,14 @@ class EquipmentRerollBot:
                 if row["option"] != spec["option"]:
                     continue
                 if row["value"] is None:
-                    return option_match_count, len(exact_matches), exact_matches, row
+                    return option_match_count, len(exact_matches), exact_matches, row, False
                 if row["value"] == spec["value"] and row["is_percent"] == spec["is_percent"]:
                     exact_matches.append(spec)
                     used_rows.add(row["row_index"])
                     break
 
-        return option_match_count, len(exact_matches), exact_matches, None
+        target_match_count = len(exact_matches)
+        return option_match_count, target_match_count, exact_matches, None, target_match_count == len(self.target_specs)
 
     def _match_template_in_image(
         self,
