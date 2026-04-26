@@ -77,48 +77,56 @@ class SessionView:
         "속도": {
             "allow_percent": False,
             "force_percent": False,
+            "default_percent": False,
             "percent_range": None,
             "flat_range": (2, 5),
         },
         "공격력": {
             "allow_percent": True,
             "force_percent": False,
+            "default_percent": True,
             "percent_range": (4, 8),
             "flat_range": (33, 47),
         },
         "생명력": {
             "allow_percent": True,
             "force_percent": False,
+            "default_percent": True,
             "percent_range": (4, 8),
             "flat_range": (158, 203),
         },
         "방어력": {
             "allow_percent": True,
             "force_percent": False,
+            "default_percent": True,
             "percent_range": (4, 8),
             "flat_range": (28, 35),
         },
         "치명타 확률": {
             "allow_percent": True,
             "force_percent": True,
+            "default_percent": True,
             "percent_range": (3, 5),
             "flat_range": None,
         },
         "치명타 피해": {
             "allow_percent": True,
             "force_percent": True,
+            "default_percent": True,
             "percent_range": (4, 7),
             "flat_range": None,
         },
         "효과저항": {
             "allow_percent": True,
             "force_percent": True,
+            "default_percent": True,
             "percent_range": (4, 8),
             "flat_range": None,
         },
         "효과적중": {
             "allow_percent": True,
             "force_percent": True,
+            "default_percent": True,
             "percent_range": (4, 8),
             "flat_range": None,
         },
@@ -383,6 +391,7 @@ class SessionView:
         self.reroll_target_mode_combo.current(0)
         self.reroll_target_mode_combo.grid(row=0, column=5, sticky=tk.W, padx=5, pady=5)
         self.reroll_target_mode_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
+        self._last_reroll_target_mode = self._get_reroll_target_mode()
 
         ttk.Label(self.reroll_settings_frame, text="중지 개수:").grid(row=0, column=6, sticky=tk.W, padx=5, pady=5)
         self.reroll_required_match_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
@@ -399,16 +408,18 @@ class SessionView:
             label = ttk.Label(self.reroll_settings_frame, text=f"목표 {row_index + 1}:")
             label.grid(row=grid_row, column=0, sticky=tk.W, padx=5, pady=5)
 
+            default_option = default_targets[row_index] if row_index < len(default_targets) else option_values[0]
             option_combo = ttk.Combobox(self.reroll_settings_frame, width=12, state="readonly")
             option_combo["values"] = option_values
-            option_combo.set(default_targets[row_index] if row_index < len(default_targets) else option_values[0])
+            option_combo.set(default_option)
             option_combo.grid(row=grid_row, column=1, sticky=tk.W, padx=5, pady=5)
             option_combo.bind("<<ComboboxSelected>>", lambda event, idx=row_index: self._on_reroll_target_option_changed(idx))
 
             value_entry = ttk.Entry(self.reroll_settings_frame, width=10)
             value_entry.grid(row=grid_row, column=2, sticky=tk.W, padx=5, pady=5)
 
-            percent_var = tk.BooleanVar(value=False)
+            default_percent = bool(self._get_reroll_option_rule(default_option).get("default_percent", False))
+            percent_var = tk.BooleanVar(value=default_percent)
             percent_checkbox = ttk.Checkbutton(
                 self.reroll_settings_frame,
                 text="% 옵션",
@@ -480,7 +491,7 @@ class SessionView:
         self.reroll_option_found_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
         self.reroll_option_found_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
 
-        ttk.Label(stats_grid, text="목표 발견:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(stats_grid, text="현재 일치:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
         self.reroll_target_found_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
         self.reroll_target_found_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
         self._update_reroll_target_count_controls()
@@ -522,12 +533,15 @@ class SessionView:
         return max(1, self.REROLL_MAX_TARGETS - self._get_reroll_locked_count())
 
     def _on_reroll_target_count_changed(self, event):
-        self._update_reroll_target_count_controls()
+        current_mode = self._get_reroll_target_mode()
+        reset_defaults = current_mode != getattr(self, "_last_reroll_target_mode", current_mode)
+        self._last_reroll_target_mode = current_mode
+        self._update_reroll_target_count_controls(reset_defaults=reset_defaults)
 
     def _on_reroll_target_option_changed(self, index):
-        self._update_reroll_target_row_controls(index)
+        self._update_reroll_target_row_controls(index, reset_defaults=True)
 
-    def _update_reroll_target_count_controls(self):
+    def _update_reroll_target_count_controls(self, reset_defaults=False):
         max_targets = self._get_reroll_max_selectable_targets()
         current_count = min(self._get_reroll_target_count(), max_targets)
         target_mode = self._get_reroll_target_mode()
@@ -553,11 +567,11 @@ class SessionView:
             row["value_entry"].config(state=state)
             row["range_label"].config(state=state)
             if enabled:
-                self._update_reroll_target_row_controls(index)
+                self._update_reroll_target_row_controls(index, reset_defaults=reset_defaults)
             else:
                 row["percent_checkbox"].config(state=tk.DISABLED)
 
-    def _update_reroll_target_row_controls(self, index):
+    def _update_reroll_target_row_controls(self, index, reset_defaults=False):
         row = self.reroll_target_rows[index]
         option_name = row["option_combo"].get() or "속도"
         rule = self._get_reroll_option_rule(option_name)
@@ -565,7 +579,8 @@ class SessionView:
 
         if target_mode == self.REROLL_TARGET_MODE_COUNT:
             row["value_entry"].config(state=tk.DISABLED)
-            row["percent_var"].set(False)
+            if reset_defaults:
+                row["percent_var"].set(bool(rule.get("default_percent", False)))
             row["percent_checkbox"].config(state=tk.DISABLED)
             row["range_label"].config(text="수치 무시", state=tk.NORMAL if index < self._get_reroll_target_count() else tk.DISABLED)
             return
@@ -579,6 +594,8 @@ class SessionView:
             row["percent_var"].set(False)
             percent_state = tk.DISABLED
         else:
+            if reset_defaults:
+                row["percent_var"].set(bool(rule.get("default_percent", False)))
             percent_state = tk.NORMAL if not self.is_running and index < self._get_reroll_target_count() else tk.DISABLED
         row["percent_checkbox"].config(state=percent_state)
 
@@ -591,8 +608,8 @@ class SessionView:
             numeric_value = int(current_value)
         except ValueError:
             numeric_value = None
-        if numeric_value is None or not (target_range[0] <= numeric_value <= target_range[1]):
-            self._replace_entry(row["value_entry"], target_range[0])
+        if reset_defaults or numeric_value is None or not (target_range[0] <= numeric_value <= target_range[1]):
+            self._replace_entry(row["value_entry"], target_range[1])
 
     def refresh_macro_combo(self):
         labels = [macro.get("name", macro.get("id", "macro")) for macro in self.app.macro_definitions]
@@ -1241,13 +1258,15 @@ class SessionView:
 
     def _format_reroll_summary(self, title, stats):
         elapsed = self._format_elapsed_seconds(stats.get("elapsed_time", 0))
+        goal_achieved = "성공" if stats.get("goal_achieved") else "실패"
         return (
             f"\n{'=' * 42}\n"
             f"{title}\n"
             f"- 스캔 횟수: {stats.get('attempts', 0)}회\n"
             f"- 리롤 횟수: {stats.get('rerolls', 0)}회\n"
             f"- 대상 옵션 발견: {stats.get('option_found', 0)}개\n"
-            f"- 목표 일치: {stats.get('target_found', 0)}개\n"
+            f"- 목표 달성: {goal_achieved}\n"
+            f"- 최종 일치: {stats.get('target_found', 0)}개\n"
             f"- 소요 시간: {elapsed}\n"
             f"{'=' * 42}"
         )

@@ -40,6 +40,7 @@ class EquipmentRerollBot:
 
     TARGET_MODE_EXACT = "exact"
     TARGET_MODE_COUNT = "count"
+    REROLL_BUTTON_RETRY_COUNT = 3
 
     ASSET_DIR = "images/equipment_options"
     REROLL_BUTTON_IMAGE = "reroll_button.png"
@@ -144,6 +145,7 @@ class EquipmentRerollBot:
             "rerolls": 0,
             "option_found": 0,
             "target_found": 0,
+            "goal_achieved": False,
             "start_time": None,
             "end_time": None,
             "elapsed_time": 0,
@@ -249,6 +251,7 @@ class EquipmentRerollBot:
             option_match_count, target_match_count, matched_results, ocr_failure, success = self._evaluate_target_matches(row_results)
             self.stats["option_found"] = option_match_count
             self.stats["target_found"] = target_match_count
+            self.stats["goal_achieved"] = success
 
             if matched_results:
                 if self.target_mode == self.TARGET_MODE_EXACT:
@@ -283,7 +286,7 @@ class EquipmentRerollBot:
                 ]
                 if missing_specs:
                     logger.info(
-                        "아직 목표 조합이 완성되지 않았습니다. 남은 목표: %s",
+                        "아직 목표 조합이 완성되지 않았습니다. 누락 목표: %s",
                         ", ".join(self._format_target_spec(spec) for spec in missing_specs),
                     )
             else:
@@ -302,12 +305,12 @@ class EquipmentRerollBot:
                 if not self._sleep_with_stop(self.delay_before_reroll):
                     return self._finish_stats()
 
-            if self._click_image(images["reroll_button"], "보조 능력치 변경 버튼"):
+            if self._click_image_with_retry(images["reroll_button"], "보조 능력치 변경 버튼", retries=self.REROLL_BUTTON_RETRY_COUNT):
                 self.stats["rerolls"] += 1
                 if not self._sleep_with_stop(0.5):
                     return self._finish_stats()
             else:
-                logger.error("보조 능력치 변경 버튼을 찾지 못해 중지합니다.")
+                logger.error("보조 능력치 변경 버튼을 %s회 확인했지만 찾지 못해 중지합니다.", self.REROLL_BUTTON_RETRY_COUNT)
                 return self._finish_stats()
 
         return self._finish_stats()
@@ -414,7 +417,8 @@ class EquipmentRerollBot:
 
         if self.target_mode == self.TARGET_MODE_COUNT:
             target_match_count = len(matched_rows)
-            return option_match_count, target_match_count, matched_rows, None, target_match_count >= self.required_match_count
+            success = target_match_count >= self.required_match_count
+            return option_match_count, target_match_count, matched_rows, None, success
 
         exact_matches = []
         used_rows = set()
@@ -432,7 +436,8 @@ class EquipmentRerollBot:
                     break
 
         target_match_count = len(exact_matches)
-        return option_match_count, target_match_count, exact_matches, None, target_match_count == len(self.target_specs)
+        success = target_match_count == len(self.target_specs)
+        return option_match_count, target_match_count, exact_matches, None, success
 
     def _match_template_in_image(
         self,
@@ -610,6 +615,16 @@ class EquipmentRerollBot:
             time.sleep(min(0.1, end_time - time.time()))
         return True
 
+    def _click_image_with_retry(self, image_path: Path, label: str, retries: int) -> bool:
+        for attempt in range(1, retries + 1):
+            if self._click_image(image_path, label):
+                return True
+            if attempt < retries:
+                logger.warning("%s을(를) 찾지 못해 %s/%s회 재확인합니다.", label, attempt, retries)
+                if not self._sleep_with_stop(0.3):
+                    return False
+        return False
+
     def _click_image(self, image_path: Path, label: str) -> bool:
         self.adb.screenshot(str(self.screenshot_path))
         time.sleep(0.2)
@@ -619,7 +634,6 @@ class EquipmentRerollBot:
             threshold=self.threshold,
         )
         if not location:
-            logger.warning("%s을(를) 찾을 수 없습니다.", label)
             return False
         center_x, center_y = self.matcher.get_center(location)
         self.adb.tap(center_x, center_y, delay=0.3)

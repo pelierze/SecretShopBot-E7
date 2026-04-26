@@ -24,6 +24,7 @@ class EquipmentRerollBotTest(unittest.TestCase):
         bot.NUMBER_SCAN_LEFT_GAP_RATIO = EquipmentRerollBot.NUMBER_SCAN_LEFT_GAP_RATIO
         bot.OCR_SCALE = EquipmentRerollBot.OCR_SCALE
         bot.OCR_MIN_CONFIDENCE = EquipmentRerollBot.OCR_MIN_CONFIDENCE
+        bot.REROLL_BUTTON_RETRY_COUNT = EquipmentRerollBot.REROLL_BUTTON_RETRY_COUNT
         return bot
 
     def test_get_row_bounds_splits_right_option_panel_into_four_rows(self):
@@ -135,6 +136,22 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual([row["option"] for row in matched_rows], ["speed", "life"])
         self.assertIsNone(ocr_failure)
         self.assertTrue(success)
+
+    def test_click_image_with_retry_retries_until_success(self):
+        bot = self._make_bot()
+        attempts = []
+
+        def fake_click(_image_path, _label):
+            attempts.append(1)
+            return len(attempts) == 3
+
+        bot._click_image = fake_click
+        bot._sleep_with_stop = lambda _seconds: True
+
+        success = bot._click_image_with_retry(Path("dummy.png"), "버튼", retries=3)
+
+        self.assertTrue(success)
+        self.assertEqual(len(attempts), 3)
 
     def test_find_best_target_option_in_row_matches_target_template(self):
         bot = self._make_bot()
