@@ -12,6 +12,12 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 
+# 모던 UI 테마 (pip install sv-ttk 필요)
+try:
+    import sv_ttk
+except ImportError:
+    sv_ttk = None
+
 # libpng 경고 메시지 숨기기 (cv2 import 전에 설정)
 os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
 
@@ -189,7 +195,7 @@ class SessionView:
         )
         self.disconnect_btn.grid(row=0, column=6, padx=5)
 
-        self.connection_status = ttk.Label(self.connection_frame, text="● 연결 안됨", foreground="red")
+        self.connection_status = ttk.Label(self.connection_frame, text="● 연결 안됨", foreground="#E53935")
         self.connection_status.grid(row=0, column=7, padx=10)
 
         self.device_label = ttk.Label(self.connection_frame, text="장치:")
@@ -235,7 +241,7 @@ class SessionView:
         self.threshold_header_label = ttk.Label(
             self.settings_frame,
             text="=== 이미지 매칭 정확도 (70-99) ===",
-            font=("Arial", 9, "bold"),
+            font=("맑은 고딕", 9, "bold"),
         )
         self.threshold_header_label.grid(row=0, column=3, columnspan=3, sticky=tk.W, padx=(30, 5), pady=(0, 5))
 
@@ -309,7 +315,7 @@ class SessionView:
         self.test_btn = ttk.Button(control_frame, text="💡 이미지 테스트", command=self._test_image_matching, state=tk.DISABLED)
         self.test_btn.pack(side=tk.LEFT, padx=5)
 
-        self.pause_label = ttk.Label(control_frame, text="", foreground="orange", font=("Arial", 10, "bold"))
+        self.pause_label = ttk.Label(control_frame, text="", foreground="#FB8C00", font=("맑은 고딕", 10, "bold"))
         self.pause_label.pack(side=tk.LEFT, padx=10)
 
         self.stats_frame = ttk.LabelFrame(self.shop_tab, text="통계", padding=10)
@@ -320,37 +326,37 @@ class SessionView:
 
         self.total_refresh_title_label = ttk.Label(stats_grid, text="진행 완료:")
         self.total_refresh_title_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
-        self.total_refresh_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.total_refresh_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.total_refresh_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
 
         self.mystic_title_label = ttk.Label(stats_grid, text="신비의 메달:")
         self.mystic_title_label.grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
-        self.mystic_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.mystic_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.mystic_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
 
         self.bookmark_title_label = ttk.Label(stats_grid, text="성약의 책갈피:")
         self.bookmark_title_label.grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
-        self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.bookmark_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
 
         self.elapsed_time_title_label = ttk.Label(stats_grid, text="경과 시간:")
         self.elapsed_time_title_label.grid(row=0, column=6, sticky=tk.W, padx=5, pady=2)
-        self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="blue", font=("Arial", 10, "bold"))
+        self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.elapsed_time_label.grid(row=0, column=7, sticky=tk.W, padx=5, pady=2)
 
         self.sky_stone_title_label = ttk.Label(stats_grid, text="하늘석 사용량:")
         self.sky_stone_title_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
-        self.sky_stone_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.sky_stone_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.sky_stone_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
 
         self.bookmark_efficiency_title_label = ttk.Label(stats_grid, text="성약 획득량/하늘석:")
         self.bookmark_efficiency_title_label.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
-        self.bookmark_efficiency_label = ttk.Label(stats_grid, text="-", foreground="blue", font=("Arial", 10, "bold"))
+        self.bookmark_efficiency_label = ttk.Label(stats_grid, text="-", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.bookmark_efficiency_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
 
         self.mystic_efficiency_title_label = ttk.Label(stats_grid, text="신비 획득량/하늘석:")
         self.mystic_efficiency_title_label.grid(row=1, column=4, sticky=tk.W, padx=5, pady=2)
-        self.mystic_efficiency_label = ttk.Label(stats_grid, text="-", foreground="blue", font=("Arial", 10, "bold"))
+        self.mystic_efficiency_label = ttk.Label(stats_grid, text="-", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.mystic_efficiency_label.grid(row=1, column=5, sticky=tk.W, padx=5, pady=2)
 
         self._create_reroll_widgets()
@@ -480,19 +486,19 @@ class SessionView:
         stats_grid.pack(fill=tk.X)
 
         ttk.Label(stats_grid, text="스캔 횟수:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
-        self.reroll_attempts_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.reroll_attempts_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.reroll_attempts_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(stats_grid, text="리롤 횟수:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
-        self.reroll_count_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.reroll_count_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.reroll_count_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(stats_grid, text="대상 옵션 발견:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
-        self.reroll_option_found_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.reroll_option_found_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.reroll_option_found_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
 
         ttk.Label(stats_grid, text="현재 일치:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
-        self.reroll_target_found_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.reroll_target_found_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.reroll_target_found_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
         self._update_reroll_target_count_controls()
 
@@ -800,7 +806,7 @@ class SessionView:
                 is_network_device = True
 
             if self.app.is_device_in_use(device_id, self):
-                self.connection_status.config(text="● 사용 중", foreground="red")
+                self.connection_status.config(text="● 사용 중", foreground="#E53935")
                 logger.error("❌ %s 장치는 다른 세션에서 이미 사용 중입니다.", device_id)
                 return
 
@@ -816,7 +822,7 @@ class SessionView:
                 logger.info("ADB 테스트 통신 확인 중...")
                 test_ok, test_message = self.adb_controller.test_connection()
                 if test_ok:
-                    self.connection_status.config(text="● 연결됨", foreground="green")
+                    self.connection_status.config(text="● 연결됨", foreground="#43A047")
                     self.start_btn.config(state=tk.NORMAL)
                     self.reroll_start_btn.config(state=tk.NORMAL)
                     self.test_btn.config(state=tk.NORMAL)
@@ -824,13 +830,13 @@ class SessionView:
                     self.disconnect_btn.config(state=tk.NORMAL)
                     logger.info("✅ ADB 연결 및 테스트 통신 성공: %s", device_id)
                 else:
-                    self.connection_status.config(text="● 통신 실패", foreground="red")
+                    self.connection_status.config(text="● 통신 실패", foreground="#E53935")
                     logger.error("❌ ADB 테스트 통신 실패: %s", test_message)
                     logger.error("앱플레이어의 ADB 브릿지/ADB 디버깅 옵션이 활성화되어 있는지 확인한 뒤 다시 연결하세요.")
                     self.adb_controller.disconnect()
                     self.adb_controller = None
             else:
-                self.connection_status.config(text="● 연결 실패", foreground="red")
+                self.connection_status.config(text="● 연결 실패", foreground="#E53935")
                 logger.error("❌ ADB 연결 실패: %s - 앱플레이어 실행 상태와 ADB 브릿지/ADB 디버깅 옵션을 확인하세요", device_id)
                 self.adb_controller = None
 
@@ -1108,7 +1114,7 @@ class SessionView:
                 self.adb_controller.disconnect()
                 self.adb_controller = None
             self.current_mode = None
-            self.connection_status.config(text="● 연결 안됨", foreground="red")
+            self.connection_status.config(text="● 연결 안됨", foreground="#E53935")
             self.start_btn.config(state=tk.DISABLED)
             self.reroll_start_btn.config(state=tk.DISABLED)
             self.reroll_stop_btn.config(state=tk.DISABLED)
@@ -1378,6 +1384,7 @@ class SecretShopGUI:
         self.root.geometry("960x800")
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self._apply_modern_style()
 
         self.is_closing = False
         self.remote_settings = {}
@@ -1395,6 +1402,46 @@ class SecretShopGUI:
 
         self._setup_logging()
         self._start_settings_update()
+
+    def _apply_modern_style(self):
+        style = ttk.Style(self.root)
+        
+        # 기본 테마를 더 평면적이고 깔끔한 'clam'으로 변경
+        if 'clam' in style.theme_names():
+            style.theme_use('clam')
+            
+        font_main = ('맑은 고딕', 10)
+        font_bold = ('맑은 고딕', 10, 'bold')
+        
+        # 전체 기본 폰트 및 배경색
+        style.configure('.', font=font_main, background='#FAFAFA', foreground='#333333')
+        self.root.configure(background='#FAFAFA')
+        
+        # 노트북(탭) 스타일 모던화
+        style.configure('TNotebook', background='#FAFAFA', borderwidth=0)
+        style.configure('TNotebook.Tab', font=font_main, padding=[15, 6], background='#EAEAEA', borderwidth=0)
+        style.map('TNotebook.Tab',
+                  background=[('selected', '#FFFFFF'), ('active', '#F5F5F5')],
+                  font=[('selected', font_bold)],
+                  foreground=[('selected', '#1E88E5')])
+                  
+        # 프레임 및 라벨프레임
+        style.configure('TFrame', background='#FAFAFA')
+        style.configure('TLabelframe', background='#FAFAFA', bordercolor='#E0E0E0', borderwidth=1)
+        style.configure('TLabelframe.Label', font=font_bold, foreground='#1E88E5', background='#FAFAFA')
+        
+        # 버튼 스타일
+        style.configure('TButton', font=font_main, padding=[10, 5], background='#FFFFFF', bordercolor='#CCCCCC', borderwidth=1)
+        style.map('TButton',
+                  background=[('active', '#F0F0F0'), ('disabled', '#F5F5F5')],
+                  foreground=[('disabled', '#A0A0A0')])
+                  
+        # 입력창 스타일
+        style.configure('TEntry', padding=5)
+        style.configure('TCombobox', padding=5)
+        
+        # 모든 기본 위젯에 폰트 일괄 적용
+        self.root.option_add('*Font', font_main)
 
     def _setup_logging(self):
         root_logger = logging.getLogger()
@@ -1494,5 +1541,7 @@ class SecretShopGUI:
 def run_gui():
     """GUI 실행"""
     root = tk.Tk()
+    if sv_ttk:
+        sv_ttk.set_theme("dark")  # 취향에 따라 "light"로 변경 가능
     SecretShopGUI(root)
     root.mainloop()
