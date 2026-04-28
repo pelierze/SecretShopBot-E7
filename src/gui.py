@@ -1381,7 +1381,7 @@ class SecretShopGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("에픽세븐 비밀상점 자동화")
-        self.root.geometry("960x800")
+        self.root.geometry("960x900")
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         self._apply_modern_style()
