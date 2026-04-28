@@ -18,11 +18,15 @@ class StderrFilter:
         self.stream = stream
         
     def write(self, data):
+        if self.stream is None:
+            return
         # libpng 경고 메시지 필터링
         if 'libpng warning' not in data and 'sBIT: invalid' not in data:
             self.stream.write(data)
             
     def flush(self):
+        if self.stream is None:
+            return
         self.stream.flush()
 
 sys.stderr = StderrFilter(sys.stderr)

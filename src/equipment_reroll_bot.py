@@ -17,7 +17,13 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
-from rapidocr_onnxruntime import RapidOCR
+try:
+    from rapidocr_onnxruntime import RapidOCR
+except Exception as exc:  # pragma: no cover - depends on optional runtime package state
+    RapidOCR = None
+    RAPIDOCR_IMPORT_ERROR = exc
+else:
+    RAPIDOCR_IMPORT_ERROR = None
 
 from .adb_controller import ADBController
 from .image_matcher import ImageMatcher, read_image
@@ -138,7 +144,9 @@ class EquipmentRerollBot:
         self.runtime_dir = Path(runtime_dir) if runtime_dir else get_runtime_root() / "logs"
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.matcher = ImageMatcher(threshold=threshold)
-        self.ocr_engine = RapidOCR()
+        self.ocr_engine = None
+        self.startup_error = None
+        self._initialize_ocr_engine()
         self.screenshot_path = self.runtime_dir / "equipment_reroll_screen.png"
         self.paused = False
         self.user_action = None
@@ -152,6 +160,30 @@ class EquipmentRerollBot:
             "end_time": None,
             "elapsed_time": 0,
         }
+
+    def _initialize_ocr_engine(self) -> bool:
+        if RapidOCR is None:
+            self.startup_error = self._format_ocr_startup_error(RAPIDOCR_IMPORT_ERROR)
+            logger.error(self.startup_error)
+            return False
+
+        try:
+            self.ocr_engine = RapidOCR()
+        except Exception as exc:
+            self.startup_error = self._format_ocr_startup_error(exc)
+            logger.error(self.startup_error, exc_info=self.debug_mode)
+            return False
+        return True
+
+    def _format_ocr_startup_error(self, error: Exception) -> str:
+        return (
+            "장비 리롤 OCR 엔진을 초기화할 수 없습니다.\n"
+            "rapidocr-onnxruntime 리소스가 없거나 손상되어 숫자 인식을 시작하지 못했습니다.\n"
+            f"원인: {error}"
+        )
+
+    def get_startup_error(self) -> Optional[str]:
+        return self.startup_error
 
     def _normalize_target_option(self, option_name: str) -> str:
         if option_name is None:
@@ -212,6 +244,10 @@ class EquipmentRerollBot:
 
     def run(self) -> Dict:
         self.stats["start_time"] = time.time()
+        if self.startup_error:
+            logger.error(self.startup_error)
+            return self._finish_stats()
+
         images = self._validate_images()
         if not images:
             return self._finish_stats()
@@ -548,6 +584,10 @@ class EquipmentRerollBot:
         ]
 
     def _ocr_numeric_image(self, image: np.ndarray, use_detection: bool) -> Tuple[Optional[int], float, bool]:
+        if self.ocr_engine is None:
+            logger.error("OCR 엔진이 준비되지 않아 숫자를 인식할 수 없습니다.")
+            return None, 0.0, False
+
         try:
             ocr_res, _ = self.ocr_engine(image, use_det=use_detection, use_cls=False, use_rec=True)
         except Exception as e:

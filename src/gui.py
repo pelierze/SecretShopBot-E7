@@ -976,6 +976,11 @@ class SessionView:
                 debug_mode=self.debug_mode_var.get(),
                 runtime_dir=self.runtime_dir,
             )
+            startup_error = self.bot.get_startup_error()
+            if startup_error:
+                messagebox.showerror("오류", startup_error)
+                self.bot = None
+                return
 
             self.is_running = True
             self.current_mode = "reroll"
@@ -1491,4 +1496,3 @@ def run_gui():
     root = tk.Tk()
     SecretShopGUI(root)
     root.mainloop()
-

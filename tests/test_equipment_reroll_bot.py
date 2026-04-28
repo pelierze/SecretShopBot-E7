@@ -1,9 +1,11 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import cv2
 import numpy as np
 
+import src.equipment_reroll_bot as equipment_module
 from src.equipment_reroll_bot import EquipmentRerollBot
 
 
@@ -50,6 +52,22 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(value, 4)
         self.assertAlmostEqual(confidence, 0.72)
         self.assertFalse(has_percent)
+
+    def test_initialize_ocr_engine_reports_startup_error(self):
+        bot = self._make_bot()
+        bot.ocr_engine = None
+
+        def raise_startup_error():
+            raise FileNotFoundError("missing rapidocr resource")
+
+        with patch.object(equipment_module, "RapidOCR", raise_startup_error):
+            with patch.object(equipment_module, "RAPIDOCR_IMPORT_ERROR", None):
+                ready = bot._initialize_ocr_engine()
+
+        self.assertFalse(ready)
+        self.assertIsNone(bot.ocr_engine)
+        self.assertIn("OCR 엔진을 초기화할 수 없습니다", bot.get_startup_error())
+        self.assertIn("missing rapidocr resource", bot.get_startup_error())
 
     def test_ocr_numeric_image_detects_percent_suffix(self):
         bot = self._make_bot()
