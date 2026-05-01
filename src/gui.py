@@ -12,10 +12,17 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 
+# 모던 UI 테마 (pip install sv-ttk 필요)
+try:
+    import sv_ttk
+except ImportError:
+    sv_ttk = None
+
 # libpng 경고 메시지 숨기기 (cv2 import 전에 설정)
 os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
 
 from .adb_controller import ADBController
+from .equipment_reroll_bot import EquipmentRerollBot
 from .image_matcher import read_image
 from .json_macro_engine import JsonMacroEngine
 from .remote_script import RemoteScriptUpdater
@@ -72,6 +79,68 @@ class SessionView:
     SKY_STONES_PER_REFRESH = 3
     MYSTIC_MEDALS_PER_PURCHASE = 50
     COVENANT_BOOKMARKS_PER_PURCHASE = 5
+    REROLL_OPTION_RULES = {
+        "속도": {
+            "allow_percent": False,
+            "force_percent": False,
+            "default_percent": False,
+            "percent_range": None,
+            "flat_range": (2, 5),
+        },
+        "공격력": {
+            "allow_percent": True,
+            "force_percent": False,
+            "default_percent": True,
+            "percent_range": (4, 8),
+            "flat_range": (33, 47),
+        },
+        "생명력": {
+            "allow_percent": True,
+            "force_percent": False,
+            "default_percent": True,
+            "percent_range": (4, 8),
+            "flat_range": (158, 203),
+        },
+        "방어력": {
+            "allow_percent": True,
+            "force_percent": False,
+            "default_percent": True,
+            "percent_range": (4, 8),
+            "flat_range": (28, 35),
+        },
+        "치명타 확률": {
+            "allow_percent": True,
+            "force_percent": True,
+            "default_percent": True,
+            "percent_range": (3, 5),
+            "flat_range": None,
+        },
+        "치명타 피해": {
+            "allow_percent": True,
+            "force_percent": True,
+            "default_percent": True,
+            "percent_range": (4, 7),
+            "flat_range": None,
+        },
+        "효과저항": {
+            "allow_percent": True,
+            "force_percent": True,
+            "default_percent": True,
+            "percent_range": (4, 8),
+            "flat_range": None,
+        },
+        "효과적중": {
+            "allow_percent": True,
+            "force_percent": True,
+            "default_percent": True,
+            "percent_range": (4, 8),
+            "flat_range": None,
+        },
+    }
+    REROLL_MAX_TARGETS = 4
+    REROLL_MAX_LOCKED_OPTIONS = 2
+    REROLL_TARGET_MODE_EXACT = "exact"
+    REROLL_TARGET_MODE_COUNT = "count"
 
     def __init__(self, app, index: int, parent):
         self.app = app
@@ -87,9 +156,10 @@ class SessionView:
         self.selected_macro_id = "secret_shop"
         self.scanned_devices = {}
         self.selected_device_info = None
+        self.current_mode = None
         self.input_profile_label_text = "MuMu 앱플레이어 사용 (호환 드래그 사용)"
         self.buy_count_default_label_text = "구매 완료 검증 횟수:"
-        self.buy_count_default_unit_text = "회 (비활성화 버튼 확인 반복, 권장: 3회)"
+        self.buy_count_default_unit_text = "회"
         self.buy_count_steps_unit_text = "JSON steps 매크로는 이 값 대신 각 step 설정을 사용합니다."
 
         self.frame = ttk.Frame(parent)
@@ -125,7 +195,7 @@ class SessionView:
         )
         self.disconnect_btn.grid(row=0, column=6, padx=5)
 
-        self.connection_status = ttk.Label(self.connection_frame, text="● 연결 안됨", foreground="red")
+        self.connection_status = ttk.Label(self.connection_frame, text="● 연결 안됨", foreground="#E53935")
         self.connection_status.grid(row=0, column=7, padx=10)
 
         self.device_label = ttk.Label(self.connection_frame, text="장치:")
@@ -134,7 +204,22 @@ class SessionView:
         self.device_combo.grid(row=1, column=1, columnspan=4, sticky=tk.W, padx=5, pady=5)
         self.device_combo.bind("<<ComboboxSelected>>", self._on_device_selected)
 
-        self.settings_frame = ttk.LabelFrame(self.frame, text="매크로 설정", padding=10)
+        self.debug_mode_var = tk.BooleanVar(value=False)
+        self.debug_checkbox = ttk.Checkbutton(
+            self.connection_frame,
+            text="디버그 모드 (상세 로그)",
+            variable=self.debug_mode_var,
+        )
+        self.debug_checkbox.grid(row=1, column=5, columnspan=3, sticky=tk.W, padx=5, pady=5)
+
+        self.mode_notebook = ttk.Notebook(self.frame)
+        self.mode_notebook.pack(fill=tk.BOTH, expand=False, padx=10, pady=5)
+        self.shop_tab = ttk.Frame(self.mode_notebook)
+        self.reroll_tab = ttk.Frame(self.mode_notebook)
+        self.mode_notebook.add(self.shop_tab, text="비밀상점")
+        self.mode_notebook.add(self.reroll_tab, text="장비 리롤")
+
+        self.settings_frame = ttk.LabelFrame(self.shop_tab, text="매크로 설정", padding=10)
         self.settings_frame.pack(fill=tk.X, padx=10, pady=5)
 
         self.refresh_count_label = ttk.Label(self.settings_frame, text="리프레시 횟수:")
@@ -150,58 +235,50 @@ class SessionView:
         self.buy_count_entry = ttk.Entry(self.settings_frame, width=10)
         self.buy_count_entry.insert(0, "3")
         self.buy_count_entry.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
-        self.buy_count_unit_label = ttk.Label(self.settings_frame, text="회 (비활성화 버튼 확인 반복, 권장: 3회)")
+        self.buy_count_unit_label = ttk.Label(self.settings_frame, text="회")
         self.buy_count_unit_label.grid(row=1, column=2, sticky=tk.W)
 
         self.threshold_header_label = ttk.Label(
             self.settings_frame,
             text="=== 이미지 매칭 정확도 (70-99) ===",
-            font=("Arial", 9, "bold"),
+            font=("맑은 고딕", 9, "bold"),
         )
-        self.threshold_header_label.grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=(10, 5))
+        self.threshold_header_label.grid(row=0, column=3, columnspan=3, sticky=tk.W, padx=(30, 5), pady=(0, 5))
 
         self.mystic_medal_threshold_label = ttk.Label(self.settings_frame, text="신비의 메달:")
-        self.mystic_medal_threshold_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
+        self.mystic_medal_threshold_label.grid(row=1, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.mystic_medal_threshold = ttk.Entry(self.settings_frame, width=8)
         self.mystic_medal_threshold.insert(0, "95")
-        self.mystic_medal_threshold.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=3, column=2, sticky=tk.W)
+        self.mystic_medal_threshold.grid(row=1, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=1, column=5, sticky=tk.W)
 
         self.covenant_bookmark_threshold_label = ttk.Label(self.settings_frame, text="성약의 책갈피:")
-        self.covenant_bookmark_threshold_label.grid(row=4, column=0, sticky=tk.W, padx=5, pady=2)
+        self.covenant_bookmark_threshold_label.grid(row=2, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.covenant_bookmark_threshold = ttk.Entry(self.settings_frame, width=8)
         self.covenant_bookmark_threshold.insert(0, "95")
-        self.covenant_bookmark_threshold.grid(row=4, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=4, column=2, sticky=tk.W)
+        self.covenant_bookmark_threshold.grid(row=2, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=2, column=5, sticky=tk.W)
 
         self.purchase_button_threshold_label = ttk.Label(self.settings_frame, text="구입 버튼:")
-        self.purchase_button_threshold_label.grid(row=5, column=0, sticky=tk.W, padx=5, pady=2)
+        self.purchase_button_threshold_label.grid(row=3, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.purchase_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.purchase_button_threshold.insert(0, "92")
-        self.purchase_button_threshold.grid(row=5, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=5, column=2, sticky=tk.W)
+        self.purchase_button_threshold.grid(row=3, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=3, column=5, sticky=tk.W)
 
         self.buy_button_threshold_label = ttk.Label(self.settings_frame, text="구매 버튼:")
-        self.buy_button_threshold_label.grid(row=6, column=0, sticky=tk.W, padx=5, pady=2)
+        self.buy_button_threshold_label.grid(row=4, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.buy_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.buy_button_threshold.insert(0, "92")
-        self.buy_button_threshold.grid(row=6, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
+        self.buy_button_threshold.grid(row=4, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=4, column=5, sticky=tk.W)
 
         self.refresh_button_threshold_label = ttk.Label(self.settings_frame, text="갱신 버튼:")
-        self.refresh_button_threshold_label.grid(row=7, column=0, sticky=tk.W, padx=5, pady=2)
+        self.refresh_button_threshold_label.grid(row=5, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.refresh_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.refresh_button_threshold.insert(0, "92")
-        self.refresh_button_threshold.grid(row=7, column=1, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=7, column=2, sticky=tk.W)
-
-        self.debug_mode_var = tk.BooleanVar(value=False)
-        self.debug_checkbox = ttk.Checkbutton(
-            self.settings_frame,
-            text="디버그 모드 (상세 로그)",
-            variable=self.debug_mode_var,
-        )
-        self.debug_checkbox.grid(row=8, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        self.refresh_button_threshold.grid(row=5, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=5, column=5, sticky=tk.W)
 
         self.mumu_mode_var = tk.BooleanVar(value=False)
         self.mumu_checkbox = ttk.Checkbutton(
@@ -210,9 +287,9 @@ class SessionView:
             variable=self.mumu_mode_var,
             command=self._on_input_profile_changed,
         )
-        self.mumu_checkbox.grid(row=9, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+        self.mumu_checkbox.grid(row=6, column=3, columnspan=3, sticky=tk.W, padx=(30, 5), pady=5)
 
-        control_frame = ttk.Frame(self.frame, padding=10)
+        control_frame = ttk.Frame(self.shop_tab, padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
 
         self.macro_select_label = ttk.Label(control_frame, text="매크로:")
@@ -238,10 +315,10 @@ class SessionView:
         self.test_btn = ttk.Button(control_frame, text="💡 이미지 테스트", command=self._test_image_matching, state=tk.DISABLED)
         self.test_btn.pack(side=tk.LEFT, padx=5)
 
-        self.pause_label = ttk.Label(control_frame, text="", foreground="orange", font=("Arial", 10, "bold"))
+        self.pause_label = ttk.Label(control_frame, text="", foreground="#FB8C00", font=("맑은 고딕", 10, "bold"))
         self.pause_label.pack(side=tk.LEFT, padx=10)
 
-        self.stats_frame = ttk.LabelFrame(self.frame, text="통계", padding=10)
+        self.stats_frame = ttk.LabelFrame(self.shop_tab, text="통계", padding=10)
         self.stats_frame.pack(fill=tk.X, padx=10, pady=5)
 
         stats_grid = ttk.Frame(self.stats_frame)
@@ -249,38 +326,40 @@ class SessionView:
 
         self.total_refresh_title_label = ttk.Label(stats_grid, text="진행 완료:")
         self.total_refresh_title_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
-        self.total_refresh_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.total_refresh_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.total_refresh_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
 
         self.mystic_title_label = ttk.Label(stats_grid, text="신비의 메달:")
         self.mystic_title_label.grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
-        self.mystic_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
+        self.mystic_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.mystic_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
 
         self.bookmark_title_label = ttk.Label(stats_grid, text="성약의 책갈피:")
-        self.bookmark_title_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
-        self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
-        self.bookmark_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_title_label.grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.bookmark_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
 
         self.elapsed_time_title_label = ttk.Label(stats_grid, text="경과 시간:")
-        self.elapsed_time_title_label.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
-        self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="blue", font=("Arial", 10, "bold"))
-        self.elapsed_time_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
+        self.elapsed_time_title_label.grid(row=0, column=6, sticky=tk.W, padx=5, pady=2)
+        self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.elapsed_time_label.grid(row=0, column=7, sticky=tk.W, padx=5, pady=2)
 
         self.sky_stone_title_label = ttk.Label(stats_grid, text="하늘석 사용량:")
-        self.sky_stone_title_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
-        self.sky_stone_label = ttk.Label(stats_grid, text="0", foreground="blue", font=("Arial", 10, "bold"))
-        self.sky_stone_label.grid(row=2, column=1, sticky=tk.W, padx=5, pady=2)
+        self.sky_stone_title_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.sky_stone_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.sky_stone_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
 
         self.bookmark_efficiency_title_label = ttk.Label(stats_grid, text="성약 획득량/하늘석:")
-        self.bookmark_efficiency_title_label.grid(row=2, column=2, sticky=tk.W, padx=5, pady=2)
-        self.bookmark_efficiency_label = ttk.Label(stats_grid, text="-", foreground="blue", font=("Arial", 10, "bold"))
-        self.bookmark_efficiency_label.grid(row=2, column=3, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_efficiency_title_label.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_efficiency_label = ttk.Label(stats_grid, text="-", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.bookmark_efficiency_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
 
         self.mystic_efficiency_title_label = ttk.Label(stats_grid, text="신비 획득량/하늘석:")
-        self.mystic_efficiency_title_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=2)
-        self.mystic_efficiency_label = ttk.Label(stats_grid, text="-", foreground="blue", font=("Arial", 10, "bold"))
-        self.mystic_efficiency_label.grid(row=3, column=1, sticky=tk.W, padx=5, pady=2)
+        self.mystic_efficiency_title_label.grid(row=1, column=4, sticky=tk.W, padx=5, pady=2)
+        self.mystic_efficiency_label = ttk.Label(stats_grid, text="-", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.mystic_efficiency_label.grid(row=1, column=5, sticky=tk.W, padx=5, pady=2)
+
+        self._create_reroll_widgets()
 
         self.log_frame = ttk.LabelFrame(self.frame, text="로그", padding=10)
         self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -293,6 +372,241 @@ class SessionView:
         text_handler.addFilter(SessionContextFilter())
         text_handler.setFormatter(logging.Formatter("%(asctime)s - [%(session_name)s] - %(levelname)s - %(message)s"))
         logging.getLogger().addHandler(text_handler)
+
+    def _create_reroll_widgets(self):
+        self.reroll_settings_frame = ttk.LabelFrame(self.reroll_tab, text="장비 옵션 리롤 설정", padding=10)
+        self.reroll_settings_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(self.reroll_settings_frame, text="잠금 옵션 개수:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.reroll_locked_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
+        self.reroll_locked_count_combo["values"] = [str(index) for index in range(self.REROLL_MAX_LOCKED_OPTIONS + 1)]
+        self.reroll_locked_count_combo.current(0)
+        self.reroll_locked_count_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
+        self.reroll_locked_count_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
+
+        ttk.Label(self.reroll_settings_frame, text="목표 옵션 개수:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
+        self.reroll_target_count_combo["values"] = [str(index) for index in range(1, self.REROLL_MAX_TARGETS + 1)]
+        self.reroll_target_count_combo.current(0)
+        self.reroll_target_count_combo.grid(row=0, column=3, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_count_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
+
+        ttk.Label(self.reroll_settings_frame, text="중지 방식:").grid(row=0, column=4, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_mode_combo = ttk.Combobox(self.reroll_settings_frame, width=16, state="readonly")
+        self.reroll_target_mode_combo["values"] = ["정확히 일치", "옵션 개수 충족"]
+        self.reroll_target_mode_combo.current(0)
+        self.reroll_target_mode_combo.grid(row=0, column=5, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_mode_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
+        self._last_reroll_target_mode = self._get_reroll_target_mode()
+
+        ttk.Label(self.reroll_settings_frame, text="중지 개수:").grid(row=0, column=6, sticky=tk.W, padx=5, pady=5)
+        self.reroll_required_match_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
+        self.reroll_required_match_count_combo["values"] = ["1"]
+        self.reroll_required_match_count_combo.current(0)
+        self.reroll_required_match_count_combo.grid(row=0, column=7, sticky=tk.W, padx=5, pady=5)
+        self.reroll_required_match_count_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
+
+        self.reroll_target_rows = []
+        option_values = list(self.REROLL_OPTION_RULES.keys())
+        default_targets = ["속도", "공격력", "생명력", "방어력"]
+        for row_index in range(self.REROLL_MAX_TARGETS):
+            grid_row = row_index + 1
+            label = ttk.Label(self.reroll_settings_frame, text=f"목표 {row_index + 1}:")
+            label.grid(row=grid_row, column=0, sticky=tk.W, padx=5, pady=5)
+
+            default_option = default_targets[row_index] if row_index < len(default_targets) else option_values[0]
+            option_combo = ttk.Combobox(self.reroll_settings_frame, width=12, state="readonly")
+            option_combo["values"] = option_values
+            option_combo.set(default_option)
+            option_combo.grid(row=grid_row, column=1, sticky=tk.W, padx=5, pady=5)
+            option_combo.bind("<<ComboboxSelected>>", lambda event, idx=row_index: self._on_reroll_target_option_changed(idx))
+
+            value_entry = ttk.Entry(self.reroll_settings_frame, width=10)
+            value_entry.grid(row=grid_row, column=2, sticky=tk.W, padx=5, pady=5)
+
+            default_percent = bool(self._get_reroll_option_rule(default_option).get("default_percent", False))
+            percent_var = tk.BooleanVar(value=default_percent)
+            percent_checkbox = ttk.Checkbutton(
+                self.reroll_settings_frame,
+                text="% 옵션",
+                variable=percent_var,
+                command=lambda idx=row_index: self._update_reroll_target_row_controls(idx),
+            )
+            percent_checkbox.grid(row=grid_row, column=3, sticky=tk.W, padx=5, pady=5)
+
+            range_label = ttk.Label(self.reroll_settings_frame, text="", foreground="gray")
+            range_label.grid(row=grid_row, column=4, sticky=tk.W, padx=5, pady=5)
+
+            self.reroll_target_rows.append({
+                "label": label,
+                "option_combo": option_combo,
+                "value_entry": value_entry,
+                "percent_var": percent_var,
+                "percent_checkbox": percent_checkbox,
+                "range_label": range_label,
+            })
+
+        ttk.Label(self.reroll_settings_frame, text="최대 리롤 횟수:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
+        self.reroll_max_entry = ttk.Entry(self.reroll_settings_frame, width=10)
+        self.reroll_max_entry.insert(0, "100")
+        self.reroll_max_entry.grid(row=5, column=1, sticky=tk.W, padx=5, pady=5)
+
+        ttk.Label(self.reroll_settings_frame, text="리롤 전 대기 시간:").grid(row=5, column=2, sticky=tk.W, padx=5, pady=5)
+        self.reroll_delay_entry = ttk.Entry(self.reroll_settings_frame, width=10)
+        self.reroll_delay_entry.insert(0, "0.5")
+        self.reroll_delay_entry.grid(row=5, column=3, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="초").grid(row=5, column=4, sticky=tk.W)
+
+        ttk.Label(self.reroll_settings_frame, text="이미지 매칭 정확도:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=5)
+        self.reroll_threshold_entry = ttk.Entry(self.reroll_settings_frame, width=10)
+        self.reroll_threshold_entry.insert(0, "90")
+        self.reroll_threshold_entry.grid(row=6, column=1, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
+
+        reroll_control_frame = ttk.Frame(self.reroll_tab, padding=10)
+        reroll_control_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.reroll_start_btn = ttk.Button(
+            reroll_control_frame,
+            text="리롤 시작",
+            command=self._start_reroll_bot,
+            state=tk.DISABLED,
+        )
+        self.reroll_start_btn.pack(side=tk.LEFT, padx=5)
+        self.reroll_stop_btn = ttk.Button(
+            reroll_control_frame,
+            text="리롤 중지",
+            command=self._stop_bot,
+            state=tk.DISABLED,
+        )
+        self.reroll_stop_btn.pack(side=tk.LEFT, padx=5)
+
+        self.reroll_stats_frame = ttk.LabelFrame(self.reroll_tab, text="리롤 통계", padding=10)
+        self.reroll_stats_frame.pack(fill=tk.X, padx=10, pady=5)
+        stats_grid = ttk.Frame(self.reroll_stats_frame)
+        stats_grid.pack(fill=tk.X)
+
+        ttk.Label(stats_grid, text="스캔 횟수:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.reroll_attempts_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.reroll_attempts_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(stats_grid, text="리롤 횟수:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        self.reroll_count_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.reroll_count_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(stats_grid, text="대상 옵션 발견:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        self.reroll_option_found_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.reroll_option_found_label.grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(stats_grid, text="현재 일치:").grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
+        self.reroll_target_found_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.reroll_target_found_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
+        self._update_reroll_target_count_controls()
+
+    def _get_reroll_option_rule(self, option_name):
+        return self.REROLL_OPTION_RULES.get(option_name, self.REROLL_OPTION_RULES["속도"])
+
+    def _get_reroll_target_range(self, option_name, use_percent):
+        rule = self._get_reroll_option_rule(option_name)
+        target_range = rule["percent_range"] if use_percent else rule["flat_range"]
+        if target_range is None:
+            target_range = rule["percent_range"] or rule["flat_range"] or (1, 999)
+        return target_range
+
+    def _get_reroll_locked_count(self):
+        try:
+            return int(self.reroll_locked_count_combo.get())
+        except (TypeError, ValueError):
+            return 0
+
+    def _get_reroll_target_count(self):
+        try:
+            return int(self.reroll_target_count_combo.get())
+        except (TypeError, ValueError):
+            return 1
+
+    def _get_reroll_target_mode(self):
+        if self.reroll_target_mode_combo.get() == "옵션 개수 충족":
+            return self.REROLL_TARGET_MODE_COUNT
+        return self.REROLL_TARGET_MODE_EXACT
+
+    def _get_reroll_required_match_count(self):
+        try:
+            return int(self.reroll_required_match_count_combo.get())
+        except (TypeError, ValueError):
+            return 1
+
+    def _get_reroll_max_selectable_targets(self):
+        return max(1, self.REROLL_MAX_TARGETS - self._get_reroll_locked_count())
+
+    def _on_reroll_target_count_changed(self, event):
+        current_mode = self._get_reroll_target_mode()
+        reset_defaults = current_mode != getattr(self, "_last_reroll_target_mode", current_mode)
+        self._last_reroll_target_mode = current_mode
+        self._update_reroll_target_count_controls(reset_defaults=reset_defaults)
+
+    def _on_reroll_target_option_changed(self, index):
+        self._update_reroll_target_row_controls(index, reset_defaults=True)
+
+    def _update_reroll_target_count_controls(self, reset_defaults=False):
+        max_targets = self._get_reroll_max_selectable_targets()
+        current_count = min(self._get_reroll_target_count(), max_targets)
+        target_mode = self._get_reroll_target_mode()
+        self.reroll_target_count_combo["values"] = [str(index) for index in range(1, max_targets + 1)]
+        self.reroll_target_count_combo.set(str(current_count))
+        self.reroll_required_match_count_combo["values"] = [str(index) for index in range(1, current_count + 1)]
+        current_required = min(self._get_reroll_required_match_count(), current_count)
+        if target_mode == self.REROLL_TARGET_MODE_EXACT:
+            current_required = current_count
+            required_state = "disabled"
+        else:
+            required_state = "readonly" if not self.is_running else "disabled"
+        self.reroll_required_match_count_combo.set(str(current_required))
+        self.reroll_required_match_count_combo.config(state=required_state)
+
+        for index in range(self.REROLL_MAX_TARGETS):
+            row = self.reroll_target_rows[index]
+            enabled = index < current_count
+            state = tk.NORMAL if enabled and not self.is_running else tk.DISABLED
+            combo_state = "readonly" if enabled and not self.is_running else "disabled"
+            row["label"].config(state=state)
+            row["option_combo"].config(state=combo_state)
+            row["value_entry"].config(state=state)
+            row["range_label"].config(state=state)
+            if enabled:
+                self._update_reroll_target_row_controls(index, reset_defaults=reset_defaults)
+            else:
+                row["percent_checkbox"].config(state=tk.DISABLED)
+
+    def _update_reroll_target_row_controls(self, index, reset_defaults=False):
+        row = self.reroll_target_rows[index]
+        option_name = row["option_combo"].get() or "속도"
+        rule = self._get_reroll_option_rule(option_name)
+
+        row["value_entry"].config(state=tk.NORMAL if not self.is_running and index < self._get_reroll_target_count() else tk.DISABLED)
+
+        if rule["force_percent"]:
+            row["percent_var"].set(True)
+            percent_state = tk.DISABLED
+        elif not rule["allow_percent"]:
+            row["percent_var"].set(False)
+            percent_state = tk.DISABLED
+        else:
+            if reset_defaults:
+                row["percent_var"].set(bool(rule.get("default_percent", False)))
+            percent_state = tk.NORMAL if not self.is_running and index < self._get_reroll_target_count() else tk.DISABLED
+        row["percent_checkbox"].config(state=percent_state)
+
+        target_range = self._get_reroll_target_range(option_name, row["percent_var"].get())
+        range_suffix = "%" if row["percent_var"].get() else ""
+        row["range_label"].config(text=f"허용 범위: {target_range[0]}~{target_range[1]}{range_suffix}")
+
+        current_value = row["value_entry"].get().strip()
+        try:
+            numeric_value = int(current_value)
+        except ValueError:
+            numeric_value = None
+        if reset_defaults or numeric_value is None or not (target_range[0] <= numeric_value <= target_range[1]):
+            self._replace_entry(row["value_entry"], target_range[1])
 
     def refresh_macro_combo(self):
         labels = [macro.get("name", macro.get("id", "macro")) for macro in self.app.macro_definitions]
@@ -492,7 +806,7 @@ class SessionView:
                 is_network_device = True
 
             if self.app.is_device_in_use(device_id, self):
-                self.connection_status.config(text="● 사용 중", foreground="red")
+                self.connection_status.config(text="● 사용 중", foreground="#E53935")
                 logger.error("❌ %s 장치는 다른 세션에서 이미 사용 중입니다.", device_id)
                 return
 
@@ -508,20 +822,21 @@ class SessionView:
                 logger.info("ADB 테스트 통신 확인 중...")
                 test_ok, test_message = self.adb_controller.test_connection()
                 if test_ok:
-                    self.connection_status.config(text="● 연결됨", foreground="green")
+                    self.connection_status.config(text="● 연결됨", foreground="#43A047")
                     self.start_btn.config(state=tk.NORMAL)
+                    self.reroll_start_btn.config(state=tk.NORMAL)
                     self.test_btn.config(state=tk.NORMAL)
                     self.connect_btn.config(state=tk.DISABLED)
                     self.disconnect_btn.config(state=tk.NORMAL)
                     logger.info("✅ ADB 연결 및 테스트 통신 성공: %s", device_id)
                 else:
-                    self.connection_status.config(text="● 통신 실패", foreground="red")
+                    self.connection_status.config(text="● 통신 실패", foreground="#E53935")
                     logger.error("❌ ADB 테스트 통신 실패: %s", test_message)
                     logger.error("앱플레이어의 ADB 브릿지/ADB 디버깅 옵션이 활성화되어 있는지 확인한 뒤 다시 연결하세요.")
                     self.adb_controller.disconnect()
                     self.adb_controller = None
             else:
-                self.connection_status.config(text="● 연결 실패", foreground="red")
+                self.connection_status.config(text="● 연결 실패", foreground="#E53935")
                 logger.error("❌ ADB 연결 실패: %s - 앱플레이어 실행 상태와 ADB 브릿지/ADB 디버깅 옵션을 확인하세요", device_id)
                 self.adb_controller = None
 
@@ -592,6 +907,7 @@ class SessionView:
                 )
 
             self.is_running = True
+            self.current_mode = "shop"
             self._set_running_ui(True)
             self._update_stats({
                 "total_refreshes": 0,
@@ -601,6 +917,87 @@ class SessionView:
                 "covenant_bookmark_bought": 0,
             })
             self.bot_thread = threading.Thread(target=self._run_bot, args=(refresh_count, buy_count), daemon=True)
+            self.bot_thread.start()
+
+    def _start_reroll_bot(self):
+        with log_session(self.name):
+            if self.is_running:
+                return
+            if not self.adb_controller:
+                messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+                return
+
+            try:
+                max_rerolls = int(self.reroll_max_entry.get())
+                delay_before_reroll = float(self.reroll_delay_entry.get())
+                threshold = int(self.reroll_threshold_entry.get()) / 100.0
+                active_target_count = self._get_reroll_target_count()
+                locked_option_count = self._get_reroll_locked_count()
+                if max_rerolls <= 0 or delay_before_reroll < 0:
+                    raise ValueError()
+                if active_target_count < 1:
+                    raise ValueError("목표 옵션은 최소 1개 이상이어야 합니다.")
+                if active_target_count > self.REROLL_MAX_TARGETS - locked_option_count:
+                    raise ValueError(f"잠금 옵션 {locked_option_count}개일 때 목표 옵션은 최대 {self.REROLL_MAX_TARGETS - locked_option_count}개까지 설정할 수 있습니다.")
+                if not 0.7 <= threshold <= 0.99:
+                    raise ValueError("이미지 매칭 정확도는 70~99 사이여야 합니다.")
+                target_mode = self._get_reroll_target_mode()
+                required_match_count = self._get_reroll_required_match_count()
+                if not 1 <= required_match_count <= active_target_count:
+                    raise ValueError("중지 개수는 목표 옵션 개수 이하여야 합니다.")
+
+                target_specs = []
+                seen_options = set()
+                for index in range(active_target_count):
+                    row = self.reroll_target_rows[index]
+                    option_name = row["option_combo"].get()
+                    if option_name in seen_options:
+                        raise ValueError(f"중복된 목표 옵션이 있습니다: {option_name}")
+                    seen_options.add(option_name)
+                    use_percent = row["percent_var"].get()
+                    target_range = self._get_reroll_target_range(option_name, use_percent)
+                    target_value = int(row["value_entry"].get())
+                    if not target_range[0] <= target_value <= target_range[1]:
+                        suffix = "%" if use_percent else ""
+                        raise ValueError(f"{option_name} 목표 수치는 {target_range[0]}~{target_range[1]}{suffix} 사이여야 합니다.")
+                    target_specs.append({
+                        "option": option_name,
+                        "value": target_value,
+                        "is_percent": use_percent,
+                    })
+            except ValueError as e:
+                messagebox.showerror("오류", f"장비 리롤 설정값이 올바르지 않습니다.\n{str(e)}")
+                return
+
+            self.runtime_dir.mkdir(parents=True, exist_ok=True)
+            self.bot = EquipmentRerollBot(
+                self.adb_controller,
+                target_specs=target_specs,
+                target_mode=target_mode,
+                required_match_count=required_match_count,
+                locked_option_count=locked_option_count,
+                max_rerolls=max_rerolls,
+                delay_before_reroll=delay_before_reroll,
+                threshold=threshold,
+                debug_mode=self.debug_mode_var.get(),
+                runtime_dir=self.runtime_dir,
+            )
+            startup_error = self.bot.get_startup_error()
+            if startup_error:
+                messagebox.showerror("오류", startup_error)
+                self.bot = None
+                return
+
+            self.is_running = True
+            self.current_mode = "reroll"
+            self._set_running_ui(True)
+            self._update_reroll_stats({
+                "attempts": 0,
+                "rerolls": 0,
+                "option_found": 0,
+                "target_found": 0,
+            })
+            self.bot_thread = threading.Thread(target=self._run_reroll_bot, daemon=True)
             self.bot_thread.start()
 
     def _get_selected_macro(self):
@@ -627,16 +1024,37 @@ class SessionView:
                 if not self.app.is_closing:
                     self.root.after(0, lambda: self._set_running_ui(False))
 
+    def _run_reroll_bot(self):
+        with log_session(self.name):
+            try:
+                self.root.after(500, self._update_running_state)
+                final_stats = self.bot.run()
+                self.root.after(0, lambda: self._update_reroll_stats(final_stats))
+                self.log(self._format_reroll_summary("장비 리롤 완료", final_stats))
+            except Exception as e:
+                logger.error("장비 리롤 실행 중 오류: %s", e, exc_info=True)
+                if not self.app.is_closing:
+                    self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 장비 리롤 중 오류 발생:\n{str(e)}"))
+            finally:
+                self.is_running = False
+                if not self.app.is_closing:
+                    self.root.after(0, lambda: self._set_running_ui(False))
+
     def _update_running_state(self):
         if self.is_running and self.bot:
-            self._update_stats(self.bot.get_stats())
-            if self.bot.paused:
+            stats = self.bot.get_stats()
+            if self.current_mode == "reroll":
+                self._update_reroll_stats(stats)
+            else:
+                self._update_stats(stats)
+
+            if self.current_mode == "shop" and self.bot.paused:
                 self.pause_label.config(text="⏸️  일시정지 중")
                 self.pause_btn.config(state=tk.DISABLED)
                 self.resume_btn.config(state=tk.NORMAL)
             else:
                 self.pause_label.config(text="")
-                self.pause_btn.config(state=tk.NORMAL)
+                self.pause_btn.config(state=tk.NORMAL if self.current_mode == "shop" else tk.DISABLED)
                 self.resume_btn.config(state=tk.DISABLED)
             self.root.after(500, self._update_running_state)
 
@@ -667,7 +1085,9 @@ class SessionView:
             self.is_running = False
             if self.bot:
                 stats = self.bot.get_stats()
-                if stats.get("total_refreshes", 0) > 0:
+                if self.current_mode == "reroll":
+                    self.log(self._format_reroll_summary("장비 리롤 중지", stats))
+                elif stats.get("total_refreshes", 0) > 0:
                     self.log(self._format_stats_summary("⛔ 자동화 중지", stats))
                 else:
                     self.log("⛔ 봇이 중지되었습니다.")
@@ -693,8 +1113,11 @@ class SessionView:
             if self.adb_controller:
                 self.adb_controller.disconnect()
                 self.adb_controller = None
-            self.connection_status.config(text="● 연결 안됨", foreground="red")
+            self.current_mode = None
+            self.connection_status.config(text="● 연결 안됨", foreground="#E53935")
             self.start_btn.config(state=tk.DISABLED)
+            self.reroll_start_btn.config(state=tk.DISABLED)
+            self.reroll_stop_btn.config(state=tk.DISABLED)
             self.test_btn.config(state=tk.DISABLED)
             self.connect_btn.config(state=tk.NORMAL)
             self.disconnect_btn.config(state=tk.DISABLED)
@@ -702,8 +1125,11 @@ class SessionView:
 
     def _set_running_ui(self, running):
         self.start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
+        self.reroll_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
+        self.reroll_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.test_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
-        self.pause_btn.config(state=tk.NORMAL if running else tk.DISABLED)
+        is_shop_mode = self.current_mode == "shop"
+        self.pause_btn.config(state=tk.NORMAL if running and is_shop_mode else tk.DISABLED)
         self.resume_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.connect_btn.config(state=tk.DISABLED if running or self.adb_controller else tk.NORMAL)
@@ -727,6 +1153,9 @@ class SessionView:
             self._update_macro_dependent_controls()
         self.debug_checkbox.config(state=state)
         self.mumu_checkbox.config(state=state)
+        self._set_reroll_settings_state(state)
+        if not running:
+            self.current_mode = None
 
     def _update_stats(self, stats):
         completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
@@ -751,6 +1180,12 @@ class SessionView:
             self.elapsed_time_label.config(text=f"{hours:02d}:{minutes:02d}:{seconds:02d}")
         else:
             self.elapsed_time_label.config(text="00:00:00")
+
+    def _update_reroll_stats(self, stats):
+        self.reroll_attempts_label.config(text=str(stats.get("attempts", 0)))
+        self.reroll_count_label.config(text=str(stats.get("rerolls", 0)))
+        self.reroll_option_found_label.config(text=str(stats.get("option_found", 0)))
+        self.reroll_target_found_label.config(text=str(stats.get("target_found", 0)))
 
     def _format_stats_summary(self, title, stats):
         completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
@@ -815,6 +1250,33 @@ class SessionView:
         if minutes:
             return f"{minutes}분 {remaining_seconds}초"
         return f"{remaining_seconds}초"
+
+    def _format_reroll_summary(self, title, stats):
+        elapsed = self._format_elapsed_seconds(stats.get("elapsed_time", 0))
+        goal_achieved = "성공" if stats.get("goal_achieved") else "실패"
+        return (
+            f"\n{'=' * 42}\n"
+            f"{title}\n"
+            f"- 스캔 횟수: {stats.get('attempts', 0)}회\n"
+            f"- 리롤 횟수: {stats.get('rerolls', 0)}회\n"
+            f"- 대상 옵션 발견: {stats.get('option_found', 0)}개\n"
+            f"- 목표 달성: {goal_achieved}\n"
+            f"- 최종 일치: {stats.get('target_found', 0)}개\n"
+            f"- 소요 시간: {elapsed}\n"
+            f"{'=' * 42}"
+        )
+
+    def _set_reroll_settings_state(self, state):
+        combo_state = "disabled" if state == tk.DISABLED else "readonly"
+        self.reroll_locked_count_combo.config(state=combo_state)
+        self.reroll_target_count_combo.config(state=combo_state)
+        self.reroll_target_mode_combo.config(state=combo_state)
+        for row in self.reroll_target_rows:
+            row["option_combo"].config(state=combo_state if state != tk.DISABLED else "disabled")
+        self.reroll_max_entry.config(state=state)
+        self.reroll_delay_entry.config(state=state)
+        self.reroll_threshold_entry.config(state=state)
+        self._update_reroll_target_count_controls()
 
     def _test_image_matching(self):
         with log_session(self.name):
@@ -919,9 +1381,10 @@ class SecretShopGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("에픽세븐 비밀상점 자동화")
-        self.root.geometry("960x800")
+        self.root.geometry("960x900")
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+        self._apply_modern_style()
 
         self.is_closing = False
         self.remote_settings = {}
@@ -939,6 +1402,46 @@ class SecretShopGUI:
 
         self._setup_logging()
         self._start_settings_update()
+
+    def _apply_modern_style(self):
+        style = ttk.Style(self.root)
+        
+        # 기본 테마를 더 평면적이고 깔끔한 'clam'으로 변경
+        if 'clam' in style.theme_names():
+            style.theme_use('clam')
+            
+        font_main = ('맑은 고딕', 10)
+        font_bold = ('맑은 고딕', 10, 'bold')
+        
+        # 전체 기본 폰트 및 배경색
+        style.configure('.', font=font_main, background='#FAFAFA', foreground='#333333')
+        self.root.configure(background='#FAFAFA')
+        
+        # 노트북(탭) 스타일 모던화
+        style.configure('TNotebook', background='#FAFAFA', borderwidth=0)
+        style.configure('TNotebook.Tab', font=font_main, padding=[15, 6], background='#EAEAEA', borderwidth=0)
+        style.map('TNotebook.Tab',
+                  background=[('selected', '#FFFFFF'), ('active', '#F5F5F5')],
+                  font=[('selected', font_bold)],
+                  foreground=[('selected', '#1E88E5')])
+                  
+        # 프레임 및 라벨프레임
+        style.configure('TFrame', background='#FAFAFA')
+        style.configure('TLabelframe', background='#FAFAFA', bordercolor='#E0E0E0', borderwidth=1)
+        style.configure('TLabelframe.Label', font=font_bold, foreground='#1E88E5', background='#FAFAFA')
+        
+        # 버튼 스타일
+        style.configure('TButton', font=font_main, padding=[10, 5], background='#FFFFFF', bordercolor='#CCCCCC', borderwidth=1)
+        style.map('TButton',
+                  background=[('active', '#F0F0F0'), ('disabled', '#F5F5F5')],
+                  foreground=[('disabled', '#A0A0A0')])
+                  
+        # 입력창 스타일
+        style.configure('TEntry', padding=5)
+        style.configure('TCombobox', padding=5)
+        
+        # 모든 기본 위젯에 폰트 일괄 적용
+        self.root.option_add('*Font', font_main)
 
     def _setup_logging(self):
         root_logger = logging.getLogger()
@@ -1038,6 +1541,7 @@ class SecretShopGUI:
 def run_gui():
     """GUI 실행"""
     root = tk.Tk()
+    if sv_ttk:
+        sv_ttk.set_theme("dark")  # 취향에 따라 "light"로 변경 가능
     SecretShopGUI(root)
     root.mainloop()
-

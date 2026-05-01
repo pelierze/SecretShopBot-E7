@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+from PyInstaller.utils.hooks import collect_data_files
 
 # 백업 파일 제외하고 이미지 수집
 def collect_images():
@@ -16,20 +17,34 @@ def collect_images():
 
 datas = collect_images() + [
     ('tools', 'tools'),
+    ('images/equipment_options/README.txt', 'images/equipment_options'),
     ('update_config.json', '.'),
     ('remote_script.json', '.'),
-]
+] + collect_data_files(
+    'rapidocr_onnxruntime',
+    includes=['config.yaml', 'models/*.onnx'],
+)
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=['cv2', 'numpy', 'PIL', 'tkinter'],
+    hiddenimports=['cv2', 'numpy', 'PIL', 'tkinter', 'rapidocr_onnxruntime'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['pure-python-adb'],
+    excludes=[
+        'pure-python-adb',
+        'pytest',
+        'torch',
+        'torchvision',
+        'torchaudio',
+        'transformers',
+        'tensorflow',
+        'tensorboard',
+        'av',
+    ],
     noarchive=False,
     optimize=0,
 )
