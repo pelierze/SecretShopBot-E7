@@ -3,15 +3,16 @@ GUI 인터페이스
 tkinter를 사용한 사용자 인터페이스
 """
 import contextvars
+import ctypes
 import logging
 import os
 import threading
 import time
 from contextlib import contextmanager
+from ctypes import wintypes
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
-from PIL import Image, ImageTk
 
 # 모던 UI 테마 (pip install sv-ttk 필요)
 try:
@@ -74,47 +75,87 @@ class TextHandler(logging.Handler):
         self.text_widget.after(0, append)
 
 
+def _get_foreground_window_bounds():
+    if os.name != "nt":
+        return None
+
+    user32 = ctypes.windll.user32
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd or not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+        return None
+
+    rect = wintypes.RECT()
+    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return None
+
+    title_length = user32.GetWindowTextLengthW(hwnd)
+    title_buffer = ctypes.create_unicode_buffer(title_length + 1)
+    user32.GetWindowTextW(hwnd, title_buffer, title_length + 1)
+
+    width = rect.right - rect.left
+    height = rect.bottom - rect.top
+    if width <= 0 or height <= 0:
+        return None
+
+    return {
+        "hwnd": int(hwnd),
+        "title": title_buffer.value.strip(),
+        "left": rect.left,
+        "top": rect.top,
+        "width": width,
+        "height": height,
+    }
+
+
 class AreaSelectionDialog:
-    """Screenshot-based rectangular area selector."""
+    """Transparent overlay selector placed on top of the target window."""
 
-    MAX_PREVIEW_WIDTH = 960
-    MAX_PREVIEW_HEIGHT = 720
+    MIN_SELECTION_SIZE = 8
 
-    def __init__(self, parent, image_path: Path, title: str, on_complete):
+    def __init__(self, parent, window_bounds, title: str, on_complete, on_cancel=None):
         self.parent = parent
-        self.image_path = image_path
+        self.window_bounds = window_bounds
         self.on_complete = on_complete
+        self.on_cancel = on_cancel
         self.start_x = None
         self.start_y = None
         self.rect_id = None
-        self.selection_label_var = tk.StringVar(value="드래그해서 옵션 탐색 영역을 선택하세요.")
-
-        self.original_image = Image.open(image_path)
-        self.scale = min(
-            self.MAX_PREVIEW_WIDTH / max(self.original_image.width, 1),
-            self.MAX_PREVIEW_HEIGHT / max(self.original_image.height, 1),
-            1.0,
-        )
-        preview_size = (
-            max(1, int(self.original_image.width * self.scale)),
-            max(1, int(self.original_image.height * self.scale)),
-        )
-        self.preview_image = self.original_image.resize(preview_size, Image.Resampling.LANCZOS)
-        self.preview_photo = ImageTk.PhotoImage(self.preview_image)
+        self.selection_label_var = tk.StringVar(value="앱플레이어 화면 위에서 드래그해 옵션 탐색 영역을 선택하세요. ESC로 취소할 수 있습니다.")
+        width = int(window_bounds["width"])
+        height = int(window_bounds["height"])
 
         self.window = tk.Toplevel(parent)
         self.window.title(title)
-        self.window.transient(parent)
-        self.window.grab_set()
+        self.window.overrideredirect(True)
+        self.window.attributes("-topmost", True)
+        self.window.attributes("-alpha", 0.32)
+        self.window.configure(bg="black")
+        self.window.geometry(f"{width}x{height}+{int(window_bounds['left'])}+{int(window_bounds['top'])}")
 
-        self.canvas = tk.Canvas(self.window, width=self.preview_image.width, height=self.preview_image.height, cursor="crosshair")
-        self.canvas.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        self.canvas.create_image(0, 0, image=self.preview_photo, anchor=tk.NW)
+        self.canvas = tk.Canvas(
+            self.window,
+            width=width,
+            height=height,
+            cursor="crosshair",
+            bg="black",
+            highlightthickness=0,
+            bd=0,
+        )
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.instructions_id = self.canvas.create_text(
+            16,
+            16,
+            anchor=tk.NW,
+            fill="white",
+            text=self.selection_label_var.get(),
+            font=("맑은 고딕", 10, "bold"),
+        )
         self.canvas.bind("<ButtonPress-1>", self._on_press)
         self.canvas.bind("<B1-Motion>", self._on_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
-
-        ttk.Label(self.window, textvariable=self.selection_label_var).pack(fill=tk.X, padx=8, pady=(0, 8))
+        self.window.bind("<Escape>", self._cancel)
+        self.window.bind("<Button-3>", self._cancel)
+        self.window.focus_force()
 
     def _on_press(self, event):
         self.start_x = int(self.canvas.canvasx(event.x))
@@ -137,16 +178,25 @@ class AreaSelectionDialog:
         end_y = int(self.canvas.canvasy(event.y))
         x1, x2 = sorted((self.start_x, end_x))
         y1, y2 = sorted((self.start_y, end_y))
-        if x2 - x1 < 8 or y2 - y1 < 8:
+        if x2 - x1 < self.MIN_SELECTION_SIZE or y2 - y1 < self.MIN_SELECTION_SIZE:
             self.selection_label_var.set("영역이 너무 작습니다. 조금 더 크게 드래그하세요.")
+            self.canvas.itemconfigure(self.instructions_id, text=self.selection_label_var.get())
             return
 
-        left = x1 / float(self.preview_image.width)
-        top = y1 / float(self.preview_image.height)
-        right = x2 / float(self.preview_image.width)
-        bottom = y2 / float(self.preview_image.height)
+        overlay_width = max(self.canvas.winfo_width(), 1)
+        overlay_height = max(self.canvas.winfo_height(), 1)
+        left = x1 / float(overlay_width)
+        top = y1 / float(overlay_height)
+        right = x2 / float(overlay_width)
+        bottom = y2 / float(overlay_height)
         self.on_complete({"left": left, "top": top, "right": right, "bottom": bottom})
         self.window.destroy()
+
+    def _cancel(self, _event=None):
+        if self.on_cancel:
+            self.on_cancel()
+        if self.window.winfo_exists():
+            self.window.destroy()
 
 
 class SessionView:
@@ -238,6 +288,7 @@ class SessionView:
             key: tk.StringVar(value=f"{value:.3f}")
             for key, value in EquipmentRerollBot.OPTION_PANEL_BOUNDS.items()
         }
+        self._reroll_bounds_restore_state = None
         self.input_profile_label_text = "MuMu 앱플레이어 사용 (호환 드래그 사용)"
         self.buy_count_default_label_text = "구매 완료 검증 횟수:"
         self.buy_count_default_unit_text = "회"
@@ -645,24 +696,58 @@ class SessionView:
             messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
             return
 
+        if os.name != "nt":
+            messagebox.showerror("오류", "투명 오버레이 영역 선택은 현재 Windows에서만 지원합니다.")
+            return
+
+        confirmed = messagebox.askokcancel(
+            "옵션 범위 선택",
+            "확인을 누른 뒤 3초 안에 앱플레이어 창을 클릭하세요.\n"
+            "선택한 창 위에 투명 오버레이를 띄워 영역을 지정합니다.",
+        )
+        if not confirmed:
+            return
+
+        self._reroll_bounds_restore_state = self.root.state()
+        self.root.iconify()
+        self.root.after(3000, self._launch_reroll_bounds_overlay)
+
+    def _launch_reroll_bounds_overlay(self):
         try:
-            self.runtime_dir.mkdir(parents=True, exist_ok=True)
-            screenshot_path = self.runtime_dir / "reroll_bounds_selector.png"
-            self.adb_controller.screenshot(str(screenshot_path))
+            window_bounds = _get_foreground_window_bounds()
+            root_hwnd = int(self.root.winfo_id())
+            if not window_bounds or window_bounds["hwnd"] == root_hwnd:
+                raise RuntimeError("앱플레이어 창을 찾지 못했습니다. 앱플레이어 창을 먼저 클릭한 뒤 다시 시도해주세요.")
+
             AreaSelectionDialog(
                 self.frame,
-                screenshot_path,
+                window_bounds,
                 f"{self.name} 옵션 범위 선택",
-                self._apply_reroll_bounds_selection,
+                self._finish_reroll_bounds_selection,
+                on_cancel=self._restore_after_reroll_bounds_overlay,
             )
         except Exception as exc:
-            messagebox.showerror("오류", f"옵션 범위 선택용 스크린샷을 준비하지 못했습니다.\n{exc}")
+            self._restore_after_reroll_bounds_overlay()
+            messagebox.showerror("오류", f"앱플레이어 오버레이를 준비하지 못했습니다.\n{exc}")
 
     def _apply_reroll_bounds_selection(self, bounds):
         for key, value in bounds.items():
             self.reroll_bounds_vars[key].set(f"{value:.3f}")
         self.reroll_use_custom_bounds_var.set(True)
         self._update_reroll_bounds_summary()
+
+    def _finish_reroll_bounds_selection(self, bounds):
+        self._apply_reroll_bounds_selection(bounds)
+        self._restore_after_reroll_bounds_overlay()
+
+    def _restore_after_reroll_bounds_overlay(self):
+        restore_state = self._reroll_bounds_restore_state
+        self._reroll_bounds_restore_state = None
+        self.root.deiconify()
+        if restore_state == "zoomed":
+            self.root.state("zoomed")
+        self.root.lift()
+        self.root.focus_force()
 
     def _get_reroll_locked_count(self):
         try:
