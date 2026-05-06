@@ -420,7 +420,6 @@ class EquipmentRerollBot:
         threshold_override: Optional[float] = None,
     ) -> List[Dict]:
         rows = self._get_row_bounds(screen.shape[1], screen.shape[0])
-        desired_options = {spec["option"] for spec in self.target_specs}
         results = []
         for row_index, bounds in enumerate(rows):
             best_match = self._find_best_target_option_in_row(
@@ -435,8 +434,7 @@ class EquipmentRerollBot:
                 continue
 
             value, has_percent = (None, False)
-            should_read_numeric = read_numeric and best_match["option"] in desired_options
-            if should_read_numeric:
+            if read_numeric:
                 value, has_percent = self._read_row_numeric_value(
                     screen,
                     bounds,
