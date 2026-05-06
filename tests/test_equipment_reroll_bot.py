@@ -26,6 +26,9 @@ class EquipmentRerollBotTest(unittest.TestCase):
         bot.NUMBER_SCAN_LEFT_GAP_RATIO = EquipmentRerollBot.NUMBER_SCAN_LEFT_GAP_RATIO
         bot.OCR_SCALE = EquipmentRerollBot.OCR_SCALE
         bot.OCR_MIN_CONFIDENCE = EquipmentRerollBot.OCR_MIN_CONFIDENCE
+        bot.OCR_FOREGROUND_MIN_PIXELS = EquipmentRerollBot.OCR_FOREGROUND_MIN_PIXELS
+        bot.OCR_FOREGROUND_PADDING = EquipmentRerollBot.OCR_FOREGROUND_PADDING
+        bot.OCR_ONE_MAX_WIDTH_RATIO = EquipmentRerollBot.OCR_ONE_MAX_WIDTH_RATIO
         bot.REROLL_BUTTON_RETRY_COUNT = EquipmentRerollBot.REROLL_BUTTON_RETRY_COUNT
         return bot
 
@@ -83,6 +86,45 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(value, 5)
         self.assertAlmostEqual(confidence, 0.81)
         self.assertTrue(has_percent)
+
+    def test_select_best_numeric_candidate_prefers_consensus(self):
+        bot = self._make_bot()
+
+        candidate, has_percent, confidence = bot._select_best_numeric_candidate(
+            {
+                (8, True): {"count": 3.0, "confidence_sum": 1.71, "best_confidence": 0.58},
+                (6, True): {"count": 1.0, "confidence_sum": 0.84, "best_confidence": 0.84},
+            }
+        )
+
+        self.assertEqual(candidate, 8)
+        self.assertTrue(has_percent)
+        self.assertAlmostEqual(confidence, 0.58)
+
+    def test_select_best_numeric_candidate_penalizes_one_for_eight_like_shape(self):
+        bot = self._make_bot()
+
+        candidate, has_percent, confidence = bot._select_best_numeric_candidate(
+            {
+                (1, True): {"count": 2.0, "confidence_sum": 1.40, "best_confidence": 0.72},
+                (8, True): {"count": 2.0, "confidence_sum": 1.32, "best_confidence": 0.68},
+            },
+            {"width_ratio": 0.62, "hole_count": 2.0},
+        )
+
+        self.assertEqual(candidate, 8)
+        self.assertTrue(has_percent)
+        self.assertAlmostEqual(confidence, 0.68)
+
+    def test_crop_numeric_foreground_trims_wide_empty_margins(self):
+        bot = self._make_bot()
+        image = np.zeros((30, 120), dtype=np.uint8)
+        cv2.putText(image, "8", (45, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.8, 255, 2, cv2.LINE_AA)
+
+        cropped = bot._crop_numeric_foreground(image)
+
+        self.assertLess(cropped.shape[1], image.shape[1])
+        self.assertGreater(cropped.shape[0], 0)
 
     def test_normalize_target_option_supports_added_options(self):
         bot = self._make_bot()

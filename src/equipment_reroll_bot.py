@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import sys
 import time
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -116,6 +117,9 @@ class EquipmentRerollBot:
     NUMBER_SCAN_LEFT_GAP_RATIO = 0.08
     OCR_SCALE = 3
     OCR_MIN_CONFIDENCE = 0.35
+    OCR_FOREGROUND_MIN_PIXELS = 16
+    OCR_FOREGROUND_PADDING = 10
+    OCR_ONE_MAX_WIDTH_RATIO = 0.42
 
     def __init__(
         self,
@@ -529,19 +533,30 @@ class EquipmentRerollBot:
             for variant_name, variant_image in processed_images:
                 self._save_debug_image(f"row_{row_index + 1}_{variant_name}.png", variant_image)
 
+        shape_info = self._analyze_numeric_shape(number_roi)
         best_candidate = None
         best_confidence = 0.0
         best_has_percent = False
+        candidate_scores: Dict[Tuple[int, bool], Dict[str, float]] = defaultdict(
+            lambda: {"count": 0.0, "confidence_sum": 0.0, "best_confidence": 0.0}
+        )
         for _, image in processed_images:
             candidate, confidence, has_percent = self._ocr_numeric_image(image, use_detection=False)
             if candidate is None:
                 candidate, confidence, has_percent = self._ocr_numeric_image(image, use_detection=True)
             if candidate is None:
                 continue
-            if confidence > best_confidence:
-                best_candidate = candidate
-                best_confidence = confidence
-                best_has_percent = has_percent
+
+            score = candidate_scores[(candidate, has_percent)]
+            score["count"] += 1.0
+            score["confidence_sum"] += confidence
+            score["best_confidence"] = max(score["best_confidence"], confidence)
+
+        if candidate_scores:
+            best_candidate, best_has_percent, best_confidence = self._select_best_numeric_candidate(
+                candidate_scores,
+                shape_info,
+            )
 
         if best_candidate is None:
             logger.info("행 %s 숫자 OCR 결과가 비어 있습니다.", row_index + 1)
@@ -556,32 +571,144 @@ class EquipmentRerollBot:
         )
         return best_candidate, best_has_percent
 
+    def _select_best_numeric_candidate(
+        self,
+        candidate_scores: Dict[Tuple[int, bool], Dict[str, float]],
+        shape_info: Optional[Dict[str, float]] = None,
+    ) -> Tuple[Optional[int], bool, float]:
+        best_candidate = None
+        best_has_percent = False
+        best_confidence = 0.0
+        best_rank = None
+        for (candidate, has_percent), score in candidate_scores.items():
+            shape_score = self._score_numeric_candidate_shape(candidate, shape_info)
+            rank = (
+                score["count"] + shape_score,
+                score["confidence_sum"],
+                score["best_confidence"],
+                -len(str(candidate)),
+                -candidate,
+            )
+            if best_rank is None or rank > best_rank:
+                best_rank = rank
+                best_candidate = candidate
+                best_has_percent = has_percent
+                best_confidence = score["best_confidence"]
+        return best_candidate, best_has_percent, best_confidence
+
     def _build_ocr_variants(self, number_roi: np.ndarray) -> List[Tuple[str, np.ndarray]]:
         if number_roi.size == 0:
             return []
 
         gray = cv2.cvtColor(number_roi, cv2.COLOR_BGR2GRAY)
         enlarged = cv2.resize(gray, None, fx=self.OCR_SCALE, fy=self.OCR_SCALE, interpolation=cv2.INTER_CUBIC)
-        enlarged = cv2.copyMakeBorder(enlarged, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
-        _, binary = cv2.threshold(enlarged, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        cropped = self._crop_numeric_foreground(enlarged)
+        enlarged = cv2.copyMakeBorder(cropped, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
+        normalized = cv2.normalize(enlarged, None, 0, 255, cv2.NORM_MINMAX)
+        _, binary = cv2.threshold(normalized, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         inverted = cv2.bitwise_not(binary)
-        blurred = cv2.GaussianBlur(enlarged, (3, 3), 0)
+        blurred = cv2.GaussianBlur(normalized, (3, 3), 0)
         _, binary_blurred = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         adaptive = cv2.adaptiveThreshold(
-            enlarged,
+            normalized,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
             11,
             2,
         )
+        kernel = np.ones((2, 2), np.uint8)
+        closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+        opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
         return [
             ("ocr_gray", enlarged),
+            ("ocr_normalized", normalized),
             ("ocr_binary", binary),
             ("ocr_inverted", inverted),
             ("ocr_binary_blurred", binary_blurred),
             ("ocr_adaptive", adaptive),
+            ("ocr_closed", closed),
+            ("ocr_opened", opened),
         ]
+
+    def _extract_numeric_foreground(
+        self,
+        image: np.ndarray,
+    ) -> Tuple[Optional[np.ndarray], Optional[Tuple[int, int, int, int]]]:
+        blurred = cv2.GaussianBlur(image, (3, 3), 0)
+        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        smoothed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8), iterations=1)
+
+        candidates = []
+        for smoothed_mask, raw_mask in (
+            (smoothed, binary),
+            (cv2.bitwise_not(smoothed), cv2.bitwise_not(binary)),
+        ):
+            points = cv2.findNonZero(smoothed_mask)
+            if points is None or len(points) < self.OCR_FOREGROUND_MIN_PIXELS:
+                continue
+            candidates.append((points, raw_mask))
+
+        if not candidates:
+            return None, None
+
+        points, raw_mask = min(candidates, key=lambda item: len(item[0]))
+        x, y, w, h = cv2.boundingRect(points)
+        return raw_mask[y:y + h, x:x + w], (x, y, w, h)
+
+    def _crop_numeric_foreground(self, image: np.ndarray) -> np.ndarray:
+        _, bounds = self._extract_numeric_foreground(image)
+        if bounds is None:
+            return image
+
+        x, y, w, h = bounds
+        padding = self.OCR_FOREGROUND_PADDING
+        x1 = max(0, x - padding)
+        y1 = max(0, y - padding)
+        x2 = min(image.shape[1], x + w + padding)
+        y2 = min(image.shape[0], y + h + padding)
+        return image[y1:y2, x1:x2]
+
+    def _analyze_numeric_shape(self, number_roi: np.ndarray) -> Optional[Dict[str, float]]:
+        if number_roi.size == 0:
+            return None
+
+        gray = cv2.cvtColor(number_roi, cv2.COLOR_BGR2GRAY)
+        enlarged = cv2.resize(gray, None, fx=self.OCR_SCALE, fy=self.OCR_SCALE, interpolation=cv2.INTER_CUBIC)
+        foreground_mask, bounds = self._extract_numeric_foreground(enlarged)
+        if foreground_mask is None or bounds is None:
+            return None
+
+        _, _, width, height = bounds
+        if width <= 0 or height <= 0:
+            return None
+
+        padded_mask = cv2.copyMakeBorder(foreground_mask, 1, 1, 1, 1, cv2.BORDER_CONSTANT, value=0)
+        background_components, _ = cv2.connectedComponents(cv2.bitwise_not(padded_mask))
+        hole_count = max(0, background_components - 2)
+        return {
+            "width_ratio": width / float(height),
+            "hole_count": float(hole_count),
+        }
+
+    def _score_numeric_candidate_shape(self, candidate: int, shape_info: Optional[Dict[str, float]]) -> float:
+        if shape_info is None:
+            return 0.0
+
+        width_ratio = shape_info.get("width_ratio", 0.0)
+        hole_count = shape_info.get("hole_count", 0.0)
+        score = 0.0
+        if candidate == 1:
+            if width_ratio >= self.OCR_ONE_MAX_WIDTH_RATIO:
+                score -= 0.75
+            if hole_count >= 1.0:
+                score -= 1.25
+        elif candidate == 8:
+            if width_ratio >= self.OCR_ONE_MAX_WIDTH_RATIO:
+                score += 0.25
+            if hole_count >= 1.0:
+                score += 0.75
+        return score
 
     def _ocr_numeric_image(self, image: np.ndarray, use_detection: bool) -> Tuple[Optional[int], float, bool]:
         if self.ocr_engine is None:
