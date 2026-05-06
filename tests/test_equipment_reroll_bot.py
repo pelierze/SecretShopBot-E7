@@ -18,9 +18,12 @@ class EquipmentRerollBotTest(unittest.TestCase):
         bot.target_mode = EquipmentRerollBot.TARGET_MODE_EXACT
         bot.required_match_count = 1
         bot.OPTION_PANEL_BOUNDS = EquipmentRerollBot.OPTION_PANEL_BOUNDS
+        bot.option_panel_bounds = dict(EquipmentRerollBot.OPTION_PANEL_BOUNDS)
         bot.ROW_COUNT = EquipmentRerollBot.ROW_COUNT
         bot.ROW_VERTICAL_PADDING_RATIO = EquipmentRerollBot.ROW_VERTICAL_PADDING_RATIO
         bot.OPTION_MATCH_WIDTH_RATIO = EquipmentRerollBot.OPTION_MATCH_WIDTH_RATIO
+        bot.OPTION_MATCH_VERTICAL_MARGIN_RATIO = EquipmentRerollBot.OPTION_MATCH_VERTICAL_MARGIN_RATIO
+        bot.OPTION_RECOGNITION_RETRY_COUNT = EquipmentRerollBot.OPTION_RECOGNITION_RETRY_COUNT
         bot.NUMBER_SCAN_WIDTH_RATIO = EquipmentRerollBot.NUMBER_SCAN_WIDTH_RATIO
         bot.NUMBER_SCAN_HEIGHT_RATIO = EquipmentRerollBot.NUMBER_SCAN_HEIGHT_RATIO
         bot.NUMBER_SCAN_LEFT_GAP_RATIO = EquipmentRerollBot.NUMBER_SCAN_LEFT_GAP_RATIO
@@ -30,6 +33,7 @@ class EquipmentRerollBotTest(unittest.TestCase):
         bot.OCR_FOREGROUND_PADDING = EquipmentRerollBot.OCR_FOREGROUND_PADDING
         bot.OCR_ONE_MAX_WIDTH_RATIO = EquipmentRerollBot.OCR_ONE_MAX_WIDTH_RATIO
         bot.REROLL_BUTTON_RETRY_COUNT = EquipmentRerollBot.REROLL_BUTTON_RETRY_COUNT
+        bot.locked_option_count = 0
         return bot
 
     def test_get_row_bounds_splits_right_option_panel_into_four_rows(self):
@@ -40,6 +44,20 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(len(rows), 4)
         self.assertTrue(all(row[0] < row[2] and row[1] < row[3] for row in rows))
         self.assertTrue(all(rows[index][1] < rows[index + 1][1] for index in range(3)))
+
+    def test_normalize_option_panel_bounds_accepts_custom_selection(self):
+        bot = self._make_bot()
+
+        bounds = bot._normalize_option_panel_bounds({"left": 0.2, "top": 0.3, "right": 0.8, "bottom": 0.9})
+
+        self.assertEqual(bounds, {"left": 0.2, "top": 0.3, "right": 0.8, "bottom": 0.9})
+
+    def test_normalize_option_panel_bounds_falls_back_on_invalid_order(self):
+        bot = self._make_bot()
+
+        bounds = bot._normalize_option_panel_bounds({"left": 0.7, "top": 0.3, "right": 0.2, "bottom": 0.9})
+
+        self.assertEqual(bounds, EquipmentRerollBot.OPTION_PANEL_BOUNDS)
 
     def test_ocr_numeric_image_uses_best_digit_only_result(self):
         bot = self._make_bot()
@@ -155,6 +173,58 @@ class EquipmentRerollBotTest(unittest.TestCase):
 
         self.assertEqual(value, 8)
         self.assertTrue(has_percent)
+
+    def test_scan_target_rows_once_skips_numeric_ocr_for_non_target_options(self):
+        bot = self._make_bot()
+        bot.target_specs = [{"option": "speed", "value": 4, "is_percent": False}]
+        bot._get_row_bounds = lambda _width, _height: [(0, 0, 100, 20)]
+        bot._find_best_target_option_in_row = lambda *_args, **_kwargs: {
+            "option": "attack",
+            "box": (10, 2, 30, 10),
+            "similarity": 0.92,
+        }
+        bot._read_row_numeric_value = lambda *_args, **_kwargs: self.fail("numeric OCR should not run for non-target rows")
+
+        results = bot._scan_target_rows_once(
+            np.zeros((50, 120, 3), dtype=np.uint8),
+            {"attack": np.zeros((10, 10, 3), dtype=np.uint8)},
+            read_numeric=True,
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["option"], "attack")
+        self.assertIsNone(results[0]["value"])
+
+    def test_scan_target_rows_retries_when_option_count_is_short(self):
+        bot = self._make_bot()
+        bot.locked_option_count = 2
+        bot.target_specs = [{"option": "speed", "value": 4, "is_percent": False}]
+        bot.OPTION_RECOGNITION_RETRY_COUNT = 1
+        scan_results = [
+            [{"row_index": 0, "option": "speed", "box": (0, 0, 10, 10), "value": 4, "is_percent": False, "similarity": 0.91}],
+            [
+                {"row_index": 0, "option": "speed", "box": (0, 0, 10, 10), "value": 4, "is_percent": False, "similarity": 0.91},
+                {"row_index": 1, "option": "attack", "box": (0, 20, 10, 10), "value": None, "is_percent": True, "similarity": 0.88},
+            ],
+        ]
+        calls = []
+
+        def fake_scan_once(_screen, _templates, _read_numeric, vertical_margin_multiplier=1.0, threshold_override=None):
+            calls.append((vertical_margin_multiplier, threshold_override))
+            return scan_results[len(calls) - 1]
+
+        bot._scan_target_rows_once = fake_scan_once
+
+        with patch.object(equipment_module, "read_image", return_value=np.zeros((10, 10, 3), dtype=np.uint8)):
+            results = bot._scan_target_rows(
+                np.zeros((60, 120, 3), dtype=np.uint8),
+                {"option:speed": Path("speed.png"), "option:attack": Path("attack.png")},
+                read_numeric=True,
+            )
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(sorted(row["row_index"] for row in results), [0, 1])
 
     def test_normalize_target_option_supports_added_options(self):
         bot = self._make_bot()

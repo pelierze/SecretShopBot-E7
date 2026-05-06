@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
+from PIL import Image, ImageTk
 
 # 모던 UI 테마 (pip install sv-ttk 필요)
 try:
@@ -71,6 +72,81 @@ class TextHandler(logging.Handler):
                 self.text_widget.yview(tk.END)
 
         self.text_widget.after(0, append)
+
+
+class AreaSelectionDialog:
+    """Screenshot-based rectangular area selector."""
+
+    MAX_PREVIEW_WIDTH = 960
+    MAX_PREVIEW_HEIGHT = 720
+
+    def __init__(self, parent, image_path: Path, title: str, on_complete):
+        self.parent = parent
+        self.image_path = image_path
+        self.on_complete = on_complete
+        self.start_x = None
+        self.start_y = None
+        self.rect_id = None
+        self.selection_label_var = tk.StringVar(value="드래그해서 옵션 탐색 영역을 선택하세요.")
+
+        self.original_image = Image.open(image_path)
+        self.scale = min(
+            self.MAX_PREVIEW_WIDTH / max(self.original_image.width, 1),
+            self.MAX_PREVIEW_HEIGHT / max(self.original_image.height, 1),
+            1.0,
+        )
+        preview_size = (
+            max(1, int(self.original_image.width * self.scale)),
+            max(1, int(self.original_image.height * self.scale)),
+        )
+        self.preview_image = self.original_image.resize(preview_size, Image.Resampling.LANCZOS)
+        self.preview_photo = ImageTk.PhotoImage(self.preview_image)
+
+        self.window = tk.Toplevel(parent)
+        self.window.title(title)
+        self.window.transient(parent)
+        self.window.grab_set()
+
+        self.canvas = tk.Canvas(self.window, width=self.preview_image.width, height=self.preview_image.height, cursor="crosshair")
+        self.canvas.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.canvas.create_image(0, 0, image=self.preview_photo, anchor=tk.NW)
+        self.canvas.bind("<ButtonPress-1>", self._on_press)
+        self.canvas.bind("<B1-Motion>", self._on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self._on_release)
+
+        ttk.Label(self.window, textvariable=self.selection_label_var).pack(fill=tk.X, padx=8, pady=(0, 8))
+
+    def _on_press(self, event):
+        self.start_x = int(self.canvas.canvasx(event.x))
+        self.start_y = int(self.canvas.canvasy(event.y))
+        if self.rect_id is not None:
+            self.canvas.delete(self.rect_id)
+        self.rect_id = self.canvas.create_rectangle(self.start_x, self.start_y, self.start_x, self.start_y, outline="#1E88E5", width=2)
+
+    def _on_drag(self, event):
+        if self.rect_id is None:
+            return
+        current_x = int(self.canvas.canvasx(event.x))
+        current_y = int(self.canvas.canvasy(event.y))
+        self.canvas.coords(self.rect_id, self.start_x, self.start_y, current_x, current_y)
+
+    def _on_release(self, event):
+        if self.rect_id is None:
+            return
+        end_x = int(self.canvas.canvasx(event.x))
+        end_y = int(self.canvas.canvasy(event.y))
+        x1, x2 = sorted((self.start_x, end_x))
+        y1, y2 = sorted((self.start_y, end_y))
+        if x2 - x1 < 8 or y2 - y1 < 8:
+            self.selection_label_var.set("영역이 너무 작습니다. 조금 더 크게 드래그하세요.")
+            return
+
+        left = x1 / float(self.preview_image.width)
+        top = y1 / float(self.preview_image.height)
+        right = x2 / float(self.preview_image.width)
+        bottom = y2 / float(self.preview_image.height)
+        self.on_complete({"left": left, "top": top, "right": right, "bottom": bottom})
+        self.window.destroy()
 
 
 class SessionView:
@@ -157,6 +233,11 @@ class SessionView:
         self.scanned_devices = {}
         self.selected_device_info = None
         self.current_mode = None
+        self.reroll_use_custom_bounds_var = tk.BooleanVar(value=False)
+        self.reroll_bounds_vars = {
+            key: tk.StringVar(value=f"{value:.3f}")
+            for key, value in EquipmentRerollBot.OPTION_PANEL_BOUNDS.items()
+        }
         self.input_profile_label_text = "MuMu 앱플레이어 사용 (호환 드래그 사용)"
         self.buy_count_default_label_text = "구매 완료 검증 횟수:"
         self.buy_count_default_unit_text = "회"
@@ -463,6 +544,25 @@ class SessionView:
         self.reroll_threshold_entry.grid(row=6, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(self.reroll_settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
 
+        self.reroll_bounds_check = ttk.Checkbutton(
+            self.reroll_settings_frame,
+            text="옵션 범위 좌표 사용",
+            variable=self.reroll_use_custom_bounds_var,
+            command=self._update_reroll_bounds_summary,
+        )
+        self.reroll_bounds_check.grid(row=7, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+
+        self.reroll_bounds_button = ttk.Button(
+            self.reroll_settings_frame,
+            text="영역 선택",
+            command=self._open_reroll_bounds_selector,
+        )
+        self.reroll_bounds_button.grid(row=7, column=2, sticky=tk.W, padx=5, pady=5)
+
+        self.reroll_bounds_label = ttk.Label(self.reroll_settings_frame, text="", foreground="gray")
+        self.reroll_bounds_label.grid(row=7, column=3, columnspan=5, sticky=tk.W, padx=5, pady=5)
+        self._update_reroll_bounds_summary()
+
         reroll_control_frame = ttk.Frame(self.reroll_tab, padding=10)
         reroll_control_frame.pack(fill=tk.X, padx=10, pady=5)
         self.reroll_start_btn = ttk.Button(
@@ -511,6 +611,58 @@ class SessionView:
         if target_range is None:
             target_range = rule["percent_range"] or rule["flat_range"] or (1, 999)
         return target_range
+
+    def _get_reroll_option_panel_bounds(self):
+        bounds = {}
+        try:
+            for key, var in self.reroll_bounds_vars.items():
+                bounds[key] = float(var.get())
+        except (TypeError, ValueError):
+            raise ValueError("옵션 범위 좌표가 올바르지 않습니다.")
+
+        if not (0.0 <= bounds["left"] < bounds["right"] <= 1.0 and 0.0 <= bounds["top"] < bounds["bottom"] <= 1.0):
+            raise ValueError("옵션 범위 좌표는 0~1 사이이며 left < right, top < bottom 이어야 합니다.")
+        return bounds
+
+    def _update_reroll_bounds_summary(self):
+        state = tk.NORMAL if not self.is_running else tk.DISABLED
+        if self.reroll_use_custom_bounds_var.get():
+            try:
+                bounds = self._get_reroll_option_panel_bounds()
+                summary = "left={left:.3f}, top={top:.3f}, right={right:.3f}, bottom={bottom:.3f}".format(**bounds)
+            except ValueError:
+                summary = "좌표가 올바르지 않습니다."
+            self.reroll_bounds_label.config(text=summary)
+            self.reroll_bounds_button.config(state=state)
+        else:
+            default_bounds = EquipmentRerollBot.OPTION_PANEL_BOUNDS
+            summary = "기본값 사용: left={left:.3f}, top={top:.3f}, right={right:.3f}, bottom={bottom:.3f}".format(**default_bounds)
+            self.reroll_bounds_label.config(text=summary)
+            self.reroll_bounds_button.config(state=tk.DISABLED)
+
+    def _open_reroll_bounds_selector(self):
+        if not self.adb_controller:
+            messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+            return
+
+        try:
+            self.runtime_dir.mkdir(parents=True, exist_ok=True)
+            screenshot_path = self.runtime_dir / "reroll_bounds_selector.png"
+            self.adb_controller.screenshot(str(screenshot_path))
+            AreaSelectionDialog(
+                self.frame,
+                screenshot_path,
+                f"{self.name} 옵션 범위 선택",
+                self._apply_reroll_bounds_selection,
+            )
+        except Exception as exc:
+            messagebox.showerror("오류", f"옵션 범위 선택용 스크린샷을 준비하지 못했습니다.\n{exc}")
+
+    def _apply_reroll_bounds_selection(self, bounds):
+        for key, value in bounds.items():
+            self.reroll_bounds_vars[key].set(f"{value:.3f}")
+        self.reroll_use_custom_bounds_var.set(True)
+        self._update_reroll_bounds_summary()
 
     def _get_reroll_locked_count(self):
         try:
@@ -933,6 +1085,7 @@ class SessionView:
                 threshold = int(self.reroll_threshold_entry.get()) / 100.0
                 active_target_count = self._get_reroll_target_count()
                 locked_option_count = self._get_reroll_locked_count()
+                option_panel_bounds = self._get_reroll_option_panel_bounds() if self.reroll_use_custom_bounds_var.get() else None
                 if max_rerolls <= 0 or delay_before_reroll < 0:
                     raise ValueError()
                 if active_target_count < 1:
@@ -981,6 +1134,7 @@ class SessionView:
                 threshold=threshold,
                 debug_mode=self.debug_mode_var.get(),
                 runtime_dir=self.runtime_dir,
+                option_panel_bounds=option_panel_bounds,
             )
             startup_error = self.bot.get_startup_error()
             if startup_error:
@@ -1276,7 +1430,9 @@ class SessionView:
         self.reroll_max_entry.config(state=state)
         self.reroll_delay_entry.config(state=state)
         self.reroll_threshold_entry.config(state=state)
+        self.reroll_bounds_check.config(state=state)
         self._update_reroll_target_count_controls()
+        self._update_reroll_bounds_summary()
 
     def _test_image_matching(self):
         with log_session(self.name):
