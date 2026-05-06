@@ -64,6 +64,16 @@ class EquipmentRerollBot:
         "effect_resistance": "effect-resistance_option.png",
         "effectiveness": "effectiveness_option.png",
     }
+    OPTION_VALUE_RANGES = {
+        "speed": {False: (1, 6), True: None},
+        "attack": {False: (20, 120), True: (3, 12)},
+        "life": {False: (80, 600), True: (3, 12)},
+        "defense": {False: (10, 120), True: (3, 12)},
+        "crit_chance": {False: None, True: (2, 10)},
+        "crit_damage": {False: None, True: (3, 12)},
+        "effect_resistance": {False: None, True: (3, 12)},
+        "effectiveness": {False: None, True: (3, 12)},
+    }
     OPTION_LABEL_MAP = {
         "speed": "속도",
         "attack": "공격력",
@@ -380,7 +390,13 @@ class EquipmentRerollBot:
 
             value, has_percent = (None, False)
             if read_numeric:
-                value, has_percent = self._read_row_numeric_value(screen, bounds, best_match["box"], row_index)
+                value, has_percent = self._read_row_numeric_value(
+                    screen,
+                    bounds,
+                    best_match["box"],
+                    row_index,
+                    best_match["option"],
+                )
 
             results.append(
                 {
@@ -509,6 +525,7 @@ class EquipmentRerollBot:
         row_bounds: Tuple[int, int, int, int],
         option_box: Tuple[int, int, int, int],
         row_index: int,
+        option_key: str,
     ) -> Tuple[Optional[int], bool]:
         x1, y1, x2, y2 = row_bounds
         option_x, option_y, option_w, option_h = option_box
@@ -537,26 +554,41 @@ class EquipmentRerollBot:
         best_candidate = None
         best_confidence = 0.0
         best_has_percent = False
-        candidate_scores: Dict[Tuple[int, bool], Dict[str, float]] = defaultdict(
-            lambda: {"count": 0.0, "confidence_sum": 0.0, "best_confidence": 0.0}
-        )
-        for _, image in processed_images:
-            candidate, confidence, has_percent = self._ocr_numeric_image(image, use_detection=False)
-            if candidate is None:
-                candidate, confidence, has_percent = self._ocr_numeric_image(image, use_detection=True)
-            if candidate is None:
-                continue
-
-            score = candidate_scores[(candidate, has_percent)]
-            score["count"] += 1.0
-            score["confidence_sum"] += confidence
-            score["best_confidence"] = max(score["best_confidence"], confidence)
+        candidate_scores = self._collect_numeric_candidate_scores(processed_images)
 
         if candidate_scores:
             best_candidate, best_has_percent, best_confidence = self._select_best_numeric_candidate(
                 candidate_scores,
                 shape_info,
             )
+
+        if best_candidate is not None and not self._is_value_in_expected_range(option_key, best_candidate, best_has_percent):
+            logger.warning(
+                "??%s %s ?レ옄 OCR 寃곌낵 %s%s媛 ?덉긽 踰붿쐞瑜?踰쀬뼱?섏뿬 ?ㅼ떆 ?몄떇?⑸땲??",
+                row_index + 1,
+                self._target_option_label(option_key),
+                best_candidate,
+                "%" if best_has_percent else "",
+            )
+            retry_processed_images = self._build_ocr_variants(number_roi, scale_multiplier=1.5)
+            if self.debug_mode:
+                for variant_name, variant_image in retry_processed_images:
+                    self._save_debug_image(f"row_{row_index + 1}_retry_{variant_name}.png", variant_image)
+            retry_scores = self._collect_numeric_candidate_scores(retry_processed_images)
+            candidate_scores = self._merge_numeric_candidate_scores(candidate_scores, retry_scores)
+            valid_scores = self._filter_candidate_scores_by_expected_range(candidate_scores, option_key)
+            if valid_scores:
+                best_candidate, best_has_percent, best_confidence = self._select_best_numeric_candidate(
+                    valid_scores,
+                    shape_info,
+                )
+            else:
+                logger.warning(
+                    "??%s %s ?レ옄 OCR 寃곌낵媛 ?덉긽 踰붿쐞 ?꾩뿬?쒕룄 ?ㅼ떆 ?몄떇?섏? 紐삵뻽?듬땲??",
+                    row_index + 1,
+                    self._target_option_label(option_key),
+                )
+                return None, False
 
         if best_candidate is None:
             logger.info("행 %s 숫자 OCR 결과가 비어 있습니다.", row_index + 1)
@@ -596,12 +628,71 @@ class EquipmentRerollBot:
                 best_confidence = score["best_confidence"]
         return best_candidate, best_has_percent, best_confidence
 
-    def _build_ocr_variants(self, number_roi: np.ndarray) -> List[Tuple[str, np.ndarray]]:
+    def _collect_numeric_candidate_scores(
+        self,
+        processed_images: List[Tuple[str, np.ndarray]],
+    ) -> Dict[Tuple[int, bool], Dict[str, float]]:
+        candidate_scores: Dict[Tuple[int, bool], Dict[str, float]] = defaultdict(
+            lambda: {"count": 0.0, "confidence_sum": 0.0, "best_confidence": 0.0}
+        )
+        for _, image in processed_images:
+            candidate, confidence, has_percent = self._ocr_numeric_image(image, use_detection=False)
+            if candidate is None:
+                candidate, confidence, has_percent = self._ocr_numeric_image(image, use_detection=True)
+            if candidate is None:
+                continue
+
+            score = candidate_scores[(candidate, has_percent)]
+            score["count"] += 1.0
+            score["confidence_sum"] += confidence
+            score["best_confidence"] = max(score["best_confidence"], confidence)
+        return candidate_scores
+
+    def _merge_numeric_candidate_scores(
+        self,
+        base_scores: Dict[Tuple[int, bool], Dict[str, float]],
+        extra_scores: Dict[Tuple[int, bool], Dict[str, float]],
+    ) -> Dict[Tuple[int, bool], Dict[str, float]]:
+        merged: Dict[Tuple[int, bool], Dict[str, float]] = defaultdict(
+            lambda: {"count": 0.0, "confidence_sum": 0.0, "best_confidence": 0.0}
+        )
+        for score_map in (base_scores, extra_scores):
+            for key, score in score_map.items():
+                merged[key]["count"] += score["count"]
+                merged[key]["confidence_sum"] += score["confidence_sum"]
+                merged[key]["best_confidence"] = max(merged[key]["best_confidence"], score["best_confidence"])
+        return merged
+
+    def _filter_candidate_scores_by_expected_range(
+        self,
+        candidate_scores: Dict[Tuple[int, bool], Dict[str, float]],
+        option_key: str,
+    ) -> Dict[Tuple[int, bool], Dict[str, float]]:
+        return {
+            (candidate, has_percent): score
+            for (candidate, has_percent), score in candidate_scores.items()
+            if self._is_value_in_expected_range(option_key, candidate, has_percent)
+        }
+
+    def _is_value_in_expected_range(self, option_key: str, value: int, has_percent: bool) -> bool:
+        option_ranges = self.OPTION_VALUE_RANGES.get(option_key)
+        if option_ranges is None:
+            return True
+
+        expected_range = option_ranges.get(has_percent)
+        if expected_range is None:
+            return False
+
+        minimum, maximum = expected_range
+        return minimum <= value <= maximum
+
+    def _build_ocr_variants(self, number_roi: np.ndarray, scale_multiplier: float = 1.0) -> List[Tuple[str, np.ndarray]]:
         if number_roi.size == 0:
             return []
 
         gray = cv2.cvtColor(number_roi, cv2.COLOR_BGR2GRAY)
-        enlarged = cv2.resize(gray, None, fx=self.OCR_SCALE, fy=self.OCR_SCALE, interpolation=cv2.INTER_CUBIC)
+        scale = max(self.OCR_SCALE * scale_multiplier, 1.0)
+        enlarged = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         cropped = self._crop_numeric_foreground(enlarged)
         enlarged = cv2.copyMakeBorder(cropped, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=0)
         normalized = cv2.normalize(enlarged, None, 0, 255, cv2.NORM_MINMAX)

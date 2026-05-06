@@ -126,6 +126,36 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertLess(cropped.shape[1], image.shape[1])
         self.assertGreater(cropped.shape[0], 0)
 
+    def test_is_value_in_expected_range_rejects_invalid_defense_percent(self):
+        bot = self._make_bot()
+
+        self.assertFalse(bot._is_value_in_expected_range("defense", 1, True))
+        self.assertTrue(bot._is_value_in_expected_range("defense", 8, True))
+
+    def test_read_row_numeric_value_retries_when_candidate_is_out_of_range(self):
+        bot = self._make_bot()
+        screen = np.zeros((60, 160, 3), dtype=np.uint8)
+
+        def fake_build_variants(_number_roi, scale_multiplier=1.0):
+            if scale_multiplier > 1.0:
+                return [("retry", np.zeros((10, 10), dtype=np.uint8))]
+            return [("primary", np.zeros((10, 10), dtype=np.uint8))]
+
+        def fake_collect(processed_images):
+            variant_name = processed_images[0][0]
+            if variant_name == "primary":
+                return {(1, True): {"count": 2.0, "confidence_sum": 1.4, "best_confidence": 0.72}}
+            return {(8, True): {"count": 2.0, "confidence_sum": 1.3, "best_confidence": 0.67}}
+
+        bot._build_ocr_variants = fake_build_variants
+        bot._collect_numeric_candidate_scores = fake_collect
+        bot._analyze_numeric_shape = lambda _roi: None
+
+        value, has_percent = bot._read_row_numeric_value(screen, (0, 0, 160, 60), (0, 0, 20, 20), 0, "defense")
+
+        self.assertEqual(value, 8)
+        self.assertTrue(has_percent)
+
     def test_normalize_target_option_supports_added_options(self):
         bot = self._make_bot()
 
