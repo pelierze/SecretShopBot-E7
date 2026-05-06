@@ -340,6 +340,30 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(len(results), 2)
 
+    def test_scan_target_rows_skips_numeric_ocr_for_non_target_options(self):
+        bot = self._make_bot()
+        bot.target_specs = [{"option": "speed", "value": 4, "is_percent": False}]
+
+        bot._find_best_target_option_in_row = lambda *_args, **_kwargs: {
+            "option": "attack",
+            "box": (0, 0, 10, 10),
+            "similarity": 0.85,
+        }
+
+        def fail_if_called(*_args, **_kwargs):
+            raise AssertionError("numeric OCR should not run for non-target options")
+
+        bot._read_row_numeric_value = fail_if_called
+
+        results = bot._scan_target_rows_once(
+            np.zeros((100, 100, 3), dtype=np.uint8),
+            {"attack": np.zeros((5, 5, 3), dtype=np.uint8)},
+            read_numeric=True,
+        )
+
+        self.assertEqual(results[0]["option"], "attack")
+        self.assertIsNone(results[0]["value"])
+
 
 if __name__ == "__main__":
     unittest.main()
