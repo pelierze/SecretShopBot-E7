@@ -21,6 +21,8 @@ class EquipmentRerollBotTest(unittest.TestCase):
         bot.ROW_COUNT = EquipmentRerollBot.ROW_COUNT
         bot.ROW_VERTICAL_PADDING_RATIO = EquipmentRerollBot.ROW_VERTICAL_PADDING_RATIO
         bot.OPTION_MATCH_WIDTH_RATIO = EquipmentRerollBot.OPTION_MATCH_WIDTH_RATIO
+        bot.OPTION_MATCH_VERTICAL_MARGIN_RATIO = EquipmentRerollBot.OPTION_MATCH_VERTICAL_MARGIN_RATIO
+        bot.OPTION_RECOGNITION_RETRY_COUNT = EquipmentRerollBot.OPTION_RECOGNITION_RETRY_COUNT
         bot.NUMBER_SCAN_WIDTH_RATIO = EquipmentRerollBot.NUMBER_SCAN_WIDTH_RATIO
         bot.NUMBER_SCAN_HEIGHT_RATIO = EquipmentRerollBot.NUMBER_SCAN_HEIGHT_RATIO
         bot.NUMBER_SCAN_LEFT_GAP_RATIO = EquipmentRerollBot.NUMBER_SCAN_LEFT_GAP_RATIO
@@ -278,6 +280,65 @@ class EquipmentRerollBotTest(unittest.TestCase):
 
         self.assertEqual(result["option"], "speed")
         self.assertEqual(result["box"][:2], (insert_x, insert_y))
+
+    def test_find_best_target_option_in_row_handles_template_crossing_second_row_boundary(self):
+        bot = self._make_bot()
+        screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+        rows = bot._get_row_bounds(1280, 720)
+
+        template = np.zeros((18, 52, 3), dtype=np.uint8)
+        cv2.rectangle(template, (0, 0), (51, 17), (255, 255, 255), -1)
+        cv2.circle(template, (10, 9), 5, (0, 0, 0), -1)
+
+        target_row = rows[1]
+        row_x1, row_y1, _, _ = target_row
+        insert_x = row_x1 + 24
+        insert_y = row_y1 - 4
+        screen[insert_y:insert_y + template.shape[0], insert_x:insert_x + template.shape[1]] = template
+
+        result = bot._find_best_target_option_in_row(screen, target_row, {"defense": template}, row_index=1)
+
+        self.assertEqual(result["option"], "defense")
+        self.assertEqual(result["box"][:2], (insert_x, insert_y))
+
+    def test_scan_target_rows_retries_when_no_option_is_found(self):
+        bot = self._make_bot()
+        bot.locked_option_count = 0
+        calls = []
+
+        def fake_once(_screen, _templates, _read_numeric, vertical_margin_multiplier=1.0, threshold_override=None):
+            calls.append((vertical_margin_multiplier, threshold_override))
+            if len(calls) == 1:
+                return []
+            return [{"row_index": 0, "option": "speed", "box": (0, 0, 1, 1), "value": 4, "is_percent": False, "similarity": 0.81}]
+
+        bot._scan_target_rows_once = fake_once
+
+        results = bot._scan_target_rows(np.zeros((10, 10, 3), dtype=np.uint8), {"option:speed": Path("dummy.png")}, read_numeric=True)
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(results[0]["option"], "speed")
+
+    def test_scan_target_rows_retries_until_unlocked_option_count_is_met(self):
+        bot = self._make_bot()
+        bot.locked_option_count = 2
+        calls = []
+
+        def fake_once(_screen, _templates, _read_numeric, vertical_margin_multiplier=1.0, threshold_override=None):
+            calls.append((vertical_margin_multiplier, threshold_override))
+            if len(calls) == 1:
+                return [{"row_index": 0, "option": "speed", "box": (0, 0, 1, 1), "value": 4, "is_percent": False, "similarity": 0.81}]
+            return [
+                {"row_index": 0, "option": "speed", "box": (0, 0, 1, 1), "value": 4, "is_percent": False, "similarity": 0.81},
+                {"row_index": 1, "option": "defense", "box": (0, 0, 1, 1), "value": 8, "is_percent": True, "similarity": 0.79},
+            ]
+
+        bot._scan_target_rows_once = fake_once
+
+        results = bot._scan_target_rows(np.zeros((10, 10, 3), dtype=np.uint8), {"option:speed": Path("dummy.png")}, read_numeric=True)
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(results), 2)
 
 
 if __name__ == "__main__":

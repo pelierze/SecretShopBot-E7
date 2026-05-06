@@ -122,6 +122,8 @@ class EquipmentRerollBot:
     ROW_COUNT = 4
     ROW_VERTICAL_PADDING_RATIO = 0.08
     OPTION_MATCH_WIDTH_RATIO = 0.78
+    OPTION_MATCH_VERTICAL_MARGIN_RATIO = 0.2
+    OPTION_RECOGNITION_RETRY_COUNT = 2
     NUMBER_SCAN_WIDTH_RATIO = 0.26
     NUMBER_SCAN_HEIGHT_RATIO = 1.6
     NUMBER_SCAN_LEFT_GAP_RATIO = 0.08
@@ -242,7 +244,7 @@ class EquipmentRerollBot:
 
     def _required_images(self) -> Dict[str, Optional[Path]]:
         images = {"reroll_button": self._find_image_file(self.REROLL_BUTTON_IMAGE)}
-        for option_key in {spec["option"] for spec in self.target_specs}:
+        for option_key in self.OPTION_IMAGE_MAP:
             image_name = self.OPTION_IMAGE_MAP.get(option_key)
             images[f"option:{option_key}"] = self._find_image_file(image_name) if image_name else None
         return images
@@ -375,16 +377,59 @@ class EquipmentRerollBot:
             return None
 
     def _scan_target_rows(self, screen: np.ndarray, images: Dict[str, Path], read_numeric: bool) -> List[Dict]:
-        rows = self._get_row_bounds(screen.shape[1], screen.shape[0])
         target_templates = {
             key.split(":", 1)[1]: read_image(str(path), cv2.IMREAD_COLOR)
             for key, path in images.items()
             if key.startswith("option:")
         }
+        results = self._scan_target_rows_once(screen, target_templates, read_numeric)
+        if not self._should_retry_option_recognition(results):
+            return results
 
+        merged_results = results
+        retry_configs = (
+            {"vertical_margin_multiplier": 1.5, "threshold_override": max(self.threshold - 0.04, 0.7)},
+            {"vertical_margin_multiplier": 2.0, "threshold_override": max(self.threshold - 0.08, 0.65)},
+        )
+        for retry_index, retry_config in enumerate(retry_configs[: self.OPTION_RECOGNITION_RETRY_COUNT], start=1):
+            logger.warning(
+                "옵션 인식 결과가 부족하여 재인식을 시도합니다. (%s/%s, 현재 %s개 / 기대 %s개)",
+                retry_index,
+                min(self.OPTION_RECOGNITION_RETRY_COUNT, len(retry_configs)),
+                len(merged_results),
+                self._expected_visible_option_count(),
+            )
+            retry_results = self._scan_target_rows_once(
+                screen,
+                target_templates,
+                read_numeric,
+                vertical_margin_multiplier=retry_config["vertical_margin_multiplier"],
+                threshold_override=retry_config["threshold_override"],
+            )
+            merged_results = self._merge_row_results(merged_results, retry_results)
+            if not self._should_retry_option_recognition(merged_results):
+                break
+        return merged_results
+
+    def _scan_target_rows_once(
+        self,
+        screen: np.ndarray,
+        target_templates: Dict[str, np.ndarray],
+        read_numeric: bool,
+        vertical_margin_multiplier: float = 1.0,
+        threshold_override: Optional[float] = None,
+    ) -> List[Dict]:
+        rows = self._get_row_bounds(screen.shape[1], screen.shape[0])
         results = []
         for row_index, bounds in enumerate(rows):
-            best_match = self._find_best_target_option_in_row(screen, bounds, target_templates, row_index)
+            best_match = self._find_best_target_option_in_row(
+                screen,
+                bounds,
+                target_templates,
+                row_index,
+                vertical_margin_multiplier=vertical_margin_multiplier,
+                threshold_override=threshold_override,
+            )
             if best_match is None:
                 continue
 
@@ -405,6 +450,7 @@ class EquipmentRerollBot:
                     "box": best_match["box"],
                     "value": value,
                     "is_percent": has_percent,
+                    "similarity": best_match["similarity"],
                 }
             )
             detected_value = f"{value}{'%' if has_percent else ''}" if value is not None else "없음"
@@ -417,15 +463,45 @@ class EquipmentRerollBot:
             )
         return results
 
+    def _merge_row_results(self, base_results: List[Dict], retry_results: List[Dict]) -> List[Dict]:
+        merged = {row["row_index"]: dict(row) for row in base_results}
+        for row in retry_results:
+            existing = merged.get(row["row_index"])
+            if existing is None:
+                merged[row["row_index"]] = dict(row)
+                continue
+
+            existing_score = (existing.get("value") is not None, existing.get("similarity", 0.0))
+            retry_score = (row.get("value") is not None, row.get("similarity", 0.0))
+            if retry_score > existing_score:
+                merged[row["row_index"]] = dict(row)
+        return [merged[index] for index in sorted(merged)]
+
+    def _expected_visible_option_count(self) -> int:
+        unlocked_count = self.ROW_COUNT - min(max(self.locked_option_count, 0), self.ROW_COUNT - 1)
+        return max(1, unlocked_count)
+
+    def _should_retry_option_recognition(self, row_results: List[Dict]) -> bool:
+        expected_count = self._expected_visible_option_count()
+        if not row_results:
+            return True
+        return len(row_results) < expected_count
+
     def _find_best_target_option_in_row(
         self,
         screen: np.ndarray,
         row_bounds: Tuple[int, int, int, int],
         target_templates: Dict[str, np.ndarray],
         row_index: int,
+        vertical_margin_multiplier: float = 1.0,
+        threshold_override: Optional[float] = None,
     ) -> Optional[Dict]:
         x1, y1, x2, y2 = row_bounds
-        row_image = screen[y1:y2, x1:x2]
+        row_height = max(y2 - y1, 1)
+        vertical_margin = int(row_height * self.OPTION_MATCH_VERTICAL_MARGIN_RATIO * vertical_margin_multiplier)
+        scan_y1 = max(0, y1 - vertical_margin)
+        scan_y2 = min(screen.shape[0], y2 + vertical_margin)
+        row_image = screen[scan_y1:scan_y2, x1:x2]
         best_option = None
         best_box = None
         best_similarity = 0.0
@@ -436,7 +512,7 @@ class EquipmentRerollBot:
 
             option_scan_width = max(int((x2 - x1) * self.OPTION_MATCH_WIDTH_RATIO), template.shape[1])
             option_scan = row_image[:, :option_scan_width]
-            location, similarity = self._match_template_in_image(option_scan, template)
+            location, similarity = self._match_template_in_image(option_scan, template, threshold=threshold_override)
 
             if self.debug_mode:
                 self._save_debug_image(f"row_{row_index + 1}_{option_key}_scan.png", option_scan)
@@ -446,7 +522,7 @@ class EquipmentRerollBot:
 
             local_x, local_y, width, height = location
             best_option = option_key
-            best_box = (x1 + local_x, y1 + local_y, width, height)
+            best_box = (x1 + local_x, scan_y1 + local_y, width, height)
             best_similarity = similarity
 
         if best_option is None:
@@ -491,6 +567,7 @@ class EquipmentRerollBot:
         self,
         image: np.ndarray,
         template: np.ndarray,
+        threshold: Optional[float] = None,
     ) -> Tuple[Optional[Tuple[int, int, int, int]], float]:
         if image.size == 0 or template.size == 0:
             return None, 0.0
@@ -499,7 +576,8 @@ class EquipmentRerollBot:
 
         result = cv2.matchTemplate(image, template, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
-        if max_val < self.threshold:
+        required_threshold = self.threshold if threshold is None else threshold
+        if max_val < required_threshold:
             return None, float(max_val)
         height, width = template.shape[:2]
         return (max_loc[0], max_loc[1], width, height), float(max_val)
