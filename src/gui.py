@@ -3,13 +3,11 @@ GUI 인터페이스
 tkinter를 사용한 사용자 인터페이스
 """
 import contextvars
-import ctypes
 import logging
 import os
 import threading
 import time
 from contextlib import contextmanager
-from ctypes import wintypes
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
@@ -73,131 +71,6 @@ class TextHandler(logging.Handler):
                 self.text_widget.yview(tk.END)
 
         self.text_widget.after(0, append)
-
-
-def _get_foreground_window_bounds():
-    if os.name != "nt":
-        return None
-
-    user32 = ctypes.windll.user32
-    hwnd = user32.GetForegroundWindow()
-    if not hwnd or not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
-        return None
-
-    rect = wintypes.RECT()
-    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
-        return None
-
-    title_length = user32.GetWindowTextLengthW(hwnd)
-    title_buffer = ctypes.create_unicode_buffer(title_length + 1)
-    user32.GetWindowTextW(hwnd, title_buffer, title_length + 1)
-
-    width = rect.right - rect.left
-    height = rect.bottom - rect.top
-    if width <= 0 or height <= 0:
-        return None
-
-    return {
-        "hwnd": int(hwnd),
-        "title": title_buffer.value.strip(),
-        "left": rect.left,
-        "top": rect.top,
-        "width": width,
-        "height": height,
-    }
-
-
-class AreaSelectionDialog:
-    """Transparent overlay selector placed on top of the target window."""
-
-    MIN_SELECTION_SIZE = 8
-
-    def __init__(self, parent, window_bounds, title: str, on_complete, on_cancel=None):
-        self.parent = parent
-        self.window_bounds = window_bounds
-        self.on_complete = on_complete
-        self.on_cancel = on_cancel
-        self.start_x = None
-        self.start_y = None
-        self.rect_id = None
-        self.selection_label_var = tk.StringVar(value="앱플레이어 화면 위에서 드래그해 옵션 탐색 영역을 선택하세요. ESC로 취소할 수 있습니다.")
-        width = int(window_bounds["width"])
-        height = int(window_bounds["height"])
-
-        self.window = tk.Toplevel(parent)
-        self.window.title(title)
-        self.window.overrideredirect(True)
-        self.window.attributes("-topmost", True)
-        self.window.attributes("-alpha", 0.32)
-        self.window.configure(bg="black")
-        self.window.geometry(f"{width}x{height}+{int(window_bounds['left'])}+{int(window_bounds['top'])}")
-
-        self.canvas = tk.Canvas(
-            self.window,
-            width=width,
-            height=height,
-            cursor="crosshair",
-            bg="black",
-            highlightthickness=0,
-            bd=0,
-        )
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-        self.instructions_id = self.canvas.create_text(
-            16,
-            16,
-            anchor=tk.NW,
-            fill="white",
-            text=self.selection_label_var.get(),
-            font=("맑은 고딕", 10, "bold"),
-        )
-        self.canvas.bind("<ButtonPress-1>", self._on_press)
-        self.canvas.bind("<B1-Motion>", self._on_drag)
-        self.canvas.bind("<ButtonRelease-1>", self._on_release)
-        self.window.bind("<Escape>", self._cancel)
-        self.window.bind("<Button-3>", self._cancel)
-        self.window.focus_force()
-
-    def _on_press(self, event):
-        self.start_x = int(self.canvas.canvasx(event.x))
-        self.start_y = int(self.canvas.canvasy(event.y))
-        if self.rect_id is not None:
-            self.canvas.delete(self.rect_id)
-        self.rect_id = self.canvas.create_rectangle(self.start_x, self.start_y, self.start_x, self.start_y, outline="#1E88E5", width=2)
-
-    def _on_drag(self, event):
-        if self.rect_id is None:
-            return
-        current_x = int(self.canvas.canvasx(event.x))
-        current_y = int(self.canvas.canvasy(event.y))
-        self.canvas.coords(self.rect_id, self.start_x, self.start_y, current_x, current_y)
-
-    def _on_release(self, event):
-        if self.rect_id is None:
-            return
-        end_x = int(self.canvas.canvasx(event.x))
-        end_y = int(self.canvas.canvasy(event.y))
-        x1, x2 = sorted((self.start_x, end_x))
-        y1, y2 = sorted((self.start_y, end_y))
-        if x2 - x1 < self.MIN_SELECTION_SIZE or y2 - y1 < self.MIN_SELECTION_SIZE:
-            self.selection_label_var.set("영역이 너무 작습니다. 조금 더 크게 드래그하세요.")
-            self.canvas.itemconfigure(self.instructions_id, text=self.selection_label_var.get())
-            return
-
-        overlay_width = max(self.canvas.winfo_width(), 1)
-        overlay_height = max(self.canvas.winfo_height(), 1)
-        left = x1 / float(overlay_width)
-        top = y1 / float(overlay_height)
-        right = x2 / float(overlay_width)
-        bottom = y2 / float(overlay_height)
-        self.on_complete({"left": left, "top": top, "right": right, "bottom": bottom})
-        self.window.destroy()
-
-    def _cancel(self, _event=None):
-        if self.on_cancel:
-            self.on_cancel()
-        if self.window.winfo_exists():
-            self.window.destroy()
-
 
 class SessionView:
     """하나의 앱플레이어/봇 세션을 관리합니다."""
@@ -264,7 +137,6 @@ class SessionView:
         },
     }
     REROLL_MAX_TARGETS = 4
-    REROLL_MAX_LOCKED_OPTIONS = 2
     REROLL_TARGET_MODE_EXACT = "exact"
     REROLL_TARGET_MODE_COUNT = "count"
 
@@ -283,12 +155,6 @@ class SessionView:
         self.scanned_devices = {}
         self.selected_device_info = None
         self.current_mode = None
-        self.reroll_use_custom_bounds_var = tk.BooleanVar(value=False)
-        self.reroll_bounds_vars = {
-            key: tk.StringVar(value=f"{value:.3f}")
-            for key, value in EquipmentRerollBot.OPTION_PANEL_BOUNDS.items()
-        }
-        self._reroll_bounds_restore_state = None
         self.input_profile_label_text = "MuMu 앱플레이어 사용 (호환 드래그 사용)"
         self.buy_count_default_label_text = "구매 완료 검증 횟수:"
         self.buy_count_default_unit_text = "회"
@@ -496,6 +362,12 @@ class SessionView:
         self.log_frame = ttk.LabelFrame(self.frame, text="로그", padding=10)
         self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
+        log_header_frame = ttk.Frame(self.log_frame)
+        log_header_frame.pack(fill=tk.X, pady=(0, 5))
+
+        self.clear_log_btn = ttk.Button(log_header_frame, text="로그 클리어", command=self._clear_log)
+        self.clear_log_btn.pack(side=tk.RIGHT)
+
         self.log_text = scrolledtext.ScrolledText(self.log_frame, state="disabled", height=20, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
@@ -505,37 +377,52 @@ class SessionView:
         text_handler.setFormatter(logging.Formatter("%(asctime)s - [%(session_name)s] - %(levelname)s - %(message)s"))
         logging.getLogger().addHandler(text_handler)
 
+    def _clear_log(self):
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.configure(state="disabled")
+
     def _create_reroll_widgets(self):
         self.reroll_settings_frame = ttk.LabelFrame(self.reroll_tab, text="장비 옵션 리롤 설정", padding=10)
         self.reroll_settings_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        ttk.Label(self.reroll_settings_frame, text="잠금 옵션 개수:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.reroll_locked_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
-        self.reroll_locked_count_combo["values"] = [str(index) for index in range(self.REROLL_MAX_LOCKED_OPTIONS + 1)]
-        self.reroll_locked_count_combo.current(0)
-        self.reroll_locked_count_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
-        self.reroll_locked_count_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
+        ttk.Label(self.reroll_settings_frame, text="잠금 행 선택:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.reroll_locked_row_vars = []
+        self.reroll_locked_row_checks = []
+        locked_rows_frame = ttk.Frame(self.reroll_settings_frame)
+        locked_rows_frame.grid(row=0, column=1, columnspan=3, sticky=tk.W, padx=5, pady=5)
+        for row_index in range(self.REROLL_MAX_TARGETS):
+            locked_var = tk.BooleanVar(value=False)
+            locked_check = ttk.Checkbutton(
+                locked_rows_frame,
+                text=f"{row_index + 1}행",
+                variable=locked_var,
+                command=self._on_reroll_target_count_changed,
+            )
+            locked_check.pack(side=tk.LEFT, padx=(0, 6))
+            self.reroll_locked_row_vars.append(locked_var)
+            self.reroll_locked_row_checks.append(locked_check)
 
-        ttk.Label(self.reroll_settings_frame, text="목표 옵션 개수:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="목표 옵션 개수:").grid(row=0, column=4, sticky=tk.W, padx=5, pady=5)
         self.reroll_target_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
         self.reroll_target_count_combo["values"] = [str(index) for index in range(1, self.REROLL_MAX_TARGETS + 1)]
         self.reroll_target_count_combo.current(0)
-        self.reroll_target_count_combo.grid(row=0, column=3, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_count_combo.grid(row=0, column=5, sticky=tk.W, padx=5, pady=5)
         self.reroll_target_count_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
 
-        ttk.Label(self.reroll_settings_frame, text="중지 방식:").grid(row=0, column=4, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="중지 방식:").grid(row=0, column=6, sticky=tk.W, padx=5, pady=5)
         self.reroll_target_mode_combo = ttk.Combobox(self.reroll_settings_frame, width=16, state="readonly")
         self.reroll_target_mode_combo["values"] = ["정확히 일치", "옵션 개수 충족"]
         self.reroll_target_mode_combo.current(0)
-        self.reroll_target_mode_combo.grid(row=0, column=5, sticky=tk.W, padx=5, pady=5)
+        self.reroll_target_mode_combo.grid(row=0, column=7, sticky=tk.W, padx=5, pady=5)
         self.reroll_target_mode_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
         self._last_reroll_target_mode = self._get_reroll_target_mode()
 
-        ttk.Label(self.reroll_settings_frame, text="중지 개수:").grid(row=0, column=6, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(self.reroll_settings_frame, text="중지 개수:").grid(row=0, column=8, sticky=tk.W, padx=5, pady=5)
         self.reroll_required_match_count_combo = ttk.Combobox(self.reroll_settings_frame, width=8, state="readonly")
         self.reroll_required_match_count_combo["values"] = ["1"]
         self.reroll_required_match_count_combo.current(0)
-        self.reroll_required_match_count_combo.grid(row=0, column=7, sticky=tk.W, padx=5, pady=5)
+        self.reroll_required_match_count_combo.grid(row=0, column=9, sticky=tk.W, padx=5, pady=5)
         self.reroll_required_match_count_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)
 
         self.reroll_target_rows = []
@@ -595,25 +482,6 @@ class SessionView:
         self.reroll_threshold_entry.grid(row=6, column=1, sticky=tk.W, padx=5, pady=5)
         ttk.Label(self.reroll_settings_frame, text="%").grid(row=6, column=2, sticky=tk.W)
 
-        self.reroll_bounds_check = ttk.Checkbutton(
-            self.reroll_settings_frame,
-            text="옵션 범위 좌표 사용",
-            variable=self.reroll_use_custom_bounds_var,
-            command=self._update_reroll_bounds_summary,
-        )
-        self.reroll_bounds_check.grid(row=7, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
-
-        self.reroll_bounds_button = ttk.Button(
-            self.reroll_settings_frame,
-            text="영역 선택",
-            command=self._open_reroll_bounds_selector,
-        )
-        self.reroll_bounds_button.grid(row=7, column=2, sticky=tk.W, padx=5, pady=5)
-
-        self.reroll_bounds_label = ttk.Label(self.reroll_settings_frame, text="", foreground="gray")
-        self.reroll_bounds_label.grid(row=7, column=3, columnspan=5, sticky=tk.W, padx=5, pady=5)
-        self._update_reroll_bounds_summary()
-
         reroll_control_frame = ttk.Frame(self.reroll_tab, padding=10)
         reroll_control_frame.pack(fill=tk.X, padx=10, pady=5)
         self.reroll_start_btn = ttk.Button(
@@ -663,97 +531,11 @@ class SessionView:
             target_range = rule["percent_range"] or rule["flat_range"] or (1, 999)
         return target_range
 
-    def _get_reroll_option_panel_bounds(self):
-        bounds = {}
-        try:
-            for key, var in self.reroll_bounds_vars.items():
-                bounds[key] = float(var.get())
-        except (TypeError, ValueError):
-            raise ValueError("옵션 범위 좌표가 올바르지 않습니다.")
-
-        if not (0.0 <= bounds["left"] < bounds["right"] <= 1.0 and 0.0 <= bounds["top"] < bounds["bottom"] <= 1.0):
-            raise ValueError("옵션 범위 좌표는 0~1 사이이며 left < right, top < bottom 이어야 합니다.")
-        return bounds
-
-    def _update_reroll_bounds_summary(self):
-        state = tk.NORMAL if not self.is_running else tk.DISABLED
-        if self.reroll_use_custom_bounds_var.get():
-            try:
-                bounds = self._get_reroll_option_panel_bounds()
-                summary = "left={left:.3f}, top={top:.3f}, right={right:.3f}, bottom={bottom:.3f}".format(**bounds)
-            except ValueError:
-                summary = "좌표가 올바르지 않습니다."
-            self.reroll_bounds_label.config(text=summary)
-            self.reroll_bounds_button.config(state=state)
-        else:
-            default_bounds = EquipmentRerollBot.OPTION_PANEL_BOUNDS
-            summary = "기본값 사용: left={left:.3f}, top={top:.3f}, right={right:.3f}, bottom={bottom:.3f}".format(**default_bounds)
-            self.reroll_bounds_label.config(text=summary)
-            self.reroll_bounds_button.config(state=tk.DISABLED)
-
-    def _open_reroll_bounds_selector(self):
-        if not self.adb_controller:
-            messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
-            return
-
-        if os.name != "nt":
-            messagebox.showerror("오류", "투명 오버레이 영역 선택은 현재 Windows에서만 지원합니다.")
-            return
-
-        confirmed = messagebox.askokcancel(
-            "옵션 범위 선택",
-            "확인을 누른 뒤 3초 안에 앱플레이어 창을 클릭하세요.\n"
-            "선택한 창 위에 투명 오버레이를 띄워 영역을 지정합니다.",
-        )
-        if not confirmed:
-            return
-
-        self._reroll_bounds_restore_state = self.root.state()
-        self.root.iconify()
-        self.root.after(3000, self._launch_reroll_bounds_overlay)
-
-    def _launch_reroll_bounds_overlay(self):
-        try:
-            window_bounds = _get_foreground_window_bounds()
-            root_hwnd = int(self.root.winfo_id())
-            if not window_bounds or window_bounds["hwnd"] == root_hwnd:
-                raise RuntimeError("앱플레이어 창을 찾지 못했습니다. 앱플레이어 창을 먼저 클릭한 뒤 다시 시도해주세요.")
-
-            AreaSelectionDialog(
-                self.frame,
-                window_bounds,
-                f"{self.name} 옵션 범위 선택",
-                self._finish_reroll_bounds_selection,
-                on_cancel=self._restore_after_reroll_bounds_overlay,
-            )
-        except Exception as exc:
-            self._restore_after_reroll_bounds_overlay()
-            messagebox.showerror("오류", f"앱플레이어 오버레이를 준비하지 못했습니다.\n{exc}")
-
-    def _apply_reroll_bounds_selection(self, bounds):
-        for key, value in bounds.items():
-            self.reroll_bounds_vars[key].set(f"{value:.3f}")
-        self.reroll_use_custom_bounds_var.set(True)
-        self._update_reroll_bounds_summary()
-
-    def _finish_reroll_bounds_selection(self, bounds):
-        self._apply_reroll_bounds_selection(bounds)
-        self._restore_after_reroll_bounds_overlay()
-
-    def _restore_after_reroll_bounds_overlay(self):
-        restore_state = self._reroll_bounds_restore_state
-        self._reroll_bounds_restore_state = None
-        self.root.deiconify()
-        if restore_state == "zoomed":
-            self.root.state("zoomed")
-        self.root.lift()
-        self.root.focus_force()
+    def _get_reroll_locked_rows(self):
+        return [index for index, var in enumerate(self.reroll_locked_row_vars) if var.get()]
 
     def _get_reroll_locked_count(self):
-        try:
-            return int(self.reroll_locked_count_combo.get())
-        except (TypeError, ValueError):
-            return 0
+        return len(self._get_reroll_locked_rows())
 
     def _get_reroll_target_count(self):
         try:
@@ -775,7 +557,7 @@ class SessionView:
     def _get_reroll_max_selectable_targets(self):
         return max(1, self.REROLL_MAX_TARGETS - self._get_reroll_locked_count())
 
-    def _on_reroll_target_count_changed(self, event):
+    def _on_reroll_target_count_changed(self, event=None):
         current_mode = self._get_reroll_target_mode()
         reset_defaults = current_mode != getattr(self, "_last_reroll_target_mode", current_mode)
         self._last_reroll_target_mode = current_mode
@@ -1169,14 +951,16 @@ class SessionView:
                 delay_before_reroll = float(self.reroll_delay_entry.get())
                 threshold = int(self.reroll_threshold_entry.get()) / 100.0
                 active_target_count = self._get_reroll_target_count()
+                locked_rows = self._get_reroll_locked_rows()
                 locked_option_count = self._get_reroll_locked_count()
-                option_panel_bounds = self._get_reroll_option_panel_bounds() if self.reroll_use_custom_bounds_var.get() else None
                 if max_rerolls <= 0 or delay_before_reroll < 0:
                     raise ValueError()
+                if locked_option_count >= self.REROLL_MAX_TARGETS:
+                    raise ValueError("최소 1개 행은 리롤 대상으로 남아 있어야 합니다.")
                 if active_target_count < 1:
                     raise ValueError("목표 옵션은 최소 1개 이상이어야 합니다.")
                 if active_target_count > self.REROLL_MAX_TARGETS - locked_option_count:
-                    raise ValueError(f"잠금 옵션 {locked_option_count}개일 때 목표 옵션은 최대 {self.REROLL_MAX_TARGETS - locked_option_count}개까지 설정할 수 있습니다.")
+                    raise ValueError(f"잠금 행 {locked_option_count}개일 때 목표 옵션은 최대 {self.REROLL_MAX_TARGETS - locked_option_count}개까지 설정할 수 있습니다.")
                 if not 0.7 <= threshold <= 0.99:
                     raise ValueError("이미지 매칭 정확도는 70~99 사이여야 합니다.")
                 target_mode = self._get_reroll_target_mode()
@@ -1214,12 +998,12 @@ class SessionView:
                 target_mode=target_mode,
                 required_match_count=required_match_count,
                 locked_option_count=locked_option_count,
+                locked_rows=locked_rows,
                 max_rerolls=max_rerolls,
                 delay_before_reroll=delay_before_reroll,
                 threshold=threshold,
                 debug_mode=self.debug_mode_var.get(),
                 runtime_dir=self.runtime_dir,
-                option_panel_bounds=option_panel_bounds,
             )
             startup_error = self.bot.get_startup_error()
             if startup_error:
@@ -1507,7 +1291,8 @@ class SessionView:
 
     def _set_reroll_settings_state(self, state):
         combo_state = "disabled" if state == tk.DISABLED else "readonly"
-        self.reroll_locked_count_combo.config(state=combo_state)
+        for locked_check in self.reroll_locked_row_checks:
+            locked_check.config(state=state)
         self.reroll_target_count_combo.config(state=combo_state)
         self.reroll_target_mode_combo.config(state=combo_state)
         for row in self.reroll_target_rows:
@@ -1515,9 +1300,7 @@ class SessionView:
         self.reroll_max_entry.config(state=state)
         self.reroll_delay_entry.config(state=state)
         self.reroll_threshold_entry.config(state=state)
-        self.reroll_bounds_check.config(state=state)
         self._update_reroll_target_count_controls()
-        self._update_reroll_bounds_summary()
 
     def _test_image_matching(self):
         with log_session(self.name):

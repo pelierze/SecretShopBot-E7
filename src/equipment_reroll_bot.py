@@ -114,13 +114,19 @@ class EquipmentRerollBot:
     }
 
     OPTION_PANEL_BOUNDS = {
-        "left": 0.405,
-        "top": 0.18,
-        "right": 0.655,
-        "bottom": 0.545,
+        "left": 0.435938,
+        "top": 0.258333,
+        "right": 0.646875,
+        "bottom": 0.518056,
     }
+    DEFAULT_ROW_BOUNDS = [
+        {"left": 0.435938, "top": 0.258333, "right": 0.646875, "bottom": 0.322222},
+        {"left": 0.435938, "top": 0.323611, "right": 0.646875, "bottom": 0.387500},
+        {"left": 0.435938, "top": 0.388889, "right": 0.646875, "bottom": 0.452778},
+        {"left": 0.435938, "top": 0.454167, "right": 0.646875, "bottom": 0.518056},
+    ]
     ROW_COUNT = 4
-    ROW_VERTICAL_PADDING_RATIO = 0.08
+    ROW_VERTICAL_PADDING_RATIO = 0.0
     OPTION_MATCH_WIDTH_RATIO = 0.78
     OPTION_MATCH_VERTICAL_MARGIN_RATIO = 0.2
     OPTION_RECOGNITION_RETRY_COUNT = 2
@@ -139,20 +145,25 @@ class EquipmentRerollBot:
         target_specs: List[Dict],
         target_mode: str,
         required_match_count: int,
-        locked_option_count: int,
         max_rerolls: int,
         delay_before_reroll: float,
+        locked_option_count: int = 0,
         threshold: float = 0.9,
         debug_mode: bool = False,
         base_dir: str = None,
         runtime_dir=None,
         option_panel_bounds: Dict[str, float] = None,
+        locked_rows: Optional[List[int]] = None,
     ):
         self.adb = adb_controller
         self.target_specs = self._normalize_target_specs(target_specs)
         self.target_mode = target_mode if target_mode in (self.TARGET_MODE_EXACT, self.TARGET_MODE_COUNT) else self.TARGET_MODE_EXACT
         self.required_match_count = max(1, int(required_match_count))
-        self.locked_option_count = max(0, int(locked_option_count))
+        self.locked_rows = self._normalize_locked_rows(locked_rows)
+        if self.locked_rows:
+            self.locked_option_count = len(self.locked_rows)
+        else:
+            self.locked_option_count = max(0, int(locked_option_count))
         self.max_rerolls = max_rerolls
         self.delay_before_reroll = delay_before_reroll
         self.threshold = threshold
@@ -250,6 +261,20 @@ class EquipmentRerollBot:
             return dict(self.OPTION_PANEL_BOUNDS)
         return normalized
 
+    def _normalize_locked_rows(self, locked_rows: Optional[List[int]]) -> List[int]:
+        if not locked_rows:
+            return []
+
+        normalized = []
+        for row_index in locked_rows:
+            try:
+                normalized_index = int(row_index)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= normalized_index < self.ROW_COUNT and normalized_index not in normalized:
+                normalized.append(normalized_index)
+        return sorted(normalized)
+
     def _find_image_file(self, base_name: str) -> Optional[Path]:
         directory = self.resource_dir / self.ASSET_DIR
         exact_path = directory / base_name
@@ -294,14 +319,24 @@ class EquipmentRerollBot:
 
         target_summary = ", ".join(self._format_target_spec(spec) for spec in self.target_specs)
         mode_label = "정확히 일치" if self.target_mode == self.TARGET_MODE_EXACT else f"옵션 개수 충족 ({self.required_match_count}개)"
-        logger.info(
-            "장비 옵션 리롤 시작 - 잠금 옵션: %s개, 중지 방식: %s, 목표: %s, 최대 리롤: %s회, 리롤 전 대기 %.1f초",
-            self.locked_option_count,
-            mode_label,
-            target_summary,
-            self.max_rerolls,
-            self.delay_before_reroll,
-        )
+        if self.locked_rows:
+            logger.info(
+                "장비 옵션 리롤 시작 - 잠금 행: %s, 중지 방식: %s, 목표: %s, 최대 리롤: %s회, 리롤 전 대기 %.1f초",
+                ", ".join(str(index + 1) for index in self.locked_rows),
+                mode_label,
+                target_summary,
+                self.max_rerolls,
+                self.delay_before_reroll,
+            )
+        else:
+            logger.info(
+                "장비 옵션 리롤 시작 - 잠금 옵션: %s개, 중지 방식: %s, 목표: %s, 최대 리롤: %s회, 리롤 전 대기 %.1f초",
+                self.locked_option_count,
+                mode_label,
+                target_summary,
+                self.max_rerolls,
+                self.delay_before_reroll,
+            )
 
         for attempt in range(1, self.max_rerolls + 1):
             if self.user_action == "stop":
@@ -416,13 +451,24 @@ class EquipmentRerollBot:
             {"vertical_margin_multiplier": 2.0, "threshold_override": max(self.threshold - 0.08, 0.65)},
         )
         for retry_index, retry_config in enumerate(retry_configs[: self.OPTION_RECOGNITION_RETRY_COUNT], start=1):
-            logger.warning(
-                "옵션 인식 결과가 부족하여 재인식을 시도합니다. (%s/%s, 현재 %s개 / 기대 %s개)",
-                retry_index,
-                min(self.OPTION_RECOGNITION_RETRY_COUNT, len(retry_configs)),
-                len(merged_results),
-                self._expected_visible_option_count(),
-            )
+            retry_reason = self._get_option_retry_reason(merged_results) or {}
+            if retry_reason.get("type") == "target_shortage":
+                logger.warning(
+                    "목표 옵션 인식이 부족하여 재인식을 시도합니다. (%s/%s, 현재 목표 %s개 / 필요 목표 %s개, 전체 %s개)",
+                    retry_index,
+                    min(self.OPTION_RECOGNITION_RETRY_COUNT, len(retry_configs)),
+                    retry_reason.get("target_hits", 0),
+                    retry_reason.get("required_target_hits", 0),
+                    retry_reason.get("current_count", len(merged_results)),
+                )
+            else:
+                logger.warning(
+                    "옵션 인식 개수가 부족하여 재인식을 시도합니다. (%s/%s, 현재 %s개 / 기대 %s개)",
+                    retry_index,
+                    min(self.OPTION_RECOGNITION_RETRY_COUNT, len(retry_configs)),
+                    retry_reason.get("current_count", len(merged_results)),
+                    retry_reason.get("expected_count", self._expected_visible_option_count()),
+                )
             retry_results = self._scan_target_rows_once(
                 screen,
                 target_templates,
@@ -445,16 +491,29 @@ class EquipmentRerollBot:
     ) -> List[Dict]:
         rows = self._get_row_bounds(screen.shape[1], screen.shape[0])
         desired_options = {spec["option"] for spec in self.target_specs}
+        preferred_templates = {key: template for key, template in target_templates.items() if key in desired_options}
+        fallback_templates = {key: template for key, template in target_templates.items() if key not in desired_options}
         results = []
         for row_index, bounds in enumerate(rows):
+            if row_index in self.locked_rows:
+                continue
             best_match = self._find_best_target_option_in_row(
                 screen,
                 bounds,
-                target_templates,
+                preferred_templates,
                 row_index,
                 vertical_margin_multiplier=vertical_margin_multiplier,
                 threshold_override=threshold_override,
             )
+            if best_match is None and fallback_templates:
+                best_match = self._find_best_target_option_in_row(
+                    screen,
+                    bounds,
+                    fallback_templates,
+                    row_index,
+                    vertical_margin_multiplier=vertical_margin_multiplier,
+                    threshold_override=threshold_override,
+                )
             if best_match is None:
                 continue
 
@@ -480,13 +539,21 @@ class EquipmentRerollBot:
                 }
             )
             detected_value = f"{value}{'%' if has_percent else ''}" if value is not None else "없음"
-            logger.info(
-                "대상 옵션 발견 - 행 %s, 옵션: %s, 위치: %s, 인식 숫자: %s",
-                row_index + 1,
-                self._target_option_label(best_match["option"]),
-                best_match["box"],
-                detected_value,
-            )
+            if best_match["option"] in desired_options:
+                logger.info(
+                    "대상 옵션 발견 - 행 %s, 옵션: %s, 위치: %s, 인식 숫자: %s",
+                    row_index + 1,
+                    self._target_option_label(best_match["option"]),
+                    best_match["box"],
+                    detected_value,
+                )
+            else:
+                logger.info(
+                    "보조 옵션 발견 - 행 %s, 옵션: %s, 위치: %s",
+                    row_index + 1,
+                    self._target_option_label(best_match["option"]),
+                    best_match["box"],
+                )
         return results
 
     def _merge_row_results(self, base_results: List[Dict], retry_results: List[Dict]) -> List[Dict]:
@@ -504,11 +571,35 @@ class EquipmentRerollBot:
         return [merged[index] for index in sorted(merged)]
 
     def _expected_visible_option_count(self) -> int:
+        if self.locked_rows:
+            return max(1, self.ROW_COUNT - len(self.locked_rows))
         return max(1, self.ROW_COUNT - min(max(self.locked_option_count, 0), self.ROW_COUNT))
 
     def _should_retry_option_recognition(self, row_results: List[Dict]) -> bool:
+        return self._get_option_retry_reason(row_results) is not None
+
+    def _get_option_retry_reason(self, row_results: List[Dict]) -> Optional[Dict[str, int]]:
         expected_count = self._expected_visible_option_count()
-        return len(row_results) < expected_count
+        visible_count = len(row_results)
+        if visible_count < expected_count:
+            return {
+                "type": "count_shortage",
+                "current_count": visible_count,
+                "expected_count": expected_count,
+            }
+
+        desired_options = {spec["option"] for spec in self.target_specs}
+        required_target_hits = min(len(desired_options), expected_count)
+        target_hits = sum(1 for row in row_results if row["option"] in desired_options)
+        if target_hits < required_target_hits:
+            return {
+                "type": "target_shortage",
+                "current_count": visible_count,
+                "expected_count": expected_count,
+                "target_hits": target_hits,
+                "required_target_hits": required_target_hits,
+            }
+        return None
 
     def _find_best_target_option_in_row(
         self,
@@ -606,6 +697,19 @@ class EquipmentRerollBot:
         return (max_loc[0], max_loc[1], width, height), float(max_val)
 
     def _get_row_bounds(self, screen_width: int, screen_height: int) -> List[Tuple[int, int, int, int]]:
+        if self.option_panel_bounds == self.OPTION_PANEL_BOUNDS:
+            bounds = []
+            for row_bounds in self.DEFAULT_ROW_BOUNDS:
+                bounds.append(
+                    (
+                        int(round(screen_width * row_bounds["left"])),
+                        int(round(screen_height * row_bounds["top"])),
+                        int(round(screen_width * row_bounds["right"])),
+                        int(round(screen_height * row_bounds["bottom"])),
+                    )
+                )
+            return bounds
+
         x1 = int(screen_width * self.option_panel_bounds["left"])
         y1 = int(screen_height * self.option_panel_bounds["top"])
         x2 = int(screen_width * self.option_panel_bounds["right"])
@@ -638,8 +742,8 @@ class EquipmentRerollBot:
 
         option_center_y = option_y + (option_h // 2)
         target_height = max(int(option_h * self.NUMBER_SCAN_HEIGHT_RATIO), option_h + 12)
-        number_y1 = max(y1, option_center_y - (target_height // 2))
-        number_y2 = min(y2, option_center_y + (target_height // 2))
+        number_y1 = max(0, option_center_y - (target_height // 2))
+        number_y2 = min(screen.shape[0], option_center_y + (target_height // 2))
         if number_y2 <= number_y1:
             number_y1, number_y2 = y1, y2
 

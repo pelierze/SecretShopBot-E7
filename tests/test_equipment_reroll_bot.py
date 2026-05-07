@@ -34,6 +34,7 @@ class EquipmentRerollBotTest(unittest.TestCase):
         bot.OCR_ONE_MAX_WIDTH_RATIO = EquipmentRerollBot.OCR_ONE_MAX_WIDTH_RATIO
         bot.REROLL_BUTTON_RETRY_COUNT = EquipmentRerollBot.REROLL_BUTTON_RETRY_COUNT
         bot.locked_option_count = 0
+        bot.locked_rows = []
         return bot
 
     def test_get_row_bounds_splits_right_option_panel_into_four_rows(self):
@@ -44,6 +45,10 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(len(rows), 4)
         self.assertTrue(all(row[0] < row[2] and row[1] < row[3] for row in rows))
         self.assertTrue(all(rows[index][1] < rows[index + 1][1] for index in range(3)))
+        self.assertEqual(rows[0], (558, 186, 828, 232))
+        self.assertEqual(rows[1], (558, 233, 828, 279))
+        self.assertEqual(rows[2], (558, 280, 828, 326))
+        self.assertEqual(rows[3], (558, 327, 828, 373))
 
     def test_normalize_option_panel_bounds_accepts_custom_selection(self):
         bot = self._make_bot()
@@ -174,6 +179,25 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(value, 8)
         self.assertTrue(has_percent)
 
+    def test_read_row_numeric_value_uses_option_box_center_even_if_box_is_above_row_bounds(self):
+        bot = self._make_bot()
+        screen = np.zeros((400, 160, 3), dtype=np.uint8)
+        captured_roi_heights = []
+
+        def fake_build_variants(number_roi, scale_multiplier=1.0):
+            captured_roi_heights.append(number_roi.shape[0])
+            return []
+
+        bot._build_ocr_variants = fake_build_variants
+        bot._collect_numeric_candidate_scores = lambda _processed_images: {}
+        bot._analyze_numeric_shape = lambda _roi: None
+
+        value, has_percent = bot._read_row_numeric_value(screen, (0, 304, 160, 356), (0, 293, 30, 18), 2, "speed")
+
+        self.assertIsNone(value)
+        self.assertFalse(has_percent)
+        self.assertGreaterEqual(captured_roi_heights[0], 28)
+
     def test_scan_target_rows_once_skips_numeric_ocr_for_non_target_options(self):
         bot = self._make_bot()
         bot.target_specs = [{"option": "speed", "value": 4, "is_percent": False}]
@@ -225,6 +249,74 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual(len(results), 2)
         self.assertEqual(sorted(row["row_index"] for row in results), [0, 1])
+
+    def test_should_retry_option_recognition_when_target_hits_are_short(self):
+        bot = self._make_bot()
+        bot.locked_rows = [0, 3]
+        bot.target_specs = [
+            {"option": "life", "value": 180, "is_percent": False},
+            {"option": "speed", "value": 2, "is_percent": False},
+        ]
+
+        should_retry = bot._should_retry_option_recognition(
+            [
+                {"row_index": 1, "option": "life", "value": None, "is_percent": False},
+                {"row_index": 2, "option": "crit_damage", "value": None, "is_percent": True},
+            ]
+        )
+
+        self.assertTrue(should_retry)
+
+    def test_scan_target_rows_once_skips_user_locked_rows(self):
+        bot = self._make_bot()
+        bot.locked_rows = [0, 2]
+        bot.target_specs = [{"option": "speed", "value": 4, "is_percent": False}]
+        bot._get_row_bounds = lambda _width, _height: [(0, 0, 100, 20), (0, 20, 100, 40), (0, 40, 100, 60), (0, 60, 100, 80)]
+        seen_rows = []
+
+        def fake_find(_screen, _bounds, _templates, row_index, **_kwargs):
+            seen_rows.append(row_index)
+            return {"option": "speed", "box": (10, row_index * 10, 30, 10), "similarity": 0.9}
+
+        bot._find_best_target_option_in_row = fake_find
+        bot._read_row_numeric_value = lambda *_args, **_kwargs: (4, False)
+
+        results = bot._scan_target_rows_once(
+            np.zeros((100, 120, 3), dtype=np.uint8),
+            {"speed": np.zeros((10, 10, 3), dtype=np.uint8)},
+            read_numeric=True,
+        )
+
+        self.assertEqual(seen_rows, [1, 3])
+        self.assertEqual([row["row_index"] for row in results], [1, 3])
+
+    def test_scan_target_rows_once_prefers_target_templates_before_fallback(self):
+        bot = self._make_bot()
+        bot.locked_rows = []
+        bot.target_specs = [{"option": "speed", "value": 4, "is_percent": False}]
+        bot._get_row_bounds = lambda _width, _height: [(0, 0, 100, 20)]
+        call_order = []
+
+        def fake_find(_screen, _bounds, templates, _row_index, **_kwargs):
+            call_order.append(sorted(templates.keys()))
+            if "speed" in templates:
+                return {"option": "speed", "box": (10, 2, 30, 10), "similarity": 0.91}
+            return {"option": "crit_damage", "box": (12, 3, 30, 10), "similarity": 0.99}
+
+        bot._find_best_target_option_in_row = fake_find
+        bot._read_row_numeric_value = lambda *_args, **_kwargs: (4, False)
+
+        results = bot._scan_target_rows_once(
+            np.zeros((50, 120, 3), dtype=np.uint8),
+            {
+                "speed": np.zeros((10, 10, 3), dtype=np.uint8),
+                "crit_damage": np.zeros((10, 10, 3), dtype=np.uint8),
+            },
+            read_numeric=True,
+        )
+
+        self.assertEqual(call_order, [["speed"]])
+        self.assertEqual(results[0]["option"], "speed")
 
     def test_normalize_target_option_supports_added_options(self):
         bot = self._make_bot()
