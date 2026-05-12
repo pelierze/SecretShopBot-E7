@@ -167,6 +167,7 @@ class SecretShopBot:
         self.swipe_x = int(self.screen_width * float(swipe_settings.get("x_ratio", 0.75)))
         self.swipe_start_y = int(self.screen_height * float(swipe_settings.get("start_y_ratio", 0.75)))
         self.swipe_end_y = int(self.screen_height * float(swipe_settings.get("end_y_ratio", 0.25)))
+        self.refresh_recovery_attempts = int(self.timings.get("refresh_recovery_attempts", 1))
 
     def _build_item_definitions(self) -> Dict[str, Dict[str, str]]:
         defaults = {
@@ -323,12 +324,12 @@ class SecretShopBot:
             
             # 상점 리프레시
             if refresh_num < max_refresh_count - 1:  # 마지막 회차가 아니면
-                if self._refresh_shop():
+                if self._refresh_shop_with_recovery():
                     self.stats["successful_refreshes"] += 1
                     time.sleep(self._timing("after_refresh", 1.0))  # 리프레시 후 대기
                 else:
-                    logger.error("⚠️  상점 갱신에 실패했습니다. 다시 시도합니다...")
-                    time.sleep(self._timing("refresh_retry", 2.0))  # 실패 시 조금 더 대기
+                    logger.error("Refresh recovery failed; stopping to avoid repeated scroll-only loops.")
+                    return self._finish_stats()
         
         self._finish_stats()
         
@@ -687,6 +688,32 @@ class SecretShopBot:
                     logger.error(f"💡 디버그 스크린샷: {debug_path}")
             return False
 
+    def _refresh_shop_with_recovery(self) -> bool:
+        if self._refresh_shop():
+            return True
+
+        if self.user_action == "stop":
+            return False
+
+        recovery_attempts = max(0, int(getattr(self, "refresh_recovery_attempts", 1)))
+        for attempt in range(recovery_attempts):
+            logger.warning(
+                "Refresh failed after scanning page 2; resetting scroll before retry (%s/%s).",
+                attempt + 1,
+                recovery_attempts,
+            )
+            self._scroll_up()
+            time.sleep(self._timing("refresh_retry", 2.0))
+
+            if self._refresh_shop():
+                logger.info("Refresh succeeded after resetting the scroll position.")
+                return True
+
+            if self.user_action == "stop":
+                return False
+
+        return False
+
     def _click_button_with_retry(
         self,
         button_type: str,
@@ -826,6 +853,31 @@ class SecretShopBot:
 
         logger.info("화면 스크롤 1회 시도 완료")
     
+    def _scroll_up(self):
+        """Restore the first-page position before retrying a failed refresh."""
+        logger.info(
+            "화면 복구 스크롤 시도 1/1 - (%s, %s) -> (%s, %s), duration=%sms",
+            self.swipe_x,
+            self.swipe_end_y,
+            self.swipe_x,
+            self.swipe_start_y,
+            self.swipe_duration,
+        )
+
+        success = self.adb.swipe(
+            self.swipe_x,
+            self.swipe_end_y,
+            self.swipe_x,
+            self.swipe_start_y,
+            duration=self.swipe_duration,
+            delay=0.5,
+        )
+
+        if success:
+            logger.info("화면 복구 스크롤 시도 1/1 성공")
+        else:
+            logger.warning("화면 복구 스크롤 시도 1/1 실패")
+
     def set_user_action(self, action: str):
         """
         사용자 액션 설정 (GUI에서 호출)

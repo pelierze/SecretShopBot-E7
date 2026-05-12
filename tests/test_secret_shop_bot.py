@@ -60,6 +60,38 @@ class SecretShopBotScrollTest(unittest.TestCase):
         self.assertEqual(args, (960, 540, 960, 180))
         self.assertEqual(kwargs, {"duration": 1000, "delay": 0.5})
 
+    def test_scroll_up_calls_single_swipe_once(self):
+        bot = object.__new__(SecretShopBot)
+        bot.adb = DummyADB()
+        bot.swipe_x = 960
+        bot.swipe_start_y = 540
+        bot.swipe_end_y = 180
+        bot.swipe_duration = 1000
+
+        bot._scroll_up()
+
+        self.assertEqual(len(bot.adb.calls), 1)
+        args, kwargs = bot.adb.calls[0]
+        self.assertEqual(args, (960, 180, 960, 540))
+        self.assertEqual(kwargs, {"duration": 1000, "delay": 0.5})
+
+    @patch("src.secret_shop_bot.time.sleep", return_value=None)
+    def test_refresh_shop_with_recovery_scrolls_up_before_retry(self, _sleep):
+        bot = object.__new__(SecretShopBot)
+        bot.user_action = None
+        bot.refresh_recovery_attempts = 1
+        bot.timings = {"refresh_retry": 2.0}
+        bot._timing = SecretShopBot._timing.__get__(bot, SecretShopBot)
+
+        attempts = []
+        bot._refresh_shop = lambda: attempts.append("refresh") or len(attempts) >= 2
+        bot._scroll_up = lambda: attempts.append("scroll_up")
+
+        result = bot._refresh_shop_with_recovery()
+
+        self.assertTrue(result)
+        self.assertEqual(attempts, ["refresh", "scroll_up", "refresh"])
+
     @patch("src.secret_shop_bot.time.sleep", return_value=None)
     def test_refresh_shop_retries_confirm_button_before_failing(self, _sleep):
         bot = object.__new__(SecretShopBot)
