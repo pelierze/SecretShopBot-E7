@@ -7,7 +7,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -42,12 +42,17 @@ class PenguinBot:
 
     EGG_MIN_X = 42
     EGG_MAX_X = 344
-    EGG_LINE_PADDING = 36
     EGG_MATCH_SCALES = (0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0)
     POPUP_FIFTY_CHECK_ROI = (540, 380, 740, 470)
     POPUP_MAX_BUTTON_ROI = (840, 430, 980, 520)
     POPUP_FINAL_BUY_ROI = (700, 540, 940, 630)
     POPUP_FINAL_BUY_SCALES = (0.95, 1.0, 1.05, 1.1, 1.15)
+
+    CYCLE_RETRY_COUNT = 3
+    SCREEN_RETRY_COUNT = 3
+    POPUP_RETRY_COUNT = 4
+    RESULT_RETRY_COUNT = 5
+    RETRY_INTERVAL = 0.7
 
     DEFAULT_THRESHOLDS = {
         "egg": 0.9,
@@ -76,7 +81,6 @@ class PenguinBot:
         self.screenshot_path = self.runtime_dir / "penguin_screen.png"
         self.user_action = None
         self.paused = False
-        self.screen_width, self.screen_height = self.adb.get_screen_size()
         self._template_cache: Dict[str, np.ndarray] = {}
         self.stats = {
             "cycles_completed": 0,
@@ -89,110 +93,196 @@ class PenguinBot:
 
     def run(self) -> Dict:
         self.stats["start_time"] = time.time()
-        logger.info("펭귄 구매 자동화를 시작합니다. 목표 사이클: %s회", self.cycle_count)
+        logger.info("펭귄런을 시작합니다. 목표 사이클: %s회", self.cycle_count)
 
         for cycle_index in range(1, self.cycle_count + 1):
             if not self._wait_if_paused():
                 return self._finish_stats()
             if self.user_action == "stop":
-                logger.info("사용자 요청으로 펭귄 구매를 중지합니다.")
+                logger.info("사용자 요청으로 펭귄런을 중지합니다.")
                 return self._finish_stats()
 
-            logger.info("펭귄 구매 사이클 %s/%s", cycle_index, self.cycle_count)
-            success = self._run_single_cycle()
-            if not success:
-                logger.error("펭귄 구매 사이클 %s에서 중단합니다.", cycle_index)
+            logger.info("펭귄런 사이클 %s/%s", cycle_index, self.cycle_count)
+            if not self._run_single_cycle_with_retry(cycle_index):
+                logger.error("펭귄런 사이클 %s에서 재시도 후에도 진행하지 못해 중지합니다.", cycle_index)
                 return self._finish_stats()
             self.stats["cycles_completed"] = cycle_index
 
-        logger.info("펭귄 구매 자동화를 완료했습니다.")
+        logger.info("펭귄런을 완료했습니다.")
         return self._finish_stats()
 
+    def _run_single_cycle_with_retry(self, cycle_index: int) -> bool:
+        for attempt in range(1, self.CYCLE_RETRY_COUNT + 1):
+            if not self._wait_if_paused():
+                return False
+            if self.user_action == "stop":
+                return False
+            if self._run_single_cycle():
+                return True
+            if attempt < self.CYCLE_RETRY_COUNT:
+                logger.warning(
+                    "펭귄런 사이클 %s에서 이미지를 놓쳐 %s/%s회 재시도합니다.",
+                    cycle_index,
+                    attempt,
+                    self.CYCLE_RETRY_COUNT,
+                )
+                if not self._sleep_with_stop(self.RETRY_INTERVAL):
+                    return False
+        return False
+
     def _run_single_cycle(self) -> bool:
-        if not self._capture_screen("펭귄 알 탐색"):
-            return False
-
-        screen = read_image(str(self.screenshot_path), cv2.IMREAD_COLOR)
-        if screen is None:
-            logger.error("펭귄 스크린샷을 불러오지 못했습니다: %s", self.screenshot_path)
-            return False
-
-        egg_match = self._find_egg_match(screen)
+        egg_match = self._retry_match(
+            "펭귄 알",
+            self._find_egg_match,
+            context="펭귄 알 탐색",
+            attempts=self.SCREEN_RETRY_COUNT,
+        )
         if not egg_match:
             logger.warning("지정한 X축 범위(42~344) 안에서 펭귄 알을 찾지 못했습니다.")
             return False
 
-        buy_match = self._find_buy_button_for_egg(screen, egg_match)
+        buy_match = self._retry_match(
+            "펭귄 구매 버튼",
+            lambda screen: self._find_buy_button_for_egg(screen, egg_match),
+            context="펭귄 구매 버튼 탐색",
+            attempts=self.SCREEN_RETRY_COUNT,
+        )
         if not buy_match:
-            logger.warning("펭귄 알이 있는 줄에서 구매 버튼을 찾지 못했습니다.")
+            logger.warning("펭귄이 있는 칸 아래의 구매 버튼을 찾지 못했습니다.")
             return False
 
         if not self._tap_box(buy_match, "펭귄 구매 버튼"):
             return False
         self.stats["purchase_attempts"] += 1
-        time.sleep(0.5)
-
-        if not self._capture_screen("구매 팝업 확인"):
+        if not self._sleep_with_stop(0.5):
             return False
-        popup_screen = read_image(str(self.screenshot_path), cv2.IMREAD_COLOR)
+
+        popup_screen = self._capture_purchase_popup()
         if popup_screen is None:
-            logger.error("구매 팝업 스크린샷을 불러오지 못했습니다.")
+            logger.warning("구매 팝업을 확인하지 못했습니다.")
             return False
 
         if not self._has_popup_fifty_check(popup_screen):
-            logger.info("50 / 50 상태가 아니어서 최대 버튼을 누릅니다.")
+            logger.info("50 / 50 상태가 아니라 최대 버튼을 누릅니다.")
             max_match = self._find_popup_max_button(popup_screen)
-            if not max_match:
+            if max_match is None:
+                popup_screen = self._capture_purchase_popup()
+                if popup_screen is not None:
+                    max_match = self._find_popup_max_button(popup_screen)
+            if max_match is None:
                 logger.warning("최대 버튼을 찾지 못했습니다.")
                 return False
             if not self._tap_box(max_match, "최대 버튼"):
                 return False
-            time.sleep(0.4)
-            if not self._capture_screen("최대 수량 적용 후 구매 버튼 확인"):
+            if not self._sleep_with_stop(0.4):
                 return False
-            popup_screen = read_image(str(self.screenshot_path), cv2.IMREAD_COLOR)
+            popup_screen = self._capture_purchase_popup()
             if popup_screen is None:
-                logger.error("최대 수량 적용 후 팝업 스크린샷을 불러오지 못했습니다.")
+                logger.warning("최대 버튼을 누른 뒤 구매 팝업을 다시 확인하지 못했습니다.")
                 return False
 
-        confirm_buy_match = self._find_popup_final_buy_button(popup_screen)
-        if not confirm_buy_match:
+        final_buy_match = self._find_popup_final_buy_button(popup_screen)
+        if final_buy_match is None:
+            popup_screen = self._capture_purchase_popup()
+            if popup_screen is not None:
+                final_buy_match = self._find_popup_final_buy_button(popup_screen)
+        if final_buy_match is None:
             logger.warning("팝업 안에서 최종 구매 버튼을 찾지 못했습니다.")
             return False
-        if not self._tap_box(confirm_buy_match, "최종 구매 버튼"):
+        if not self._tap_box(final_buy_match, "최종 구매 버튼"):
             return False
-        time.sleep(0.7)
+        if not self._sleep_with_stop(0.8):
+            return False
 
-        if not self._capture_screen("구매 완료 팝업 닫기"):
-            return False
-        result_screen = read_image(str(self.screenshot_path), cv2.IMREAD_COLOR)
+        result_screen = self._capture_result_popup()
         if result_screen is None:
-            logger.error("구매 완료 팝업 스크린샷을 불러오지 못했습니다.")
+            logger.warning("구매 완료 팝업을 확인하지 못했습니다.")
             return False
 
         close_match = self._find_best_match(result_screen, self.CLOSE_IMAGE, self.thresholds["close"])
-        if not close_match:
-            logger.warning("구매 완료 팝업의 닫기 화살표를 찾지 못했습니다.")
+        if close_match is None:
+            result_screen = self._capture_result_popup()
+            if result_screen is not None:
+                close_match = self._find_best_match(result_screen, self.CLOSE_IMAGE, self.thresholds["close"])
+        if close_match is None:
+            logger.warning("구매 완료 팝업의 아래 화살표를 찾지 못했습니다.")
             return False
         if not self._tap_box(close_match, "구매 완료 팝업 닫기"):
             return False
 
         self.stats["penguins_bought"] += 1
-        time.sleep(0.5)
-        return True
+        return self._sleep_with_stop(0.5)
 
-    def _wait_if_paused(self) -> bool:
-        while self.paused:
-            if self.user_action == "stop":
-                return False
-            time.sleep(0.1)
-        return True
+    def _capture_purchase_popup(self) -> Optional[np.ndarray]:
+        for attempt in range(1, self.POPUP_RETRY_COUNT + 1):
+            screen = self._capture_screen_image("구매 팝업 확인", attempts=1)
+            if screen is None:
+                continue
+            if (
+                self._has_popup_fifty_check(screen)
+                or self._find_popup_max_button(screen) is not None
+                or self._find_popup_final_buy_button(screen) is not None
+            ):
+                return screen
+            if attempt < self.POPUP_RETRY_COUNT:
+                logger.warning("구매 팝업 요소를 찾지 못해 %s/%s회 재확인합니다.", attempt, self.POPUP_RETRY_COUNT)
+                if not self._sleep_with_stop(self.RETRY_INTERVAL):
+                    return None
+        return None
+
+    def _capture_result_popup(self) -> Optional[np.ndarray]:
+        for attempt in range(1, self.RESULT_RETRY_COUNT + 1):
+            screen = self._capture_screen_image("구매 완료 팝업 확인", attempts=1)
+            if screen is None:
+                continue
+            if self._find_best_match(screen, self.CLOSE_IMAGE, self.thresholds["close"]) is not None:
+                return screen
+            if attempt < self.RESULT_RETRY_COUNT:
+                logger.warning("구매 완료 팝업을 찾지 못해 %s/%s회 재확인합니다.", attempt, self.RESULT_RETRY_COUNT)
+                if not self._sleep_with_stop(self.RETRY_INTERVAL):
+                    return None
+        return None
+
+    def _retry_match(
+        self,
+        label: str,
+        finder: Callable[[np.ndarray], Optional[Tuple[int, int, int, int]]],
+        context: str,
+        attempts: int,
+    ) -> Optional[Tuple[int, int, int, int]]:
+        for attempt in range(1, attempts + 1):
+            screen = self._capture_screen_image(context, attempts=1)
+            if screen is None:
+                continue
+            match = finder(screen)
+            if match is not None:
+                return match
+            if attempt < attempts:
+                logger.warning("%s을(를) 찾지 못해 %s/%s회 재확인합니다.", label, attempt, attempts)
+                if not self._sleep_with_stop(self.RETRY_INTERVAL):
+                    return None
+        return None
 
     def _capture_screen(self, context: str) -> bool:
         if self.adb.screenshot(str(self.screenshot_path)):
             return True
         logger.error("스크린샷 촬영 실패: %s", context)
         return False
+
+    def _capture_screen_image(self, context: str, attempts: int = 1) -> Optional[np.ndarray]:
+        for attempt in range(1, attempts + 1):
+            if self.user_action == "stop":
+                return None
+            if self._capture_screen(context):
+                screen = read_image(str(self.screenshot_path), cv2.IMREAD_COLOR)
+                if screen is not None:
+                    return screen
+                logger.warning("%s 스크린샷을 읽지 못했습니다. (%s/%s)", context, attempt, attempts)
+            elif attempt < attempts:
+                logger.warning("%s 스크린샷 촬영을 재시도합니다. (%s/%s)", context, attempt, attempts)
+            if attempt < attempts and not self._sleep_with_stop(self.RETRY_INTERVAL):
+                return None
+        return None
 
     def _find_egg_match(self, screen: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
         best_match = None
@@ -205,18 +295,17 @@ class PenguinBot:
                 scales=(scale,),
             )
             for match in matches:
-                x, _, w, _ = match
-                center_x = x + (w // 2)
+                x, _, width, _ = match
+                center_x = x + (width // 2)
                 if not (self.EGG_MIN_X <= center_x <= self.EGG_MAX_X):
                     continue
                 score = self._match_score_for_box(screen, self.EGG_IMAGE, match)
                 if score > best_score:
                     best_score = score
                     best_match = match
-        if best_match:
+        if best_match is not None:
             logger.info("펭귄 알 발견: %s (유사도 %.3f)", best_match, best_score)
-            return best_match
-        return None
+        return best_match
 
     def _find_buy_button_for_egg(
         self,
@@ -226,6 +315,7 @@ class PenguinBot:
         egg_x, egg_y, egg_w, egg_h = egg_match
         egg_center_x = egg_x + (egg_w // 2)
         egg_bottom_y = egg_y + egg_h
+
         candidates = self._find_all_matches(screen, self.BUY_BUTTON_IMAGE, self.thresholds["buy_button"])
         filtered = []
         for candidate in candidates:
@@ -234,8 +324,7 @@ class PenguinBot:
             btn_center_y = btn_y + (btn_h // 2)
             if btn_center_y <= egg_bottom_y:
                 continue
-            horizontal_distance = abs(btn_center_x - egg_center_x)
-            filtered.append((horizontal_distance, btn_center_y, candidate))
+            filtered.append((abs(btn_center_x - egg_center_x), btn_center_y, candidate))
 
         if not filtered:
             return None
@@ -244,9 +333,6 @@ class PenguinBot:
         best = filtered[0][2]
         logger.info("펭귄 칸의 구매 버튼 발견: %s", best)
         return best
-
-    def _has_template(self, screen: np.ndarray, image_name: str, threshold: float) -> bool:
-        return self._find_best_match(screen, image_name, threshold) is not None
 
     def _has_popup_fifty_check(self, screen: np.ndarray) -> bool:
         return self._find_in_roi(
@@ -299,19 +385,19 @@ class PenguinBot:
             best_score = -1.0
             for scale in scales:
                 match = self._find_best_match_in_image(roi, image_name, threshold, scale=scale)
-                if not match:
+                if match is None:
                     continue
                 score = self._match_score_for_box(roi, image_name, match, scale=scale)
                 if score > best_score:
                     best_score = score
                     best_match = match
-            if not best_match:
+            if best_match is None:
                 return None
             rel_x, rel_y, width, height = best_match
             return (x1 + rel_x, y1 + rel_y, width, height)
 
         match = self._find_best_match_in_image(roi, image_name, threshold)
-        if not match:
+        if match is None:
             return None
         rel_x, rel_y, width, height = match
         return (x1 + rel_x, y1 + rel_y, width, height)
@@ -347,8 +433,7 @@ class PenguinBot:
         scales: Optional[Tuple[float, ...]] = None,
     ) -> List[Tuple[int, int, int, int]]:
         candidates: List[Tuple[float, Tuple[int, int, int, int]]] = []
-        scale_values = scales or (1.0,)
-        for scale in scale_values:
+        for scale in scales or (1.0,):
             template = self._load_template(image_name, scale=scale)
             if template is None:
                 continue
@@ -361,6 +446,7 @@ class PenguinBot:
             for point in zip(*points[::-1]):
                 score = float(result[point[1], point[0]])
                 candidates.append((score, (point[0], point[1], width, height)))
+
         candidates.sort(key=lambda item: item[0], reverse=True)
 
         matches: List[Tuple[int, int, int, int]] = []
@@ -433,6 +519,21 @@ class PenguinBot:
         smaller_area = min(w1 * h1, w2 * h2)
         return overlap_area / float(smaller_area) > 0.3
 
+    def _wait_if_paused(self) -> bool:
+        while self.paused:
+            if self.user_action == "stop":
+                return False
+            time.sleep(0.1)
+        return True
+
+    def _sleep_with_stop(self, seconds: float) -> bool:
+        end_time = time.time() + seconds
+        while time.time() < end_time:
+            if self.user_action == "stop":
+                return False
+            time.sleep(min(0.1, end_time - time.time()))
+        return True
+
     def _finish_stats(self) -> Dict:
         if self.stats.get("start_time") and not self.stats.get("end_time"):
             self.stats["end_time"] = time.time()
@@ -442,15 +543,15 @@ class PenguinBot:
     def set_user_action(self, action: str):
         if action == "pause":
             self.paused = True
-            logger.info("사용자 요청으로 펭귄 구매를 일시정지합니다.")
+            logger.info("사용자 요청으로 펭귄런을 일시정지합니다.")
         elif action == "resume":
             self.paused = False
             self.user_action = None
-            logger.info("사용자 요청으로 펭귄 구매를 재개합니다.")
+            logger.info("사용자 요청으로 펭귄런을 재개합니다.")
         elif action == "stop":
             self.user_action = "stop"
             self.paused = False
-            logger.info("사용자 요청으로 펭귄 구매를 중지합니다.")
+            logger.info("사용자 요청으로 펭귄런을 중지합니다.")
 
     def get_stats(self) -> Dict:
         return self.stats.copy()

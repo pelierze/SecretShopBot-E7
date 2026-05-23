@@ -35,7 +35,7 @@ class PenguinBotTest(unittest.TestCase):
 
             self.assertEqual(bot.screenshot_path, Path(temp_dir) / "penguin_screen.png")
 
-    def test_find_egg_match_uses_only_matches_within_vertical_range(self):
+    def test_find_egg_match_uses_only_matches_within_x_range(self):
         bot = object.__new__(PenguinBot)
         bot.EGG_MIN_X = PenguinBot.EGG_MIN_X
         bot.EGG_MAX_X = PenguinBot.EGG_MAX_X
@@ -75,7 +75,7 @@ class PenguinBotTest(unittest.TestCase):
             bot = PenguinBot(DummyADB(), cycle_count=1, runtime_dir=temp_dir)
 
         screen = np.zeros((720, 1280, 3), dtype=np.uint8)
-        states = [screen, screen, screen, screen]
+        states = [screen, screen, screen, screen, screen, screen]
         bot._capture_screen = lambda _context: True
         bot._find_egg_match = lambda _screen: (80, 100, 30, 30)
         bot._find_buy_button_for_egg = lambda _screen, _egg: (500, 100, 60, 24)
@@ -93,6 +93,37 @@ class PenguinBotTest(unittest.TestCase):
         self.assertEqual(len(bot.adb.taps), 4)
         self.assertEqual(bot.stats["purchase_attempts"], 1)
         self.assertEqual(bot.stats["penguins_bought"], 1)
+
+    def test_run_retries_cycle_before_stopping(self):
+        bot = object.__new__(PenguinBot)
+        bot.cycle_count = 1
+        bot.CYCLE_RETRY_COUNT = 3
+        bot.stats = {
+            "cycles_completed": 0,
+            "purchase_attempts": 0,
+            "penguins_bought": 0,
+            "start_time": None,
+            "end_time": None,
+            "elapsed_time": 0,
+        }
+        bot.user_action = None
+        bot.paused = False
+        bot._wait_if_paused = lambda: True
+        bot._sleep_with_stop = lambda _seconds: True
+        bot._finish_stats = PenguinBot._finish_stats.__get__(bot, PenguinBot)
+
+        calls = []
+
+        def fake_cycle():
+            calls.append(1)
+            return len(calls) == 3
+
+        bot._run_single_cycle = fake_cycle
+
+        result = PenguinBot.run(bot)
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(result["cycles_completed"], 1)
 
 
 if __name__ == "__main__":

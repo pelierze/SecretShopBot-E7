@@ -696,14 +696,14 @@ class SessionView:
         penguin_control_frame.pack(fill=tk.X, padx=10, pady=5)
         self.penguin_start_btn = ttk.Button(
             penguin_control_frame,
-            text="펭귄 시작",
+            text="펭귄런 시작",
             command=self._start_penguin_bot,
             state=tk.DISABLED,
         )
         self.penguin_start_btn.pack(side=tk.LEFT, padx=5)
         self.penguin_stop_btn = ttk.Button(
             penguin_control_frame,
-            text="펭귄 중지",
+            text="펭귄런 중지",
             command=self._stop_bot,
             state=tk.DISABLED,
         )
