@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import webbrowser
+import math
 from contextlib import contextmanager
 from pathlib import Path
 import tkinter as tk
@@ -1489,15 +1490,15 @@ class SessionView:
     def _update_stats(self, stats):
         completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
         sky_stone_usage = self._calculate_sky_stone_usage(stats)
-        mystic_amount = self._calculate_item_amount(stats, "mystic_medal_bought")
-        bookmark_amount = self._calculate_item_amount(stats, "covenant_bookmark_bought")
+        mystic_draws = self._calculate_draw_count(stats, "mystic_medal_bought")
+        bookmark_draws = self._calculate_draw_count(stats, "covenant_bookmark_bought")
         self.total_refresh_label.config(text=str(completed_runs))
         self.mystic_label.config(text=str(stats.get("mystic_medal_bought", 0)))
         self.bookmark_label.config(text=str(stats.get("covenant_bookmark_bought", 0)))
         self.friendship_label.config(text=str(stats.get("friendship_point_bought", 0)))
         self.sky_stone_label.config(text=str(sky_stone_usage))
-        self.bookmark_efficiency_label.config(text=self._format_efficiency(bookmark_amount, sky_stone_usage))
-        self.mystic_efficiency_label.config(text=self._format_efficiency(mystic_amount, sky_stone_usage))
+        self.bookmark_efficiency_label.config(text=self._format_draw_efficiency(bookmark_draws, sky_stone_usage))
+        self.mystic_efficiency_label.config(text=self._format_draw_efficiency(mystic_draws, sky_stone_usage))
 
         if stats.get("start_time"):
             if stats.get("end_time"):
@@ -1529,8 +1530,8 @@ class SessionView:
         bookmark_count = stats.get("covenant_bookmark_bought", 0)
         friendship_count = stats.get("friendship_point_bought", 0)
         sky_stone_usage = self._calculate_sky_stone_usage(stats)
-        mystic_amount = self._calculate_item_amount(stats, "mystic_medal_bought")
-        bookmark_amount = self._calculate_item_amount(stats, "covenant_bookmark_bought")
+        mystic_draws = self._calculate_draw_count(stats, "mystic_medal_bought")
+        bookmark_draws = self._calculate_draw_count(stats, "covenant_bookmark_bought")
         elapsed = self._format_elapsed_seconds(stats.get("elapsed_time", 0))
         return (
             f"\n{'=' * 42}\n"
@@ -1541,8 +1542,8 @@ class SessionView:
             f"- 성약의 책갈피 구매: {bookmark_count}개\n"
             f"- 우정 포인트 구매: {friendship_count}개\n"
             f"- 하늘석 사용량: {sky_stone_usage}개\n"
-            f"- 신비의 메달 획득량/하늘석: {self._format_efficiency(mystic_amount, sky_stone_usage)}\n"
-            f"- 성약의 책갈피 획득량/하늘석: {self._format_efficiency(bookmark_amount, sky_stone_usage)}\n"
+            f"- 신비의 메달 체감 효율: {self._format_draw_efficiency(mystic_draws, sky_stone_usage)}\n"
+            f"- 성약의 책갈피 체감 효율: {self._format_draw_efficiency(bookmark_draws, sky_stone_usage)}\n"
             f"- 소요 시간: {elapsed}\n"
             f"{'=' * 42}"
         )
@@ -1558,21 +1559,20 @@ class SessionView:
             reroll_count = 0
         return max(reroll_count, 0) * self.SKY_STONES_PER_REFRESH
 
-    def _calculate_item_amount(self, stats, stat_key):
-        amount_per_purchase = {
-            "mystic_medal_bought": self.MYSTIC_MEDALS_PER_PURCHASE,
-            "covenant_bookmark_bought": self.COVENANT_BOOKMARKS_PER_PURCHASE,
-        }.get(stat_key, 1)
+    def _calculate_draw_count(self, stats, stat_key):
         try:
             purchase_count = int(stats.get(stat_key, 0))
         except (TypeError, ValueError):
             purchase_count = 0
-        return max(purchase_count, 0) * amount_per_purchase
+        return max(purchase_count, 0)
 
-    def _format_efficiency(self, item_amount, sky_stone_usage):
-        if sky_stone_usage <= 0:
+    def _format_draw_efficiency(self, draw_count, sky_stone_usage):
+        if sky_stone_usage <= 0 or draw_count <= 0:
             return "-"
-        return f"{item_amount / sky_stone_usage:.4f}"
+        ratio_gcd = math.gcd(int(sky_stone_usage), int(draw_count))
+        normalized_sky = sky_stone_usage // ratio_gcd
+        normalized_draw = draw_count // ratio_gcd
+        return f"{normalized_sky}개당 {normalized_draw}뽑"
 
     def _format_elapsed_seconds(self, seconds):
         try:
