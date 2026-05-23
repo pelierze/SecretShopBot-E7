@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import webbrowser
+import math
 from contextlib import contextmanager
 from pathlib import Path
 import tkinter as tk
@@ -32,6 +33,7 @@ if __package__ in (None, ""):
     from src.equipment_reroll_bot import EquipmentRerollBot
     from src.image_matcher import read_image
     from src.json_macro_engine import JsonMacroEngine
+    from src.penguin_bot import PenguinBot
     from src.release_checker import get_available_update
     from src.remote_script import RemoteScriptUpdater
     from src.secret_shop_bot import SecretShopBot
@@ -41,6 +43,7 @@ else:
     from .equipment_reroll_bot import EquipmentRerollBot
     from .image_matcher import read_image
     from .json_macro_engine import JsonMacroEngine
+    from .penguin_bot import PenguinBot
     from .release_checker import get_available_update
     from .remote_script import RemoteScriptUpdater
     from .secret_shop_bot import SecretShopBot
@@ -269,8 +272,10 @@ class SessionView:
         self.mode_notebook.pack(fill=tk.BOTH, expand=False, padx=10, pady=5)
         self.shop_tab = ttk.Frame(self.mode_notebook)
         self.reroll_tab = ttk.Frame(self.mode_notebook)
+        self.penguin_tab = ttk.Frame(self.mode_notebook)
         self.mode_notebook.add(self.shop_tab, text="비밀상점")
         self.mode_notebook.add(self.reroll_tab, text="장비 리롤")
+        self.mode_notebook.add(self.penguin_tab, text="펭귄")
 
         self.settings_frame = ttk.LabelFrame(self.shop_tab, text="매크로 설정", padding=10)
         self.settings_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -421,6 +426,7 @@ class SessionView:
         self.friendship_label.grid(row=0, column=7, sticky=tk.W, padx=5, pady=2)
 
         self._create_reroll_widgets()
+        self._create_penguin_widgets()
 
         self.log_frame = ttk.Frame(self.frame, style="Card.TFrame", padding=10)
         self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -447,6 +453,8 @@ class SessionView:
         self.log_frame.configure(style="Card.TFrame")
         self.reroll_settings_frame.configure(style="Card.TLabelframe")
         self.reroll_stats_frame.configure(style="Card.TLabelframe")
+        self.penguin_settings_frame.configure(style="Card.TLabelframe")
+        self.penguin_stats_frame.configure(style="Card.TLabelframe")
 
         accent_buttons = [
             self.scan_btn,
@@ -455,6 +463,7 @@ class SessionView:
             self.resume_btn,
             self.test_btn,
             self.reroll_start_btn,
+            self.penguin_start_btn,
         ]
         for button in accent_buttons:
             button.configure(style="Accent.TButton")
@@ -465,6 +474,7 @@ class SessionView:
             self.stop_btn,
             self.clear_log_btn,
             self.reroll_stop_btn,
+            self.penguin_stop_btn,
         ]
         for button in subtle_buttons:
             button.configure(style="Secondary.TButton")
@@ -481,6 +491,9 @@ class SessionView:
             self.reroll_count_label,
             self.reroll_option_found_label,
             self.reroll_target_found_label,
+            self.penguin_cycle_label,
+            self.penguin_attempt_label,
+            self.penguin_purchase_label,
         ]
         for widget in stat_value_widgets:
             widget.configure(style="StatValue.TLabel")
@@ -667,6 +680,52 @@ class SessionView:
         self.reroll_target_found_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.reroll_target_found_label.grid(row=1, column=3, sticky=tk.W, padx=5, pady=2)
         self._update_reroll_target_count_controls()
+
+    def _create_penguin_widgets(self):
+        self.penguin_settings_frame = ttk.LabelFrame(self.penguin_tab, text="펭귄 구매 설정", padding=10)
+        self.penguin_settings_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(self.penguin_settings_frame, text="구매 사이클 횟수:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        penguin_cycle_frame = ttk.Frame(self.penguin_settings_frame, style="CardInner.TFrame")
+        penguin_cycle_frame.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
+        self.penguin_cycle_entry = ttk.Entry(penguin_cycle_frame, width=10)
+        self.penguin_cycle_entry.insert(0, "10")
+        self.penguin_cycle_entry.pack(side=tk.LEFT)
+        ttk.Label(penguin_cycle_frame, text="회").pack(side=tk.LEFT, padx=(4, 0))
+
+        penguin_control_frame = ttk.Frame(self.penguin_tab, style="CardInner.TFrame", padding=10)
+        penguin_control_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.penguin_start_btn = ttk.Button(
+            penguin_control_frame,
+            text="펭귄런 시작",
+            command=self._start_penguin_bot,
+            state=tk.DISABLED,
+        )
+        self.penguin_start_btn.pack(side=tk.LEFT, padx=5)
+        self.penguin_stop_btn = ttk.Button(
+            penguin_control_frame,
+            text="펭귄런 중지",
+            command=self._stop_bot,
+            state=tk.DISABLED,
+        )
+        self.penguin_stop_btn.pack(side=tk.LEFT, padx=5)
+
+        self.penguin_stats_frame = ttk.LabelFrame(self.penguin_tab, text="펭귄 통계", padding=10)
+        self.penguin_stats_frame.pack(fill=tk.X, padx=10, pady=5)
+        stats_grid = ttk.Frame(self.penguin_stats_frame, style="CardInner.TFrame")
+        stats_grid.pack(fill=tk.X)
+
+        ttk.Label(stats_grid, text="완료 사이클:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        self.penguin_cycle_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.penguin_cycle_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(stats_grid, text="구매 시도:").grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        self.penguin_attempt_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.penguin_attempt_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+
+        ttk.Label(stats_grid, text="구매 완료:").grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
+        self.penguin_purchase_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.penguin_purchase_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
 
     def _get_reroll_option_rule(self, option_name):
         return self.REROLL_OPTION_RULES.get(option_name, self.REROLL_OPTION_RULES["속도"])
@@ -1027,6 +1086,7 @@ class SessionView:
                     self.connection_status.config(text="● 연결됨", foreground="#43A047")
                     self.start_btn.config(state=tk.NORMAL)
                     self.reroll_start_btn.config(state=tk.NORMAL)
+                    self.penguin_start_btn.config(state=tk.NORMAL)
                     self.test_btn.config(state=tk.NORMAL)
                     self.connect_btn.config(state=tk.DISABLED)
                     self.disconnect_btn.config(state=tk.NORMAL)
@@ -1209,6 +1269,40 @@ class SessionView:
             self.bot_thread = threading.Thread(target=self._run_reroll_bot, daemon=True)
             self.bot_thread.start()
 
+    def _start_penguin_bot(self):
+        with log_session(self.name):
+            if self.is_running:
+                return
+            if not self.adb_controller:
+                messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+                return
+
+            try:
+                cycle_count = int(self.penguin_cycle_entry.get())
+                if cycle_count <= 0:
+                    raise ValueError("구매 사이클 횟수는 1 이상이어야 합니다.")
+            except ValueError as e:
+                messagebox.showerror("오류", f"펭귄 구매 설정값이 올바르지 않습니다.\n{str(e)}")
+                return
+
+            self.runtime_dir.mkdir(parents=True, exist_ok=True)
+            self.bot = PenguinBot(
+                self.adb_controller,
+                cycle_count=cycle_count,
+                debug_mode=self.debug_mode_var.get(),
+                runtime_dir=self.runtime_dir,
+            )
+            self.is_running = True
+            self.current_mode = "penguin"
+            self._set_running_ui(True)
+            self._update_penguin_stats({
+                "cycles_completed": 0,
+                "purchase_attempts": 0,
+                "penguins_bought": 0,
+            })
+            self.bot_thread = threading.Thread(target=self._run_penguin_bot, daemon=True)
+            self.bot_thread.start()
+
     def _get_selected_macro(self):
         selected_index = self.macro_combo.current()
         if selected_index < 0 or selected_index >= len(self.app.macro_definitions):
@@ -1249,11 +1343,29 @@ class SessionView:
                 if not self.app.is_closing:
                     self.root.after(0, lambda: self._set_running_ui(False))
 
+    def _run_penguin_bot(self):
+        with log_session(self.name):
+            try:
+                self.root.after(500, self._update_running_state)
+                final_stats = self.bot.run()
+                self.root.after(0, lambda: self._update_penguin_stats(final_stats))
+                self.log(self._format_penguin_summary("펭귄 구매 완료", final_stats))
+            except Exception as e:
+                logger.error("펭귄 구매 실행 중 오류: %s", e, exc_info=True)
+                if not self.app.is_closing:
+                    self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 펭귄 구매 중 오류 발생:\n{str(e)}"))
+            finally:
+                self.is_running = False
+                if not self.app.is_closing:
+                    self.root.after(0, lambda: self._set_running_ui(False))
+
     def _update_running_state(self):
         if self.is_running and self.bot:
             stats = self.bot.get_stats()
             if self.current_mode == "reroll":
                 self._update_reroll_stats(stats)
+            elif self.current_mode == "penguin":
+                self._update_penguin_stats(stats)
             else:
                 self._update_stats(stats)
 
@@ -1296,6 +1408,8 @@ class SessionView:
                 stats = self.bot.get_stats()
                 if self.current_mode == "reroll":
                     self.log(self._format_reroll_summary("장비 리롤 중지", stats))
+                elif self.current_mode == "penguin":
+                    self.log(self._format_penguin_summary("펭귄 구매 중지", stats))
                 elif stats.get("total_refreshes", 0) > 0:
                     self.log(self._format_stats_summary("⛔ 자동화 중지", stats))
                 else:
@@ -1327,6 +1441,8 @@ class SessionView:
             self.start_btn.config(state=tk.DISABLED)
             self.reroll_start_btn.config(state=tk.DISABLED)
             self.reroll_stop_btn.config(state=tk.DISABLED)
+            self.penguin_start_btn.config(state=tk.DISABLED)
+            self.penguin_stop_btn.config(state=tk.DISABLED)
             self.test_btn.config(state=tk.DISABLED)
             self.connect_btn.config(state=tk.NORMAL)
             self.disconnect_btn.config(state=tk.DISABLED)
@@ -1335,7 +1451,9 @@ class SessionView:
     def _set_running_ui(self, running):
         self.start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         self.reroll_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
+        self.penguin_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         self.reroll_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
+        self.penguin_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.test_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         is_shop_mode = self.current_mode == "shop"
         self.pause_btn.config(state=tk.NORMAL if running and is_shop_mode else tk.DISABLED)
@@ -1357,6 +1475,7 @@ class SessionView:
             self.refresh_button_threshold,
         ):
             entry.config(state=state)
+        self.penguin_cycle_entry.config(state=state)
         if running:
             self.buy_count_entry.config(state=tk.DISABLED)
         else:
@@ -1371,15 +1490,15 @@ class SessionView:
     def _update_stats(self, stats):
         completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
         sky_stone_usage = self._calculate_sky_stone_usage(stats)
-        mystic_amount = self._calculate_item_amount(stats, "mystic_medal_bought")
-        bookmark_amount = self._calculate_item_amount(stats, "covenant_bookmark_bought")
+        mystic_draws = self._calculate_draw_count(stats, "mystic_medal_bought")
+        bookmark_draws = self._calculate_draw_count(stats, "covenant_bookmark_bought")
         self.total_refresh_label.config(text=str(completed_runs))
         self.mystic_label.config(text=str(stats.get("mystic_medal_bought", 0)))
         self.bookmark_label.config(text=str(stats.get("covenant_bookmark_bought", 0)))
         self.friendship_label.config(text=str(stats.get("friendship_point_bought", 0)))
         self.sky_stone_label.config(text=str(sky_stone_usage))
-        self.bookmark_efficiency_label.config(text=self._format_efficiency(bookmark_amount, sky_stone_usage))
-        self.mystic_efficiency_label.config(text=self._format_efficiency(mystic_amount, sky_stone_usage))
+        self.bookmark_efficiency_label.config(text=self._format_draw_efficiency(bookmark_draws, sky_stone_usage))
+        self.mystic_efficiency_label.config(text=self._format_draw_efficiency(mystic_draws, sky_stone_usage))
 
         if stats.get("start_time"):
             if stats.get("end_time"):
@@ -1399,6 +1518,11 @@ class SessionView:
         self.reroll_option_found_label.config(text=str(stats.get("option_found", 0)))
         self.reroll_target_found_label.config(text=str(stats.get("target_found", 0)))
 
+    def _update_penguin_stats(self, stats):
+        self.penguin_cycle_label.config(text=str(stats.get("cycles_completed", 0)))
+        self.penguin_attempt_label.config(text=str(stats.get("purchase_attempts", 0)))
+        self.penguin_purchase_label.config(text=str(stats.get("penguins_bought", 0)))
+
     def _format_stats_summary(self, title, stats):
         completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))
         successful_refreshes = stats.get("successful_refreshes", max(completed_runs - 1, 0))
@@ -1406,8 +1530,8 @@ class SessionView:
         bookmark_count = stats.get("covenant_bookmark_bought", 0)
         friendship_count = stats.get("friendship_point_bought", 0)
         sky_stone_usage = self._calculate_sky_stone_usage(stats)
-        mystic_amount = self._calculate_item_amount(stats, "mystic_medal_bought")
-        bookmark_amount = self._calculate_item_amount(stats, "covenant_bookmark_bought")
+        mystic_draws = self._calculate_draw_count(stats, "mystic_medal_bought")
+        bookmark_draws = self._calculate_draw_count(stats, "covenant_bookmark_bought")
         elapsed = self._format_elapsed_seconds(stats.get("elapsed_time", 0))
         return (
             f"\n{'=' * 42}\n"
@@ -1418,8 +1542,8 @@ class SessionView:
             f"- 성약의 책갈피 구매: {bookmark_count}개\n"
             f"- 우정 포인트 구매: {friendship_count}개\n"
             f"- 하늘석 사용량: {sky_stone_usage}개\n"
-            f"- 신비의 메달 획득량/하늘석: {self._format_efficiency(mystic_amount, sky_stone_usage)}\n"
-            f"- 성약의 책갈피 획득량/하늘석: {self._format_efficiency(bookmark_amount, sky_stone_usage)}\n"
+            f"- 신비의 메달 체감 효율: {self._format_draw_efficiency(mystic_draws, sky_stone_usage)}\n"
+            f"- 성약의 책갈피 체감 효율: {self._format_draw_efficiency(bookmark_draws, sky_stone_usage)}\n"
             f"- 소요 시간: {elapsed}\n"
             f"{'=' * 42}"
         )
@@ -1435,21 +1559,20 @@ class SessionView:
             reroll_count = 0
         return max(reroll_count, 0) * self.SKY_STONES_PER_REFRESH
 
-    def _calculate_item_amount(self, stats, stat_key):
-        amount_per_purchase = {
-            "mystic_medal_bought": self.MYSTIC_MEDALS_PER_PURCHASE,
-            "covenant_bookmark_bought": self.COVENANT_BOOKMARKS_PER_PURCHASE,
-        }.get(stat_key, 1)
+    def _calculate_draw_count(self, stats, stat_key):
         try:
             purchase_count = int(stats.get(stat_key, 0))
         except (TypeError, ValueError):
             purchase_count = 0
-        return max(purchase_count, 0) * amount_per_purchase
+        return max(purchase_count, 0)
 
-    def _format_efficiency(self, item_amount, sky_stone_usage):
-        if sky_stone_usage <= 0:
+    def _format_draw_efficiency(self, draw_count, sky_stone_usage):
+        if sky_stone_usage <= 0 or draw_count <= 0:
             return "-"
-        return f"{item_amount / sky_stone_usage:.4f}"
+        ratio_gcd = math.gcd(int(sky_stone_usage), int(draw_count))
+        normalized_sky = sky_stone_usage // ratio_gcd
+        normalized_draw = draw_count // ratio_gcd
+        return f"{normalized_sky}개당 {normalized_draw}뽑"
 
     def _format_elapsed_seconds(self, seconds):
         try:
@@ -1476,6 +1599,18 @@ class SessionView:
             f"- 대상 옵션 발견: {stats.get('option_found', 0)}개\n"
             f"- 목표 달성: {goal_achieved}\n"
             f"- 최종 일치: {stats.get('target_found', 0)}개\n"
+            f"- 소요 시간: {elapsed}\n"
+            f"{'=' * 42}"
+        )
+
+    def _format_penguin_summary(self, title, stats):
+        elapsed = self._format_elapsed_seconds(stats.get("elapsed_time", 0))
+        return (
+            f"\n{'=' * 42}\n"
+            f"{title}\n"
+            f"- 완료 사이클: {stats.get('cycles_completed', 0)}회\n"
+            f"- 구매 시도: {stats.get('purchase_attempts', 0)}회\n"
+            f"- 구매 완료: {stats.get('penguins_bought', 0)}회\n"
             f"- 소요 시간: {elapsed}\n"
             f"{'=' * 42}"
         )
