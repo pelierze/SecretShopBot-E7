@@ -148,5 +148,35 @@ class SecretShopBotScrollTest(unittest.TestCase):
         )
 
 
+    def test_default_enabled_items_excludes_friendship_point(self):
+        bot = SecretShopBot(DummyADB(), automation_settings={})
+
+        self.assertEqual(bot.enabled_items, ["mystic_medal", "covenant_bookmark"])
+        self.assertIn("friendship_point", bot.item_definitions)
+
+    def test_enabled_items_can_include_friendship_point(self):
+        bot = SecretShopBot(
+            DummyADB(),
+            automation_settings={
+                "macro": {
+                    "enabled_items": [
+                        "mystic_medal",
+                        "covenant_bookmark",
+                        "friendship_point",
+                    ]
+                }
+            },
+        )
+
+        self.assertEqual(
+            bot.enabled_items,
+            ["mystic_medal", "covenant_bookmark", "friendship_point"],
+        )
+        self.assertEqual(
+            bot.item_definitions["friendship_point"]["stat_key"],
+            "friendship_point_bought",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

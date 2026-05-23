@@ -9,6 +9,7 @@
   "thresholds": {
     "mystic_medal": 95,
     "covenant_bookmark": 95,
+    "friendship_point": 95,
     "purchase_button": 92,
     "buy_button": 92,
     "refresh_button": 92

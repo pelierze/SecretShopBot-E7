@@ -118,6 +118,28 @@ class JsonMacroEngineTest(unittest.TestCase):
         self.assertEqual(stats["successful_refreshes"], 0)
         self.assertEqual(engine.adb.swipe_calls, 1)
 
+    def test_friendship_point_item_is_available(self):
+        engine = JsonMacroEngine(
+            FakeADB(),
+            macro_definition={"id": "steps", "steps": []},
+            automation_settings={},
+        )
+
+        self.assertIn("friendship_point", engine.items)
+        self.assertEqual(engine.items["friendship_point"]["image"], "friendship_point.png")
+        self.assertIn("friendship_point_bought", engine.stats)
+
+    def test_friendship_point_uses_item_default_threshold(self):
+        engine = JsonMacroEngine(
+            FakeADB(),
+            macro_definition={"id": "steps", "steps": []},
+            automation_settings={},
+        )
+
+        threshold = engine._resolve_threshold({"target": "friendship_point"})
+
+        self.assertEqual(threshold, 0.95)
+
 
 if __name__ == "__main__":
     unittest.main()

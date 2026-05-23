@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "script_version": "2026.04.23.1",
+  "script_version": "2026.05.23.1",
   "app_min_version": "1.0.0",
   "gui": {
     "window_title": "에픽세븐 비밀상점 자동화",
@@ -18,13 +18,15 @@
       "refresh_count": "리프레시 횟수:",
       "refresh_count_unit": "회",
       "purchase_verification_count": "구매 완료 검증 횟수:",
-      "purchase_verification_count_unit": "회 (비활성화 버튼 확인 반복, 권장: 3회)",
+      "purchase_verification_count_unit": "회",
       "threshold_header": "=== 이미지 매칭 정확도 (70-99) ===",
       "mystic_medal": "신비의 메달:",
       "covenant_bookmark": "성약의 책갈피:",
+      "friendship_point": "우정 포인트:",
       "purchase_button": "구입 버튼:",
       "buy_button": "구매 버튼:",
       "refresh_button": "갱신 버튼:",
+      "buy_friendship_point": "우정 포인트 구매",
       "debug_mode": "디버그 모드 (상세 로그)"
     },
     "buttons": {
@@ -41,6 +43,7 @@
       "total_refreshes": "진행 완료:",
       "mystic_medal": "신비의 메달:",
       "covenant_bookmark": "성약의 책갈피:",
+      "friendship_point": "우정 포인트:",
       "elapsed_time": "경과 시간:"
     }
   },
@@ -51,6 +54,7 @@
   "thresholds": {
     "mystic_medal": 95,
     "covenant_bookmark": 95,
+    "friendship_point": 95,
     "purchase_button": 92,
     "buy_button": 92,
     "refresh_button": 92
@@ -78,6 +82,12 @@
         "image": "covenant_bookmark.PNG",
         "stat_key": "covenant_bookmark_bought",
         "log_prefix": "성약의 책갈피"
+      },
+      "friendship_point": {
+        "label": "우정 포인트",
+        "image": "friendship_point.png",
+        "stat_key": "friendship_point_bought",
+        "log_prefix": "우정 포인트"
       }
     },
     "buttons": {

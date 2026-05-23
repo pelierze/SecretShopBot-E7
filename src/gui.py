@@ -3,6 +3,7 @@ GUI 인터페이스
 tkinter를 사용한 사용자 인터페이스
 """
 import contextvars
+import copy
 import logging
 import os
 import sys
@@ -290,6 +291,14 @@ class SessionView:
         self.buy_count_unit_label = ttk.Label(self.settings_frame, text="회")
         self.buy_count_unit_label.grid(row=1, column=2, sticky=tk.W)
 
+        self.friendship_point_var = tk.BooleanVar(value=False)
+        self.friendship_point_checkbox = ttk.Checkbutton(
+            self.settings_frame,
+            text="우정 포인트 구매",
+            variable=self.friendship_point_var,
+        )
+        self.friendship_point_checkbox.grid(row=2, column=0, columnspan=3, sticky=tk.W, padx=5, pady=5)
+
         self.threshold_header_label = ttk.Label(
             self.settings_frame,
             text="=== 이미지 매칭 정확도 (70-99) ===",
@@ -311,26 +320,33 @@ class SessionView:
         self.covenant_bookmark_threshold.grid(row=2, column=4, sticky=tk.W, padx=5, pady=2)
         ttk.Label(self.settings_frame, text="%").grid(row=2, column=5, sticky=tk.W)
 
-        self.purchase_button_threshold_label = ttk.Label(self.settings_frame, text="구입 버튼:")
-        self.purchase_button_threshold_label.grid(row=3, column=3, sticky=tk.W, padx=(30, 5), pady=2)
-        self.purchase_button_threshold = ttk.Entry(self.settings_frame, width=8)
-        self.purchase_button_threshold.insert(0, "92")
-        self.purchase_button_threshold.grid(row=3, column=4, sticky=tk.W, padx=5, pady=2)
+        self.friendship_point_threshold_label = ttk.Label(self.settings_frame, text="우정 포인트:")
+        self.friendship_point_threshold_label.grid(row=3, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.friendship_point_threshold = ttk.Entry(self.settings_frame, width=8)
+        self.friendship_point_threshold.insert(0, "95")
+        self.friendship_point_threshold.grid(row=3, column=4, sticky=tk.W, padx=5, pady=2)
         ttk.Label(self.settings_frame, text="%").grid(row=3, column=5, sticky=tk.W)
 
-        self.buy_button_threshold_label = ttk.Label(self.settings_frame, text="구매 버튼:")
-        self.buy_button_threshold_label.grid(row=4, column=3, sticky=tk.W, padx=(30, 5), pady=2)
-        self.buy_button_threshold = ttk.Entry(self.settings_frame, width=8)
-        self.buy_button_threshold.insert(0, "92")
-        self.buy_button_threshold.grid(row=4, column=4, sticky=tk.W, padx=5, pady=2)
+        self.purchase_button_threshold_label = ttk.Label(self.settings_frame, text="구입 버튼:")
+        self.purchase_button_threshold_label.grid(row=4, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.purchase_button_threshold = ttk.Entry(self.settings_frame, width=8)
+        self.purchase_button_threshold.insert(0, "92")
+        self.purchase_button_threshold.grid(row=4, column=4, sticky=tk.W, padx=5, pady=2)
         ttk.Label(self.settings_frame, text="%").grid(row=4, column=5, sticky=tk.W)
 
+        self.buy_button_threshold_label = ttk.Label(self.settings_frame, text="구매 버튼:")
+        self.buy_button_threshold_label.grid(row=5, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.buy_button_threshold = ttk.Entry(self.settings_frame, width=8)
+        self.buy_button_threshold.insert(0, "92")
+        self.buy_button_threshold.grid(row=5, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=5, column=5, sticky=tk.W)
+
         self.refresh_button_threshold_label = ttk.Label(self.settings_frame, text="갱신 버튼:")
-        self.refresh_button_threshold_label.grid(row=5, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.refresh_button_threshold_label.grid(row=6, column=3, sticky=tk.W, padx=(30, 5), pady=2)
         self.refresh_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.refresh_button_threshold.insert(0, "92")
-        self.refresh_button_threshold.grid(row=5, column=4, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=5, column=5, sticky=tk.W)
+        self.refresh_button_threshold.grid(row=6, column=4, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=6, column=5, sticky=tk.W)
 
         control_frame = ttk.Frame(self.shop_tab, style="CardInner.TFrame", padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -380,9 +396,9 @@ class SessionView:
         self.bookmark_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
 
         self.elapsed_time_title_label = ttk.Label(stats_grid, text="경과 시간:")
-        self.elapsed_time_title_label.grid(row=0, column=6, sticky=tk.W, padx=5, pady=2)
+        self.elapsed_time_title_label.grid(row=1, column=6, sticky=tk.W, padx=5, pady=2)
         self.elapsed_time_label = ttk.Label(stats_grid, text="00:00:00", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
-        self.elapsed_time_label.grid(row=0, column=7, sticky=tk.W, padx=5, pady=2)
+        self.elapsed_time_label.grid(row=1, column=7, sticky=tk.W, padx=5, pady=2)
 
         self.sky_stone_title_label = ttk.Label(stats_grid, text="하늘석 사용량:")
         self.sky_stone_title_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
@@ -398,6 +414,11 @@ class SessionView:
         self.mystic_efficiency_title_label.grid(row=1, column=4, sticky=tk.W, padx=5, pady=2)
         self.mystic_efficiency_label = ttk.Label(stats_grid, text="-", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.mystic_efficiency_label.grid(row=1, column=5, sticky=tk.W, padx=5, pady=2)
+
+        self.friendship_title_label = ttk.Label(stats_grid, text="우정 포인트:")
+        self.friendship_title_label.grid(row=0, column=6, sticky=tk.W, padx=5, pady=2)
+        self.friendship_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+        self.friendship_label.grid(row=0, column=7, sticky=tk.W, padx=5, pady=2)
 
         self._create_reroll_widgets()
 
@@ -802,6 +823,7 @@ class SessionView:
         threshold_entries = {
             "mystic_medal": self.mystic_medal_threshold,
             "covenant_bookmark": self.covenant_bookmark_threshold,
+            "friendship_point": self.friendship_point_threshold,
             "purchase_button": self.purchase_button_threshold,
             "buy_button": self.buy_button_threshold,
             "refresh_button": self.refresh_button_threshold,
@@ -839,6 +861,7 @@ class SessionView:
             "threshold_header": self.threshold_header_label,
             "mystic_medal": self.mystic_medal_threshold_label,
             "covenant_bookmark": self.covenant_bookmark_threshold_label,
+            "friendship_point": self.friendship_point_threshold_label,
             "purchase_button": self.purchase_button_threshold_label,
             "buy_button": self.buy_button_threshold_label,
             "refresh_button": self.refresh_button_threshold_label,
@@ -848,6 +871,8 @@ class SessionView:
                 widget.config(text=labels[key])
         if "debug_mode" in labels:
             self.debug_checkbox.config(text=labels["debug_mode"])
+        if "buy_friendship_point" in labels:
+            self.friendship_point_checkbox.config(text=labels["buy_friendship_point"])
         if "mumu_compatibility" in labels:
             self.input_profile_label_text = labels["mumu_compatibility"]
             self.mumu_checkbox.config(text=self.input_profile_label_text)
@@ -875,6 +900,7 @@ class SessionView:
             "total_refreshes": self.total_refresh_title_label,
             "mystic_medal": self.mystic_title_label,
             "covenant_bookmark": self.bookmark_title_label,
+            "friendship_point": self.friendship_title_label,
             "elapsed_time": self.elapsed_time_title_label,
             "sky_stone_usage": self.sky_stone_title_label,
             "covenant_per_sky_stone": self.bookmark_efficiency_title_label,
@@ -896,6 +922,15 @@ class SessionView:
         if selected_index < 0 or selected_index >= len(self.app.macro_definitions):
             return "secret_shop"
         return self.app.macro_definitions[selected_index].get("runner", "secret_shop")
+
+    def _build_shop_automation_settings(self):
+        automation_settings = copy.deepcopy(self.app.remote_settings)
+        macro_settings = automation_settings.setdefault("macro", {})
+        enabled_items = ["mystic_medal", "covenant_bookmark"]
+        if self.friendship_point_var.get():
+            enabled_items.append("friendship_point")
+        macro_settings["enabled_items"] = enabled_items
+        return automation_settings
 
     def _update_macro_dependent_controls(self):
         runner = self._get_selected_runner()
@@ -1034,6 +1069,7 @@ class SessionView:
                 thresholds.update({
                     "mystic_medal": int(self.mystic_medal_threshold.get()) / 100.0,
                     "covenant_bookmark": int(self.covenant_bookmark_threshold.get()) / 100.0,
+                    "friendship_point": int(self.friendship_point_threshold.get()) / 100.0,
                     "purchase_button": int(self.purchase_button_threshold.get()) / 100.0,
                     "buy_button": int(self.buy_button_threshold.get()) / 100.0,
                     "refresh_button": int(self.refresh_button_threshold.get()) / 100.0,
@@ -1054,6 +1090,7 @@ class SessionView:
             runner = selected_macro.get("runner", "secret_shop")
             debug_mode = self.debug_mode_var.get()
             self.runtime_dir.mkdir(parents=True, exist_ok=True)
+            automation_settings = self._build_shop_automation_settings()
 
             if runner == "steps":
                 self.bot = JsonMacroEngine(
@@ -1061,7 +1098,7 @@ class SessionView:
                     macro_definition=selected_macro,
                     thresholds=thresholds,
                     debug_mode=debug_mode,
-                    automation_settings=self.app.remote_settings,
+                    automation_settings=automation_settings,
                     runtime_dir=self.runtime_dir,
                 )
             else:
@@ -1069,7 +1106,7 @@ class SessionView:
                     self.adb_controller,
                     thresholds=thresholds,
                     debug_mode=debug_mode,
-                    automation_settings=self.app.remote_settings,
+                    automation_settings=automation_settings,
                     runtime_dir=self.runtime_dir,
                 )
 
@@ -1082,6 +1119,7 @@ class SessionView:
                 "successful_refreshes": 0,
                 "mystic_medal_bought": 0,
                 "covenant_bookmark_bought": 0,
+                "friendship_point_bought": 0,
             })
             self.bot_thread = threading.Thread(target=self._run_bot, args=(refresh_count, buy_count), daemon=True)
             self.bot_thread.start()
@@ -1313,6 +1351,7 @@ class SessionView:
             self.refresh_count_entry,
             self.mystic_medal_threshold,
             self.covenant_bookmark_threshold,
+            self.friendship_point_threshold,
             self.purchase_button_threshold,
             self.buy_button_threshold,
             self.refresh_button_threshold,
@@ -1323,6 +1362,7 @@ class SessionView:
         else:
             self._update_macro_dependent_controls()
         self.debug_checkbox.config(state=state)
+        self.friendship_point_checkbox.config(state=state)
         self.mumu_checkbox.config(state=state)
         self._set_reroll_settings_state(state)
         if not running:
@@ -1336,6 +1376,7 @@ class SessionView:
         self.total_refresh_label.config(text=str(completed_runs))
         self.mystic_label.config(text=str(stats.get("mystic_medal_bought", 0)))
         self.bookmark_label.config(text=str(stats.get("covenant_bookmark_bought", 0)))
+        self.friendship_label.config(text=str(stats.get("friendship_point_bought", 0)))
         self.sky_stone_label.config(text=str(sky_stone_usage))
         self.bookmark_efficiency_label.config(text=self._format_efficiency(bookmark_amount, sky_stone_usage))
         self.mystic_efficiency_label.config(text=self._format_efficiency(mystic_amount, sky_stone_usage))
@@ -1363,6 +1404,7 @@ class SessionView:
         successful_refreshes = stats.get("successful_refreshes", max(completed_runs - 1, 0))
         mystic_count = stats.get("mystic_medal_bought", 0)
         bookmark_count = stats.get("covenant_bookmark_bought", 0)
+        friendship_count = stats.get("friendship_point_bought", 0)
         sky_stone_usage = self._calculate_sky_stone_usage(stats)
         mystic_amount = self._calculate_item_amount(stats, "mystic_medal_bought")
         bookmark_amount = self._calculate_item_amount(stats, "covenant_bookmark_bought")
@@ -1374,6 +1416,7 @@ class SessionView:
             f"- 갱신 성공: {successful_refreshes}회\n"
             f"- 신비의 메달 구매: {mystic_count}개\n"
             f"- 성약의 책갈피 구매: {bookmark_count}개\n"
+            f"- 우정 포인트 구매: {friendship_count}개\n"
             f"- 하늘석 사용량: {sky_stone_usage}개\n"
             f"- 신비의 메달 획득량/하늘석: {self._format_efficiency(mystic_amount, sky_stone_usage)}\n"
             f"- 성약의 책갈피 획득량/하늘석: {self._format_efficiency(bookmark_amount, sky_stone_usage)}\n"
@@ -1512,6 +1555,9 @@ class SessionView:
                 elif "covenant_bookmark" in image_filename:
                     current_threshold = float(self.covenant_bookmark_threshold.get()) / 100.0
                     threshold_name = "성약의 책갈피"
+                elif "friendship_point" in image_filename:
+                    current_threshold = float(self.friendship_point_threshold.get()) / 100.0
+                    threshold_name = "우정 포인트"
                 elif "purchase_button" in image_filename and "disabled" not in image_filename:
                     current_threshold = float(self.purchase_button_threshold.get()) / 100.0
                     threshold_name = "구입 버튼"

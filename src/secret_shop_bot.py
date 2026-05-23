@@ -43,6 +43,7 @@ class SecretShopBot:
     # 구매할 아이템 이미지 파일명
     MYSTIC_MEDAL = "mystic_medal.png"  # 신비의 메달
     COVENANT_BOOKMARK = "covenant_bookmark.png"  # 성약의 책갈피
+    FRIENDSHIP_POINT = "friendship_point.png"  # 우정 포인트
     
     # 버튼 이미지 파일명
     # 상점 갱신 프로세스: 갱신 버튼 -> 확인 버튼
@@ -123,6 +124,7 @@ class SecretShopBot:
         default_thresholds = {
             "mystic_medal": 0.95,
             "covenant_bookmark": 0.95,
+            "friendship_point": 0.95,
             "purchase_button": 0.92,
             "buy_button": 0.92,
             "refresh_button": 0.92,
@@ -142,6 +144,7 @@ class SecretShopBot:
             "successful_refreshes": 0,
             "mystic_medal_bought": 0,
             "covenant_bookmark_bought": 0,
+            "friendship_point_bought": 0,
             "total_cost": 0,
             "start_time": None,
             "end_time": None,
@@ -182,6 +185,12 @@ class SecretShopBot:
                 "image": self.COVENANT_BOOKMARK,
                 "stat_key": "covenant_bookmark_bought",
                 "log_prefix": "성약의 책갈피",
+            },
+            "friendship_point": {
+                "label": "우정 포인트",
+                "image": self.FRIENDSHIP_POINT,
+                "stat_key": "friendship_point_bought",
+                "log_prefix": "우정 포인트",
             },
         }
         remote_items = self.macro_settings.get("items", {})
@@ -335,11 +344,12 @@ class SecretShopBot:
         
         logger.info("비밀상점 자동화 완료")
         logger.info(
-            "완료 요약 - 진행: %s회, 갱신 성공: %s회, 신비의 메달: %s개, 성약의 책갈피: %s개, 소요 시간: %s초",
+            "완료 요약 - 진행: %s회, 갱신 성공: %s회, 신비의 메달: %s개, 성약의 책갈피: %s개, 우정 포인트: %s개, 소요 시간: %s초",
             self.stats["completed_runs"],
             self.stats["successful_refreshes"],
             self.stats["mystic_medal_bought"],
             self.stats["covenant_bookmark_bought"],
+            self.stats["friendship_point_bought"],
             self.stats["elapsed_time"],
         )
         

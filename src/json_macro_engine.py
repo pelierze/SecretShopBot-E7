@@ -64,6 +64,7 @@ class JsonMacroEngine:
             "successful_refreshes": 0,
             "mystic_medal_bought": 0,
             "covenant_bookmark_bought": 0,
+            "friendship_point_bought": 0,
             "start_time": None,
             "end_time": None,
             "elapsed_time": 0,
@@ -74,6 +75,7 @@ class JsonMacroEngine:
             "mystic_medal": {"image": "mystic_medal.png", "label": "신비의 메달"},
             "covenant_bookmark": {"image": "covenant_bookmark.PNG", "label": "성약의 책갈피"},
         }
+        defaults["friendship_point"] = {"image": "friendship_point.png", "label": "우정 포인트"}
         remote_items = self.macro_settings.get("items", {})
         if isinstance(remote_items, dict):
             for key, value in remote_items.items():
@@ -235,7 +237,7 @@ class JsonMacroEngine:
             "purchase": "purchase_button",
             "buy": "buy_button",
         }.get(target, target)
-        default_threshold = 0.95 if threshold_key in {"mystic_medal", "covenant_bookmark"} else 0.92
+        default_threshold = 0.95 if threshold_key in {"mystic_medal", "covenant_bookmark", "friendship_point"} else 0.92
         return float(self.thresholds.get(threshold_key, default_threshold))
 
     def _find_image_file(self, directory: Path, base_name: str) -> Optional[Path]:
