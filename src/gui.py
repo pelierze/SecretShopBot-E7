@@ -10,7 +10,6 @@ import sys
 import threading
 import time
 import webbrowser
-import math
 from contextlib import contextmanager
 from pathlib import Path
 import tkinter as tk
@@ -65,7 +64,7 @@ def load_png_image(image_path: Path):
     try:
         return tk.PhotoImage(file=str(image_path))
     except Exception as exc:
-        logger.warning("PNG ???? ???? ?????: %s (%s)", image_path, exc)
+        logger.warning("PNG 이미지를 불러오지 못했습니다: %s (%s)", image_path, exc)
         return None
 
 
@@ -1585,10 +1584,9 @@ class SessionView:
     def _format_draw_efficiency(self, draw_count, sky_stone_usage):
         if sky_stone_usage <= 0 or draw_count <= 0:
             return "-"
-        ratio_gcd = math.gcd(int(sky_stone_usage), int(draw_count))
-        normalized_sky = sky_stone_usage // ratio_gcd
-        normalized_draw = draw_count // ratio_gcd
-        return f"{normalized_sky}개당 {normalized_draw}뽑"
+        sky_stone_per_draw = sky_stone_usage / draw_count
+        formatted_value = f"{sky_stone_per_draw:.2f}".rstrip("0").rstrip(".")
+        return f"1뽑당 {formatted_value}개"
 
     def _format_elapsed_seconds(self, seconds):
         try:
@@ -1790,7 +1788,7 @@ class SecretShopGUI:
         try:
             self.root.iconphoto(True, self.window_icon_image)
         except Exception as exc:
-            logger.warning("? ???? ???? ?????: %s", exc)
+            logger.warning("창 아이콘을 적용하지 못했습니다: %s", exc)
 
     def _create_header(self):
         header_frame = ttk.Frame(self.root_container, style="Root.TFrame")
