@@ -1758,13 +1758,11 @@ class SecretShopGUI:
         self.release_prompted = False
         self.release_check_complete = False
         self.window_icon_image = None
-        self.header_logo_image = None
 
         self._apply_modern_style()
         self._apply_window_icon()
         self.root_container = ttk.Frame(self.root, style="Root.TFrame", padding=(12, 12, 12, 12))
         self.root_container.pack(fill=tk.BOTH, expand=True)
-        self._create_header()
 
         self.notebook = ttk.Notebook(self.root_container)
         self.notebook.pack(fill=tk.BOTH, expand=True)
@@ -1781,7 +1779,7 @@ class SecretShopGUI:
         self._start_release_check()
 
     def _apply_window_icon(self):
-        icon_path = get_resource_root() / "assets" / "icons" / "app_icon.png"
+        icon_path = get_resource_root() / "assets" / "icons" / "top_icon.png"
         self.window_icon_image = load_png_image(icon_path)
         if self.window_icon_image is None:
             return
@@ -1789,19 +1787,6 @@ class SecretShopGUI:
             self.root.iconphoto(True, self.window_icon_image)
         except Exception as exc:
             logger.warning("창 아이콘을 적용하지 못했습니다: %s", exc)
-
-    def _create_header(self):
-        header_frame = ttk.Frame(self.root_container, style="Root.TFrame")
-        header_frame.pack(fill=tk.X, pady=(0, 12))
-
-        top_icon_path = get_resource_root() / "assets" / "icons" / "top_icon.png"
-        self.header_logo_image = load_png_image(top_icon_path)
-        if self.header_logo_image is not None and self.header_logo_image.width() > 320:
-            divisor = max(1, (self.header_logo_image.width() + 319) // 320)
-            self.header_logo_image = self.header_logo_image.subsample(divisor, divisor)
-
-        if self.header_logo_image is not None:
-            ttk.Label(header_frame, image=self.header_logo_image, style="Root.TLabel").pack(anchor="w")
 
     def _apply_modern_style(self):
         style = ttk.Style(self.root)
