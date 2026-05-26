@@ -19,6 +19,10 @@
 - `SecretShopBot-E7-v1.2.1.zip`
 - `SecretShopBot-E7-v1.2.1.zip.sha256.txt`
 
+### SHA256
+
+`1A1B93970F5669112D79447D04C87B1C60656D38A3B2033D6A23EA76250903AF  SecretShopBot-E7-v1.2.1.zip`
+
 ### Git 태그
 
 - `v1.2.1`
