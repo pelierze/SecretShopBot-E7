@@ -7,6 +7,7 @@ import copy
 import logging
 import os
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -14,6 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
+from PIL import Image
 
 # 모던 UI 테마 (pip install sv-ttk 필요)
 try:
@@ -65,6 +67,19 @@ def load_png_image(image_path: Path):
         return tk.PhotoImage(file=str(image_path))
     except Exception as exc:
         logger.warning("PNG 이미지를 불러오지 못했습니다: %s (%s)", image_path, exc)
+        return None
+
+
+def create_temp_ico_from_png(source_path: Path, output_name: str, sizes: list[tuple[int, int]]) -> Path | None:
+    if not source_path.exists():
+        return None
+    try:
+        output_path = Path(tempfile.gettempdir()) / output_name
+        with Image.open(source_path) as image:
+            image.save(output_path, format="ICO", sizes=sizes)
+        return output_path
+    except Exception as exc:
+        logger.warning("임시 ICO 파일을 생성하지 못했습니다: %s (%s)", source_path, exc)
         return None
 
 
@@ -1758,6 +1773,7 @@ class SecretShopGUI:
         self.release_prompted = False
         self.release_check_complete = False
         self.window_icon_image = None
+        self.window_icon_handles = []
 
         self._apply_modern_style()
         self._apply_window_icon()
@@ -1779,14 +1795,75 @@ class SecretShopGUI:
         self._start_release_check()
 
     def _apply_window_icon(self):
-        icon_path = get_resource_root() / "assets" / "icons" / "top_icon.png"
-        self.window_icon_image = load_png_image(icon_path)
+        resource_root = get_resource_root()
+        title_icon_path = resource_root / "assets" / "icons" / "top_icon.png"
+        taskbar_icon_path = resource_root / "assets" / "icons" / "app_icon.ico"
+
+        if taskbar_icon_path.exists():
+            try:
+                self.root.iconbitmap(default=str(taskbar_icon_path))
+            except Exception as exc:
+                logger.warning("기본 창 아이콘을 적용하지 못했습니다: %s", exc)
+
+        self.window_icon_image = load_png_image(title_icon_path)
         if self.window_icon_image is None:
             return
         try:
-            self.root.iconphoto(True, self.window_icon_image)
+            self.root.iconphoto(False, self.window_icon_image)
         except Exception as exc:
             logger.warning("창 아이콘을 적용하지 못했습니다: %s", exc)
+
+        self._apply_windows_icon_overrides(title_icon_path, taskbar_icon_path)
+
+    def _apply_windows_icon_overrides(self, title_icon_path: Path, taskbar_icon_path: Path):
+        if os.name != "nt":
+            return
+        try:
+            import ctypes
+
+            self.root.update_idletasks()
+            hwnd = self.root.winfo_id()
+
+            title_ico_path = create_temp_ico_from_png(
+                title_icon_path,
+                "SecretShopBot-E7-title.ico",
+                sizes=[(16, 16), (24, 24), (32, 32)],
+            )
+            if title_ico_path is None or not taskbar_icon_path.exists():
+                return
+
+            user32 = ctypes.windll.user32
+            wm_seticon = 0x0080
+            icon_small = 0
+            icon_big = 1
+            image_icon = 1
+            lr_loadfromfile = 0x0010
+
+            small_handle = user32.LoadImageW(
+                None,
+                str(title_ico_path),
+                image_icon,
+                16,
+                16,
+                lr_loadfromfile,
+            )
+            big_handle = user32.LoadImageW(
+                None,
+                str(taskbar_icon_path),
+                image_icon,
+                32,
+                32,
+                lr_loadfromfile,
+            )
+
+            if small_handle:
+                user32.SendMessageW(hwnd, wm_seticon, icon_small, small_handle)
+                self.window_icon_handles.append(small_handle)
+            if big_handle:
+                user32.SendMessageW(hwnd, wm_seticon, icon_big, big_handle)
+                self.window_icon_handles.append(big_handle)
+        except Exception as exc:
+            logger.warning("Windows 아이콘 분리 적용에 실패했습니다: %s", exc)
 
     def _apply_modern_style(self):
         style = ttk.Style(self.root)
