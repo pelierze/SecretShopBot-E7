@@ -1799,6 +1799,10 @@ class SecretShopGUI:
         title_icon_path = resource_root / "assets" / "icons" / "top_icon.png"
         taskbar_icon_path = resource_root / "assets" / "icons" / "app_icon.ico"
 
+        if os.name == "nt":
+            self._apply_windows_icon_overrides(title_icon_path, taskbar_icon_path)
+            return
+
         if taskbar_icon_path.exists():
             try:
                 self.root.iconbitmap(default=str(taskbar_icon_path))
@@ -1812,8 +1816,6 @@ class SecretShopGUI:
             self.root.iconphoto(False, self.window_icon_image)
         except Exception as exc:
             logger.warning("창 아이콘을 적용하지 못했습니다: %s", exc)
-
-        self._apply_windows_icon_overrides(title_icon_path, taskbar_icon_path)
 
     def _apply_windows_icon_overrides(self, title_icon_path: Path, taskbar_icon_path: Path):
         if os.name != "nt":
