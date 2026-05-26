@@ -1759,16 +1759,9 @@ class SecretShopGUI:
         self.release_prompted = False
         self.release_check_complete = False
         self.window_icon_image = None
-        self.titlebar_icon_image = None
-        self.is_custom_chrome = os.name == "nt"
-        self.is_minimized = False
 
         self._apply_modern_style()
         self._apply_window_icon()
-        if self.is_custom_chrome:
-            self.root.overrideredirect(True)
-            self.root.bind("<Map>", self._restore_custom_chrome)
-            self._create_custom_titlebar()
         self.root_container = ttk.Frame(self.root, style="Root.TFrame", padding=(12, 12, 12, 12))
         self.root_container.pack(fill=tk.BOTH, expand=True)
 
@@ -1804,99 +1797,6 @@ class SecretShopGUI:
             self.root.iconphoto(True, self.window_icon_image)
         except Exception as exc:
             logger.warning("창 아이콘을 적용하지 못했습니다: %s", exc)
-
-    def _create_custom_titlebar(self):
-        self.titlebar_frame = tk.Frame(
-            self.root,
-            bg="#f5f2ec",
-            bd=1,
-            relief="solid",
-            highlightthickness=0,
-        )
-        self.titlebar_frame.pack(fill=tk.X, side=tk.TOP)
-
-        title_icon_path = get_resource_root() / "assets" / "icons" / "top_icon.png"
-        self.titlebar_icon_image = load_png_image(title_icon_path)
-        if self.titlebar_icon_image is not None and self.titlebar_icon_image.height() > 18:
-            divisor = max(1, (self.titlebar_icon_image.height() + 17) // 18)
-            self.titlebar_icon_image = self.titlebar_icon_image.subsample(divisor, divisor)
-
-        icon_label = tk.Label(
-            self.titlebar_frame,
-            image=self.titlebar_icon_image,
-            text="",
-            bg="#f5f2ec",
-        )
-        icon_label.pack(side=tk.LEFT, padx=(8, 6), pady=5)
-
-        self.titlebar_title_label = tk.Label(
-            self.titlebar_frame,
-            text=self.window_title,
-            bg="#f5f2ec",
-            fg="#2f261f",
-            font=("맑은 고딕", 10),
-        )
-        self.titlebar_title_label.pack(side=tk.LEFT, pady=5)
-
-        button_frame = tk.Frame(self.titlebar_frame, bg="#f5f2ec")
-        button_frame.pack(side=tk.RIGHT, padx=4)
-
-        self.minimize_button = tk.Label(
-            button_frame,
-            text="─",
-            bg="#f5f2ec",
-            fg="#2f261f",
-            font=("맑은 고딕", 10),
-            width=3,
-            cursor="hand2",
-        )
-        self.minimize_button.pack(side=tk.LEFT, pady=2)
-        self.minimize_button.bind("<Button-1>", self._minimize_window)
-
-        self.close_button = tk.Label(
-            button_frame,
-            text="X",
-            bg="#f5f2ec",
-            fg="#2f261f",
-            font=("맑은 고딕", 10),
-            width=3,
-            cursor="hand2",
-        )
-        self.close_button.pack(side=tk.LEFT, pady=2)
-        self.close_button.bind("<Button-1>", lambda _event: self._on_closing())
-
-        drag_widgets = [self.titlebar_frame, self.titlebar_title_label, icon_label]
-        for widget in drag_widgets:
-            widget.bind("<ButtonPress-1>", self._start_window_drag)
-            widget.bind("<B1-Motion>", self._perform_window_drag)
-        self.titlebar_frame.bind("<Double-Button-1>", self._toggle_zoom)
-
-    def _start_window_drag(self, event):
-        self._drag_offset_x = event.x_root - self.root.winfo_x()
-        self._drag_offset_y = event.y_root - self.root.winfo_y()
-
-    def _perform_window_drag(self, event):
-        if self.root.state() == "zoomed":
-            return
-        x = event.x_root - getattr(self, "_drag_offset_x", 0)
-        y = event.y_root - getattr(self, "_drag_offset_y", 0)
-        self.root.geometry(f"+{x}+{y}")
-
-    def _toggle_zoom(self, _event=None):
-        if self.root.state() == "zoomed":
-            self.root.state("normal")
-        else:
-            self.root.state("zoomed")
-
-    def _minimize_window(self, _event=None):
-        self.is_minimized = True
-        self.root.overrideredirect(False)
-        self.root.iconify()
-
-    def _restore_custom_chrome(self, _event=None):
-        if self.is_custom_chrome and self.is_minimized:
-            self.root.overrideredirect(True)
-            self.is_minimized = False
 
     def _apply_modern_style(self):
         style = ttk.Style(self.root)
@@ -2105,8 +2005,6 @@ class SecretShopGUI:
         if isinstance(gui_config, dict) and gui_config.get("window_title"):
             self.window_title = gui_config["window_title"]
             self.root.title(self.window_title)
-            if self.is_custom_chrome:
-                self.titlebar_title_label.config(text=self.window_title)
 
         for session in self.sessions:
             session.apply_settings_update(config)
