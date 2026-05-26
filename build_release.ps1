@@ -37,21 +37,31 @@ python -m pip install pyinstaller
 Write-Host "Syncing executable icon from assets/icons/app_icon.png..."
 @'
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageFilter
 
 project_root = Path.cwd()
 png_path = project_root / "assets" / "icons" / "app_icon.png"
 ico_path = project_root / "assets" / "icons" / "app_icon.ico"
+preview_dir = project_root / "assets" / "icons" / "_generated"
 
 if not png_path.exists():
     raise SystemExit(f"Icon source not found: {png_path}")
 
-with Image.open(png_path) as image:
-    image.save(
+preview_dir.mkdir(parents=True, exist_ok=True)
+target_sizes = [256, 128, 64, 48, 40, 32, 24, 20, 16]
+resample = getattr(Image, "Resampling", Image).LANCZOS
+
+with Image.open(png_path).convert("RGBA") as source:
+    source.save(
         ico_path,
         format="ICO",
-        sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)],
+        sizes=[(size, size) for size in target_sizes],
     )
+
+    for size in (32, 24, 16):
+        preview = source.resize((size, size), resample)
+        preview = preview.filter(ImageFilter.UnsharpMask(radius=1.2, percent=160, threshold=2))
+        preview.save(preview_dir / f"app_icon_{size}.png")
 
 print(f"Updated {ico_path}")
 '@ | python -
