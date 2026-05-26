@@ -7,7 +7,6 @@ import copy
 import logging
 import os
 import sys
-import tempfile
 import threading
 import time
 import webbrowser
@@ -15,7 +14,6 @@ from contextlib import contextmanager
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
-from PIL import Image
 
 # 모던 UI 테마 (pip install sv-ttk 필요)
 try:
@@ -67,19 +65,6 @@ def load_png_image(image_path: Path):
         return tk.PhotoImage(file=str(image_path))
     except Exception as exc:
         logger.warning("PNG 이미지를 불러오지 못했습니다: %s (%s)", image_path, exc)
-        return None
-
-
-def create_temp_ico_from_png(source_path: Path, output_name: str, sizes: list[tuple[int, int]]) -> Path | None:
-    if not source_path.exists():
-        return None
-    try:
-        output_path = Path(tempfile.gettempdir()) / output_name
-        with Image.open(source_path) as image:
-            image.save(output_path, format="ICO", sizes=sizes)
-        return output_path
-    except Exception as exc:
-        logger.warning("임시 ICO 파일을 생성하지 못했습니다: %s (%s)", source_path, exc)
         return None
 
 
@@ -1762,7 +1747,8 @@ class SecretShopGUI:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("에픽세븐 비밀상점 자동화")
+        self.window_title = "에픽세븐 비밀상점 자동화"
+        self.root.title(self.window_title)
         self.root.geometry("1180x920")
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -1773,10 +1759,16 @@ class SecretShopGUI:
         self.release_prompted = False
         self.release_check_complete = False
         self.window_icon_image = None
-        self.window_icon_handles = []
+        self.titlebar_icon_image = None
+        self.is_custom_chrome = os.name == "nt"
+        self.is_minimized = False
 
         self._apply_modern_style()
         self._apply_window_icon()
+        if self.is_custom_chrome:
+            self.root.overrideredirect(True)
+            self.root.bind("<Map>", self._restore_custom_chrome)
+            self._create_custom_titlebar()
         self.root_container = ttk.Frame(self.root, style="Root.TFrame", padding=(12, 12, 12, 12))
         self.root_container.pack(fill=tk.BOTH, expand=True)
 
@@ -1796,12 +1788,8 @@ class SecretShopGUI:
 
     def _apply_window_icon(self):
         resource_root = get_resource_root()
-        title_icon_path = resource_root / "assets" / "icons" / "top_icon.png"
         taskbar_icon_path = resource_root / "assets" / "icons" / "app_icon.ico"
-
-        if os.name == "nt":
-            self._apply_windows_icon_overrides(title_icon_path, taskbar_icon_path)
-            return
+        taskbar_icon_png_path = resource_root / "assets" / "icons" / "app_icon.png"
 
         if taskbar_icon_path.exists():
             try:
@@ -1809,63 +1797,106 @@ class SecretShopGUI:
             except Exception as exc:
                 logger.warning("기본 창 아이콘을 적용하지 못했습니다: %s", exc)
 
-        self.window_icon_image = load_png_image(title_icon_path)
+        self.window_icon_image = load_png_image(taskbar_icon_png_path)
         if self.window_icon_image is None:
             return
         try:
-            self.root.iconphoto(False, self.window_icon_image)
+            self.root.iconphoto(True, self.window_icon_image)
         except Exception as exc:
             logger.warning("창 아이콘을 적용하지 못했습니다: %s", exc)
 
-    def _apply_windows_icon_overrides(self, title_icon_path: Path, taskbar_icon_path: Path):
-        if os.name != "nt":
+    def _create_custom_titlebar(self):
+        self.titlebar_frame = tk.Frame(
+            self.root,
+            bg="#f5f2ec",
+            bd=1,
+            relief="solid",
+            highlightthickness=0,
+        )
+        self.titlebar_frame.pack(fill=tk.X, side=tk.TOP)
+
+        title_icon_path = get_resource_root() / "assets" / "icons" / "top_icon.png"
+        self.titlebar_icon_image = load_png_image(title_icon_path)
+        if self.titlebar_icon_image is not None and self.titlebar_icon_image.height() > 18:
+            divisor = max(1, (self.titlebar_icon_image.height() + 17) // 18)
+            self.titlebar_icon_image = self.titlebar_icon_image.subsample(divisor, divisor)
+
+        icon_label = tk.Label(
+            self.titlebar_frame,
+            image=self.titlebar_icon_image,
+            text="",
+            bg="#f5f2ec",
+        )
+        icon_label.pack(side=tk.LEFT, padx=(8, 6), pady=5)
+
+        self.titlebar_title_label = tk.Label(
+            self.titlebar_frame,
+            text=self.window_title,
+            bg="#f5f2ec",
+            fg="#2f261f",
+            font=("맑은 고딕", 10),
+        )
+        self.titlebar_title_label.pack(side=tk.LEFT, pady=5)
+
+        button_frame = tk.Frame(self.titlebar_frame, bg="#f5f2ec")
+        button_frame.pack(side=tk.RIGHT, padx=4)
+
+        self.minimize_button = tk.Label(
+            button_frame,
+            text="─",
+            bg="#f5f2ec",
+            fg="#2f261f",
+            font=("맑은 고딕", 10),
+            width=3,
+            cursor="hand2",
+        )
+        self.minimize_button.pack(side=tk.LEFT, pady=2)
+        self.minimize_button.bind("<Button-1>", self._minimize_window)
+
+        self.close_button = tk.Label(
+            button_frame,
+            text="X",
+            bg="#f5f2ec",
+            fg="#2f261f",
+            font=("맑은 고딕", 10),
+            width=3,
+            cursor="hand2",
+        )
+        self.close_button.pack(side=tk.LEFT, pady=2)
+        self.close_button.bind("<Button-1>", lambda _event: self._on_closing())
+
+        drag_widgets = [self.titlebar_frame, self.titlebar_title_label, icon_label]
+        for widget in drag_widgets:
+            widget.bind("<ButtonPress-1>", self._start_window_drag)
+            widget.bind("<B1-Motion>", self._perform_window_drag)
+        self.titlebar_frame.bind("<Double-Button-1>", self._toggle_zoom)
+
+    def _start_window_drag(self, event):
+        self._drag_offset_x = event.x_root - self.root.winfo_x()
+        self._drag_offset_y = event.y_root - self.root.winfo_y()
+
+    def _perform_window_drag(self, event):
+        if self.root.state() == "zoomed":
             return
-        try:
-            import ctypes
+        x = event.x_root - getattr(self, "_drag_offset_x", 0)
+        y = event.y_root - getattr(self, "_drag_offset_y", 0)
+        self.root.geometry(f"+{x}+{y}")
 
-            self.root.update_idletasks()
-            hwnd = self.root.winfo_id()
+    def _toggle_zoom(self, _event=None):
+        if self.root.state() == "zoomed":
+            self.root.state("normal")
+        else:
+            self.root.state("zoomed")
 
-            title_ico_path = create_temp_ico_from_png(
-                title_icon_path,
-                "SecretShopBot-E7-title.ico",
-                sizes=[(16, 16), (24, 24), (32, 32)],
-            )
-            if title_ico_path is None or not taskbar_icon_path.exists():
-                return
+    def _minimize_window(self, _event=None):
+        self.is_minimized = True
+        self.root.overrideredirect(False)
+        self.root.iconify()
 
-            user32 = ctypes.windll.user32
-            wm_seticon = 0x0080
-            icon_small = 0
-            icon_big = 1
-            image_icon = 1
-            lr_loadfromfile = 0x0010
-
-            small_handle = user32.LoadImageW(
-                None,
-                str(title_ico_path),
-                image_icon,
-                16,
-                16,
-                lr_loadfromfile,
-            )
-            big_handle = user32.LoadImageW(
-                None,
-                str(taskbar_icon_path),
-                image_icon,
-                32,
-                32,
-                lr_loadfromfile,
-            )
-
-            if small_handle:
-                user32.SendMessageW(hwnd, wm_seticon, icon_small, small_handle)
-                self.window_icon_handles.append(small_handle)
-            if big_handle:
-                user32.SendMessageW(hwnd, wm_seticon, icon_big, big_handle)
-                self.window_icon_handles.append(big_handle)
-        except Exception as exc:
-            logger.warning("Windows 아이콘 분리 적용에 실패했습니다: %s", exc)
+    def _restore_custom_chrome(self, _event=None):
+        if self.is_custom_chrome and self.is_minimized:
+            self.root.overrideredirect(True)
+            self.is_minimized = False
 
     def _apply_modern_style(self):
         style = ttk.Style(self.root)
@@ -2072,7 +2103,10 @@ class SecretShopGUI:
 
         gui_config = config.get("gui", {})
         if isinstance(gui_config, dict) and gui_config.get("window_title"):
-            self.root.title(gui_config["window_title"])
+            self.window_title = gui_config["window_title"]
+            self.root.title(self.window_title)
+            if self.is_custom_chrome:
+                self.titlebar_title_label.config(text=self.window_title)
 
         for session in self.sessions:
             session.apply_settings_update(config)
