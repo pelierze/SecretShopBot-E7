@@ -13,6 +13,7 @@ $NormalizedVersion = if ($Version.StartsWith("v")) { $Version } else { "v$Versio
 $NumericVersion = if ($NormalizedVersion.StartsWith("v")) { $NormalizedVersion.Substring(1) } else { $NormalizedVersion }
 $PackageName = "$AppName-$NormalizedVersion"
 $PackageDir = Join-Path $ReleaseRoot $PackageName
+$StagingPackageDir = $PackageDir
 $ZipPath = Join-Path $ReleaseRoot "$PackageName.zip"
 
 Set-Location $ProjectRoot
@@ -96,7 +97,15 @@ if (Test-Path $BuildRoot) {
     Remove-Item -LiteralPath $BuildRoot -Recurse -Force
 }
 if (Test-Path $PackageDir) {
-    Remove-Item -LiteralPath $PackageDir -Recurse -Force
+    try {
+        Remove-Item -LiteralPath $PackageDir -Recurse -Force
+    }
+    catch {
+        $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        $StagingPackageDir = Join-Path $ReleaseRoot "$PackageName-staging-$Timestamp"
+        Write-Host "Existing release folder is in use. Using staging folder:"
+        Write-Host "  $StagingPackageDir"
+    }
 }
 if (Test-Path $ZipPath) {
     Remove-Item -LiteralPath $ZipPath -Force
@@ -114,21 +123,24 @@ if (-not (Test-Path $BuiltDir)) {
 }
 
 Write-Host "Preparing release package..."
-Copy-Item -LiteralPath $BuiltDir -Destination $PackageDir -Recurse
+if (Test-Path $StagingPackageDir) {
+    Remove-Item -LiteralPath $StagingPackageDir -Recurse -Force
+}
+Copy-Item -LiteralPath $BuiltDir -Destination $StagingPackageDir -Recurse
 
 $ReadmeSource = Join-Path $ProjectRoot "README.md"
 if (Test-Path $ReadmeSource) {
-    Copy-Item -LiteralPath $ReadmeSource -Destination (Join-Path $PackageDir "README.md")
+    Copy-Item -LiteralPath $ReadmeSource -Destination (Join-Path $StagingPackageDir "README.md")
 }
 
 $DeploySource = Join-Path $ProjectRoot "DEPLOY.md"
 if (Test-Path $DeploySource) {
-    Copy-Item -LiteralPath $DeploySource -Destination (Join-Path $PackageDir "DEPLOY.md")
+    Copy-Item -LiteralPath $DeploySource -Destination (Join-Path $StagingPackageDir "DEPLOY.md")
 }
 
 $SecuritySource = Join-Path $ProjectRoot "SECURITY.md"
 if (Test-Path $SecuritySource) {
-    Copy-Item -LiteralPath $SecuritySource -Destination (Join-Path $PackageDir "SECURITY.md")
+    Copy-Item -LiteralPath $SecuritySource -Destination (Join-Path $StagingPackageDir "SECURITY.md")
 }
 
 Write-Host "Creating zip package..."
@@ -139,7 +151,7 @@ for ($Attempt = 1; $Attempt -le 5; $Attempt++) {
             Remove-Item -LiteralPath $ZipPath -Force
         }
         Start-Sleep -Seconds 2
-        Compress-Archive -Path $PackageDir -DestinationPath $ZipPath -Force
+        Compress-Archive -Path $StagingPackageDir -DestinationPath $ZipPath -Force
         $ZipCreated = $true
         break
     }
