@@ -65,6 +65,7 @@ exe = EXE(
     upx=False,
     console=False,
     icon='assets/icons/app_icon.ico',
+    version='file_version_info.txt',
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

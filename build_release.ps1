@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.2.0"
+    [string]$Version = "v1.2.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,14 +9,16 @@ $AppName = "SecretShopBot-E7"
 $ReleaseRoot = Join-Path $ProjectRoot "release"
 $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
-$PackageName = "$AppName-v$Version"
+$NormalizedVersion = if ($Version.StartsWith("v")) { $Version } else { "v$Version" }
+$NumericVersion = if ($NormalizedVersion.StartsWith("v")) { $NormalizedVersion.Substring(1) } else { $NormalizedVersion }
+$PackageName = "$AppName-$NormalizedVersion"
 $PackageDir = Join-Path $ReleaseRoot $PackageName
 $ZipPath = Join-Path $ReleaseRoot "$PackageName.zip"
 
 Set-Location $ProjectRoot
 
 Write-Host "== SecretShopBot-E7 release build =="
-Write-Host "Version: $Version"
+Write-Host "Version: $NormalizedVersion"
 Write-Host ""
 
 if (-not (Test-Path "main.py")) {
@@ -52,6 +54,39 @@ with Image.open(png_path) as image:
 
 print(f"Updated {ico_path}")
 '@ | python -
+
+Write-Host "Generating Windows version metadata..."
+@"
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=($($NumericVersion.Replace('.', ', ')), 0),
+    prodvers=($($NumericVersion.Replace('.', ', ')), 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        u'040904B0',
+        [
+          StringStruct(u'CompanyName', u'pelierze'),
+          StringStruct(u'FileDescription', u'SecretShopBot-E7 for Epic Seven'),
+          StringStruct(u'FileVersion', u'$NumericVersion.0'),
+          StringStruct(u'InternalName', u'SecretShopBot-E7'),
+          StringStruct(u'OriginalFilename', u'SecretShopBot-E7.exe'),
+          StringStruct(u'ProductName', u'SecretShopBot-E7'),
+          StringStruct(u'ProductVersion', u'$NumericVersion.0'),
+        ]
+      )
+    ]),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+  ]
+)
+"@ | Set-Content -Path (Join-Path $ProjectRoot "file_version_info.txt") -Encoding ASCII
 
 Write-Host "Cleaning previous build output..."
 if (Test-Path $DistRoot) {
