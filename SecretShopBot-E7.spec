@@ -18,6 +18,9 @@ def collect_images():
 datas = collect_images() + [
     ('tools', 'tools'),
     ('images/equipment_options/README.txt', 'images/equipment_options'),
+    ('assets/icons/app_icon.png', 'assets/icons'),
+    ('assets/icons/app_icon.ico', 'assets/icons'),
+    ('assets/icons/top_icon.png', 'assets/icons'),
     ('update_config.json', '.'),
     ('remote_script.json', '.'),
 ] + collect_data_files(
@@ -61,6 +64,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
+    icon='assets/icons/app_icon.ico',
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

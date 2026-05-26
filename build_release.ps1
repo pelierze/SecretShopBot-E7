@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.1.8"
+    [string]$Version = "1.2.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +30,28 @@ Write-Host "Installing/updating Python dependencies..."
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python -m pip install pyinstaller
+
+Write-Host "Syncing executable icon from assets/icons/app_icon.png..."
+@'
+from pathlib import Path
+from PIL import Image
+
+project_root = Path.cwd()
+png_path = project_root / "assets" / "icons" / "app_icon.png"
+ico_path = project_root / "assets" / "icons" / "app_icon.ico"
+
+if not png_path.exists():
+    raise SystemExit(f"Icon source not found: {png_path}")
+
+with Image.open(png_path) as image:
+    image.save(
+        ico_path,
+        format="ICO",
+        sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)],
+    )
+
+print(f"Updated {ico_path}")
+'@ | python -
 
 Write-Host "Cleaning previous build output..."
 if (Test-Path $DistRoot) {
