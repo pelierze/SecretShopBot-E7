@@ -34,37 +34,15 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python -m pip install pyinstaller
 
-Write-Host "Syncing executable icon from assets/icons/app_icon.png..."
-@'
-from pathlib import Path
-from PIL import Image, ImageFilter
-
-project_root = Path.cwd()
-png_path = project_root / "assets" / "icons" / "app_icon.png"
-ico_path = project_root / "assets" / "icons" / "app_icon.ico"
-preview_dir = project_root / "assets" / "icons" / "_generated"
-
-if not png_path.exists():
-    raise SystemExit(f"Icon source not found: {png_path}")
-
-preview_dir.mkdir(parents=True, exist_ok=True)
-target_sizes = [256, 128, 64, 48, 40, 32, 24, 20, 16]
-resample = getattr(Image, "Resampling", Image).LANCZOS
-
-with Image.open(png_path).convert("RGBA") as source:
-    source.save(
-        ico_path,
-        format="ICO",
-        sizes=[(size, size) for size in target_sizes],
-    )
-
-    for size in (32, 24, 16):
-        preview = source.resize((size, size), resample)
-        preview = preview.filter(ImageFilter.UnsharpMask(radius=1.2, percent=160, threshold=2))
-        preview.save(preview_dir / f"app_icon_{size}.png")
-
-print(f"Updated {ico_path}")
-'@ | python -
+Write-Host "Checking executable icon..."
+$IconPath = Join-Path $ProjectRoot "assets\icons\app_icon_multi_size.ico"
+$IconCacheDir = Join-Path $ProjectRoot "assets\icons\_generated"
+if (Test-Path $IconCacheDir) {
+    Remove-Item -LiteralPath $IconCacheDir -Recurse -Force
+}
+if (-not (Test-Path $IconPath)) {
+    throw "Executable icon was not found: $IconPath"
+}
 
 Write-Host "Generating Windows version metadata..."
 @"

@@ -15,14 +15,21 @@ def collect_images():
     return datas
 
 
+def collect_icons():
+    datas = []
+    icon_root = os.path.join('assets', 'icons')
+    for f in os.listdir(icon_root):
+        if f.lower().endswith(('.ico', '.png')):
+            datas.append((os.path.join(icon_root, f), icon_root))
+    return datas
+
+
 datas = collect_images() + [
     ('tools', 'tools'),
     ('images/equipment_options/README.txt', 'images/equipment_options'),
-    ('assets/icons/app_icon.png', 'assets/icons'),
-    ('assets/icons/app_icon.ico', 'assets/icons'),
     ('update_config.json', '.'),
     ('remote_script.json', '.'),
-] + collect_data_files(
+] + collect_icons() + collect_data_files(
     'rapidocr_onnxruntime',
     includes=['config.yaml', 'models/*.onnx'],
 )
@@ -63,7 +70,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon='assets/icons/app_icon.ico',
+    icon='assets/icons/app_icon_multi_size.ico',
     version='file_version_info.txt',
     disable_windowed_traceback=False,
     argv_emulation=False,

@@ -1781,8 +1781,8 @@ class SecretShopGUI:
 
     def _apply_window_icon(self):
         resource_root = get_resource_root()
-        taskbar_icon_path = resource_root / "assets" / "icons" / "app_icon.ico"
-        taskbar_icon_png_path = resource_root / "assets" / "icons" / "app_icon.png"
+        taskbar_icon_path = resource_root / "assets" / "icons" / "app_icon_multi_size.ico"
+        taskbar_icon_png_path = resource_root / "assets" / "icons" / "app_icon_256.png"
 
         if taskbar_icon_path.exists():
             try:
