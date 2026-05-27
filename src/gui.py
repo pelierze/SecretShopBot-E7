@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
+from PIL import Image, ImageTk
 
 # 모던 UI 테마 (pip install sv-ttk 필요)
 try:
@@ -58,13 +59,16 @@ def get_resource_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def load_png_image(image_path: Path):
+def load_window_icon_image(image_path: Path):
     if not image_path.exists():
         return None
     try:
+        if image_path.suffix.lower() == ".ico":
+            with Image.open(image_path) as image:
+                return ImageTk.PhotoImage(image.copy())
         return tk.PhotoImage(file=str(image_path))
     except Exception as exc:
-        logger.warning("PNG 이미지를 불러오지 못했습니다: %s (%s)", image_path, exc)
+        logger.warning("창 아이콘 이미지를 불러오지 못했습니다: %s (%s)", image_path, exc)
         return None
 
 
@@ -1782,7 +1786,6 @@ class SecretShopGUI:
     def _apply_window_icon(self):
         resource_root = get_resource_root()
         taskbar_icon_path = resource_root / "assets" / "icons" / "app_icon_multi_size.ico"
-        taskbar_icon_png_path = resource_root / "assets" / "icons" / "app_icon_256.png"
 
         if taskbar_icon_path.exists():
             try:
@@ -1790,7 +1793,7 @@ class SecretShopGUI:
             except Exception as exc:
                 logger.warning("기본 창 아이콘을 적용하지 못했습니다: %s", exc)
 
-        self.window_icon_image = load_png_image(taskbar_icon_png_path)
+        self.window_icon_image = load_window_icon_image(taskbar_icon_path)
         if self.window_icon_image is None:
             return
         try:
