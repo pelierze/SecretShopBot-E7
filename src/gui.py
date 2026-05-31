@@ -16,6 +16,12 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 from PIL import Image, ImageTk
 
+# 사운드 출력을 위한 패키지 (윈도우 전용)
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
 # 모던 UI 테마 (pip install sv-ttk 필요)
 try:
     import sv_ttk
@@ -191,6 +197,7 @@ class SessionView:
         self.bot = None
         self.bot_thread = None
         self.is_running = False
+        self.was_stopped_by_user = False
         self.selected_macro_id = "secret_shop"
         self.scanned_devices = {}
         self.selected_device_info = None
@@ -1138,6 +1145,8 @@ class SessionView:
                 messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
                 return
 
+            self.was_stopped_by_user = False
+
             try:
                 refresh_count = int(self.refresh_count_entry.get())
                 buy_count = int(self.buy_count_entry.get())
@@ -1210,6 +1219,8 @@ class SessionView:
             if not self.adb_controller:
                 messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
                 return
+
+            self.was_stopped_by_user = False
 
             try:
                 max_rerolls = int(self.reroll_max_entry.get())
@@ -1296,6 +1307,8 @@ class SessionView:
                 messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
                 return
 
+            self.was_stopped_by_user = False
+
             try:
                 cycle_count = int(self.penguin_cycle_entry.get())
                 if cycle_count <= 0:
@@ -1332,12 +1345,14 @@ class SessionView:
 
     def _run_bot(self, refresh_count, buy_count):
         with log_session(self.name):
+            has_error = False
             try:
                 self.root.after(500, self._update_running_state)
                 final_stats = self.bot.run(refresh_count, buy_count)
                 self.root.after(0, lambda: self._update_stats(final_stats))
                 self.log(self._format_stats_summary("✅ 자동화 완료", final_stats))
             except Exception as e:
+                has_error = True
                 logger.error("봇 실행 중 오류: %s", e, exc_info=True)
                 if not self.app.is_closing:
                     self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 실행 중 오류 발생:\n{str(e)}"))
@@ -1345,15 +1360,21 @@ class SessionView:
                 self.is_running = False
                 if not self.app.is_closing:
                     self.root.after(0, lambda: self._set_running_ui(False))
+                    if self.was_stopped_by_user or has_error:
+                        self.root.after(0, self._play_stopped_sound)
+                    else:
+                        self.root.after(0, self._play_complete_sound)
 
     def _run_reroll_bot(self):
         with log_session(self.name):
+            has_error = False
             try:
                 self.root.after(500, self._update_running_state)
                 final_stats = self.bot.run()
                 self.root.after(0, lambda: self._update_reroll_stats(final_stats))
                 self.log(self._format_reroll_summary("장비 리롤 완료", final_stats))
             except Exception as e:
+                has_error = True
                 logger.error("장비 리롤 실행 중 오류: %s", e, exc_info=True)
                 if not self.app.is_closing:
                     self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 장비 리롤 중 오류 발생:\n{str(e)}"))
@@ -1361,15 +1382,21 @@ class SessionView:
                 self.is_running = False
                 if not self.app.is_closing:
                     self.root.after(0, lambda: self._set_running_ui(False))
+                    if self.was_stopped_by_user or has_error:
+                        self.root.after(0, self._play_stopped_sound)
+                    else:
+                        self.root.after(0, self._play_complete_sound)
 
     def _run_penguin_bot(self):
         with log_session(self.name):
+            has_error = False
             try:
                 self.root.after(500, self._update_running_state)
                 final_stats = self.bot.run()
                 self.root.after(0, lambda: self._update_penguin_stats(final_stats))
                 self.log(self._format_penguin_summary("펭귄 구매 완료", final_stats))
             except Exception as e:
+                has_error = True
                 logger.error("펭귄 구매 실행 중 오류: %s", e, exc_info=True)
                 if not self.app.is_closing:
                     self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 펭귄 구매 중 오류 발생:\n{str(e)}"))
@@ -1377,6 +1404,10 @@ class SessionView:
                 self.is_running = False
                 if not self.app.is_closing:
                     self.root.after(0, lambda: self._set_running_ui(False))
+                    if self.was_stopped_by_user or has_error:
+                        self.root.after(0, self._play_stopped_sound)
+                    else:
+                        self.root.after(0, self._play_complete_sound)
 
     def _update_running_state(self):
         if self.is_running and self.bot:
@@ -1420,6 +1451,7 @@ class SessionView:
         with log_session(self.name):
             if not self.is_running:
                 return
+            self.was_stopped_by_user = True
             if self.bot:
                 self.bot.set_user_action("stop")
             self.is_running = False
@@ -1434,8 +1466,32 @@ class SessionView:
                 else:
                     self.log("⛔ 봇이 중지되었습니다.")
 
+    def _play_complete_sound(self):
+        played = False
+        if winsound:
+            try:
+                winsound.Beep(2000, 300)
+                winsound.Beep(2500, 400)
+                played = True
+            except Exception:
+                pass
+        if not played:
+            self.root.bell()
+
+    def _play_stopped_sound(self):
+        played = False
+        if winsound:
+            try:
+                winsound.Beep(1200, 400)
+                played = True
+            except Exception:
+                pass
+        if not played:
+            self.root.bell()
+
     def request_stop_for_close(self):
         with log_session(self.name):
+            self.was_stopped_by_user = True
             if self.bot:
                 self.bot.set_user_action("stop")
             self.is_running = False
