@@ -763,6 +763,13 @@ class SessionView:
             target_range = rule["percent_range"] or rule["flat_range"] or (1, 999)
         return target_range
 
+    def _get_reroll_duplicate_target_key(self, option_name, use_percent):
+        return (option_name, bool(use_percent))
+
+    def _format_reroll_duplicate_target_name(self, option_name, use_percent):
+        suffix = "%" if use_percent else "정수"
+        return f"{option_name} {suffix}"
+
     def _get_reroll_locked_rows(self):
         return [index for index, var in enumerate(self.reroll_locked_row_vars) if var.get()]
 
@@ -1245,14 +1252,16 @@ class SessionView:
                     raise ValueError("중지 개수는 목표 옵션 개수 이하여야 합니다.")
 
                 target_specs = []
-                seen_options = set()
+                seen_targets = set()
                 for index in range(active_target_count):
                     row = self.reroll_target_rows[index]
                     option_name = self._extract_reroll_option_name(row["option_combo"].get())
-                    if option_name in seen_options:
-                        raise ValueError(f"중복된 목표 옵션이 있습니다: {option_name}")
-                    seen_options.add(option_name)
                     use_percent = row["percent_var"].get()
+                    duplicate_key = self._get_reroll_duplicate_target_key(option_name, use_percent)
+                    if duplicate_key in seen_targets:
+                        duplicate_name = self._format_reroll_duplicate_target_name(option_name, use_percent)
+                        raise ValueError(f"중복된 목표 옵션이 있습니다: {duplicate_name}")
+                    seen_targets.add(duplicate_key)
                     target_range = self._get_reroll_target_range(option_name, use_percent)
                     target_value = int(row["value_entry"].get())
                     if not target_range[0] <= target_value <= target_range[1]:

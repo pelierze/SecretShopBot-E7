@@ -66,9 +66,9 @@ class EquipmentRerollBot:
     }
     OPTION_VALUE_RANGES = {
         "speed": {False: (1, 6), True: None},
-        "attack": {False: (20, 120), True: (3, 12)},
-        "life": {False: (80, 600), True: (3, 12)},
-        "defense": {False: (10, 120), True: (3, 12)},
+        "attack": {False: (20, 120), True: (4, 8)},
+        "life": {False: (80, 600), True: (4, 8)},
+        "defense": {False: (10, 120), True: (4, 8)},
         "crit_chance": {False: None, True: (2, 10)},
         "crit_damage": {False: None, True: (3, 12)},
         "effect_resistance": {False: None, True: (3, 12)},

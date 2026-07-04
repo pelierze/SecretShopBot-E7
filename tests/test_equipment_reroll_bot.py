@@ -139,6 +139,14 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertTrue(has_percent)
         self.assertAlmostEqual(confidence, 0.68)
 
+    def test_percent_and_flat_ranges_distinguish_shared_option_categories(self):
+        bot = self._make_bot()
+
+        for option_key in ("attack", "life", "defense"):
+            self.assertTrue(bot._is_value_in_expected_range(option_key, 8, True))
+            self.assertFalse(bot._is_value_in_expected_range(option_key, 9, True))
+            self.assertFalse(bot._is_value_in_expected_range(option_key, 8, False))
+
     def test_crop_numeric_foreground_trims_wide_empty_margins(self):
         bot = self._make_bot()
         image = np.zeros((30, 120), dtype=np.uint8)
