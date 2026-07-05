@@ -358,6 +358,40 @@ class EquipmentRerollBotTest(unittest.TestCase):
         self.assertIsNone(ocr_failure)
         self.assertTrue(success)
 
+    def test_evaluate_target_matches_accepts_values_above_configured_minimum(self):
+        bot = self._make_bot()
+        bot.target_mode = EquipmentRerollBot.TARGET_MODE_EXACT
+        bot.target_specs = [{"option": "defense", "value": 6, "is_percent": True}]
+
+        for detected_value in (6, 7, 8):
+            row_results = [
+                {"row_index": 0, "option": "defense", "value": detected_value, "is_percent": True},
+            ]
+
+            _, target_count, matched_specs, ocr_failure, success = bot._evaluate_target_matches(row_results)
+
+            self.assertEqual(target_count, 1)
+            self.assertEqual(matched_specs, bot.target_specs)
+            self.assertIsNone(ocr_failure)
+            self.assertTrue(success)
+
+    def test_evaluate_target_matches_rejects_values_below_minimum_or_above_option_maximum(self):
+        bot = self._make_bot()
+        bot.target_mode = EquipmentRerollBot.TARGET_MODE_EXACT
+        bot.target_specs = [{"option": "defense", "value": 6, "is_percent": True}]
+
+        for detected_value in (5, 9):
+            row_results = [
+                {"row_index": 0, "option": "defense", "value": detected_value, "is_percent": True},
+            ]
+
+            _, target_count, matched_specs, ocr_failure, success = bot._evaluate_target_matches(row_results)
+
+            self.assertEqual(target_count, 0)
+            self.assertEqual(matched_specs, [])
+            self.assertIsNone(ocr_failure)
+            self.assertFalse(success)
+
     def test_evaluate_target_matches_reports_ocr_failure_on_exact_match(self):
         bot = self._make_bot()
         bot.target_mode = EquipmentRerollBot.TARGET_MODE_EXACT

@@ -597,7 +597,7 @@ class SessionView:
 
         ttk.Label(self.reroll_settings_frame, text="중지 방식:").grid(row=0, column=6, sticky=tk.W, padx=(5, 2), pady=5)
         self.reroll_target_mode_combo = ttk.Combobox(self.reroll_settings_frame, width=16, state="readonly")
-        self.reroll_target_mode_combo["values"] = ["정확히 일치", "옵션 개수 충족"]
+        self.reroll_target_mode_combo["values"] = ["모든 목표 충족", "옵션 개수 충족"]
         self.reroll_target_mode_combo.current(0)
         self.reroll_target_mode_combo.grid(row=0, column=7, sticky=tk.W, padx=2, pady=5)
         self.reroll_target_mode_combo.bind("<<ComboboxSelected>>", self._on_reroll_target_count_changed)

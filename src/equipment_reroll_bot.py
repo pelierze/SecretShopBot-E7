@@ -665,7 +665,7 @@ class EquipmentRerollBot:
                     continue
                 if row["value"] is None:
                     return option_match_count, len(matched_specs), matched_specs, row, False
-                if row["value"] == spec["value"] and row["is_percent"] == spec["is_percent"]:
+                if self._row_satisfies_target(row, spec):
                     matched_specs.append(spec)
                     used_rows.add(row["row_index"])
                     break
@@ -676,6 +676,13 @@ class EquipmentRerollBot:
         else:
             success = target_match_count == len(self.target_specs)
         return option_match_count, target_match_count, matched_specs, None, success
+
+    def _row_satisfies_target(self, row: Dict, spec: Dict) -> bool:
+        if row["option"] != spec["option"] or row["is_percent"] != spec["is_percent"]:
+            return False
+        if row["value"] is None or row["value"] < spec["value"]:
+            return False
+        return self._is_value_in_expected_range(row["option"], row["value"], row["is_percent"])
 
     def _match_template_in_image(
         self,
