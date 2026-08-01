@@ -141,7 +141,7 @@ class ADBControllerSwipeTest(unittest.TestCase):
         connect_mock.assert_called_once_with("127.0.0.1", 5557)
 
     @patch("src.adb_controller.time.sleep", return_value=None)
-    def test_mumu_profile_prefers_root_swipe(self, _sleep):
+    def test_mumu_profile_prefers_standard_swipe(self, _sleep):
         controller = RecordingADBController()
         controller.set_input_profile("mumu")
 
@@ -150,23 +150,11 @@ class ADBControllerSwipeTest(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(
             controller.commands[0],
-            ["-s", "127.0.0.1:5555", "shell", "su", "0", "input", "swipe", "100", "600", "100", "200", "200"],
+            ["-s", "127.0.0.1:5555", "shell", "input", "touchscreen", "swipe", "100", "600", "100", "200", "200"],
         )
 
     @patch("src.adb_controller.time.sleep", return_value=None)
-    def test_mumu_profile_falls_back_to_motionevent_drag(self, _sleep):
-        controller = RecordingADBController()
-        controller.set_input_profile("mumu")
-        controller.returncodes = [1, 1, 0, 0, 0, 0]
-
-        result = controller.swipe(100, 600, 100, 200, duration=500, delay=0.1)
-
-        self.assertTrue(result)
-        self.assertEqual(controller.commands[2][4:6], ["motionevent", "DOWN"])
-        self.assertEqual(controller.commands[-1][4:6], ["motionevent", "UP"])
-
-    @patch("src.adb_controller.time.sleep", return_value=None)
-    def test_mumu_profile_falls_back_to_standard_swipe(self, _sleep):
+    def test_mumu_profile_falls_back_to_root_swipe(self, _sleep):
         controller = RecordingADBController()
         controller.set_input_profile("mumu")
         controller.returncodes = [1, 1, 1, 0]
@@ -174,10 +162,21 @@ class ADBControllerSwipeTest(unittest.TestCase):
         result = controller.swipe(100, 600, 100, 200, duration=500, delay=0.1)
 
         self.assertTrue(result)
-        self.assertIn(
-            ["-s", "127.0.0.1:5555", "shell", "input", "touchscreen", "swipe", "100", "600", "100", "200", "200"],
-            controller.commands,
+        self.assertEqual(
+            controller.commands[-1],
+            ["-s", "127.0.0.1:5555", "shell", "su", "0", "input", "swipe", "100", "600", "100", "200", "200"],
         )
+
+    @patch("src.adb_controller.time.sleep", return_value=None)
+    def test_mumu_profile_reports_failure_when_all_swipes_fail(self, _sleep):
+        controller = RecordingADBController()
+        controller.set_input_profile("mumu")
+        controller.returncodes = [1, 1, 1, 1, 1]
+
+        result = controller.swipe(100, 600, 100, 200, duration=500, delay=0.1)
+
+        self.assertFalse(result)
+        self.assertFalse(any("motionevent" in command for command in controller.commands))
 
     @patch("src.adb_controller.time.sleep", return_value=None)
     def test_default_profile_uses_standard_swipe_only(self, _sleep):

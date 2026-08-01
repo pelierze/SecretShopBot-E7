@@ -435,20 +435,19 @@ class ADBController:
         return max(150, min(duration, 200))
 
     def _swipe_mumu_compat(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> tuple[bool, str]:
+        # MuMu supports Android's regular input swipe command without root.
+        # Prefer the atomic command so DOWN/MOVE/UP cannot be split across
+        # separate adb processes and accidentally reach a system gesture area.
         success, output = self._run_swipe_command_list(
-            self._build_root_swipe_commands(x1, y1, x2, y2, duration)
+            self._build_swipe_commands(x1, y1, x2, y2, duration)
         )
         if success:
             return True, output
 
-        logger.warning("MuMu 루트 스와이프가 실패해 호환 드래그 명령으로 재시도합니다: %s", output)
-
-        success, output = self._swipe_with_motionevent(x1, y1, x2, y2, duration)
-        if success:
-            return True, output
-
-        logger.warning("MuMu 호환 드래그가 실패해 기본 스와이프 명령으로 재시도합니다: %s", output)
-        return self._run_swipe_command_list(self._build_swipe_commands(x1, y1, x2, y2, duration))
+        logger.warning("MuMu 기본 스와이프가 실패해 루트 명령으로 재시도합니다: %s", output)
+        return self._run_swipe_command_list(
+            self._build_root_swipe_commands(x1, y1, x2, y2, duration)
+        )
 
     def _run_swipe_command_list(self, commands: list[list[str]]) -> tuple[bool, str]:
         last_output = ""
@@ -459,33 +458,6 @@ class ADBController:
             last_output = self._format_completed_output(result)
         return False, last_output
 
-    def _swipe_with_motionevent(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> tuple[bool, str]:
-        steps = max(4, min(12, duration // 100 if duration > 0 else 6))
-        step_delay = max(0.01, duration / max(steps, 1) / 1000.0)
-
-        events = [
-            ["-s", self.device_id, "shell", "input", "motionevent", "DOWN", str(x1), str(y1)],
-        ]
-        for step in range(1, steps):
-            progress = step / steps
-            move_x = int(round(x1 + (x2 - x1) * progress))
-            move_y = int(round(y1 + (y2 - y1) * progress))
-            events.append(
-                ["-s", self.device_id, "shell", "input", "motionevent", "MOVE", str(move_x), str(move_y)]
-            )
-        events.append(["-s", self.device_id, "shell", "input", "motionevent", "UP", str(x2), str(y2)])
-
-        last_output = ""
-        for index, event in enumerate(events):
-            result = self._run_adb(event)
-            if result.returncode != 0:
-                last_output = self._format_completed_output(result)
-                return False, last_output
-            if index < len(events) - 1:
-                time.sleep(step_delay)
-
-        return True, ""
-    
     def screenshot(self, save_path: str) -> bool:
         """
         화면 캡처
