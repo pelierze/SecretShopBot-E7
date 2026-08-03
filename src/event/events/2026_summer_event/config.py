@@ -19,11 +19,27 @@ class SummerEventConfig:
         default_factory=lambda: {100: 1.0, 200: 2.0, 300: 3.0, 350: 4.0}
     )
     reward_tiles: tuple = (100, 200, 300, 350)
+    item_recharges: Dict[int, Dict[str, int]] = field(
+        default_factory=lambda: {
+            100: {"shield": 2, "leap": 1},
+            150: {"super_dash": 1},
+            200: {"shield": 2, "leap": 1},
+            300: {"shield": 2, "leap": 1, "super_dash": 1},
+        }
+    )
+    item_max_stacks: Dict[str, int] = field(
+        default_factory=lambda: {"shield": 4, "leap": 2, "super_dash": 2}
+    )
+    initial_item_stacks: Dict[str, int] = field(
+        default_factory=lambda: {"shield": 2, "leap": 1, "super_dash": 2}
+    )
+    reset_items_after_failure: bool = True
     finish_m: int = 400
     ends_at: Optional[str] = None
     timezone: Optional[str] = None
     probability_data_file: str = "probability_data.json"
     generated_policy_file: str = "generated_policy.json"
+    screen_layout_file: str = "screen_layout.json"
     unknown_probability_policy: str = "interpolate_bounded_linear"
     policy_mode: str = "offline_with_runtime_adaptation"
     data_sources: Dict[str, Optional[str]] = field(
@@ -43,6 +59,21 @@ class SummerEventConfig:
             raise ValueError("Reward tiles must be sorted")
         if self.finish_m <= self.reward_tiles[-1]:
             raise ValueError("Finish position must be beyond the final reward tile")
+        valid_items = {"shield", "leap", "super_dash"}
+        if set(self.item_max_stacks) != valid_items:
+            raise ValueError("Item max stacks must define shield, leap, and super_dash")
+        if set(self.initial_item_stacks) != valid_items:
+            raise ValueError("Initial item stacks must define shield, leap, and super_dash")
+        for item in valid_items:
+            if not 0 <= self.initial_item_stacks[item] <= self.item_max_stacks[item]:
+                raise ValueError(f"Invalid initial stack for {item}")
+        for position, recharges in self.item_recharges.items():
+            if position <= 0 or position % 10:
+                raise ValueError(f"Recharge position must be a positive 10M tile: {position}")
+            if not set(recharges).issubset(valid_items):
+                raise ValueError(f"Unknown recharge item at {position}M")
+            if any(amount < 0 for amount in recharges.values()):
+                raise ValueError(f"Recharge amount cannot be negative at {position}M")
         if self.unknown_probability_policy not in ("require_explicit", "interpolate_bounded_linear"):
             raise ValueError(f"Unsupported unknown probability policy: {self.unknown_probability_policy}")
         if self.policy_mode != "offline_with_runtime_adaptation":
@@ -55,11 +86,23 @@ def load_config(path: Path) -> SummerEventConfig:
         success_probabilities={int(key): float(value) for key, value in raw.get("success_probabilities", {}).items()},
         reward_weights={int(key): float(value) for key, value in raw.get("reward_weights", {}).items()},
         reward_tiles=tuple(int(value) for value in raw.get("reward_tiles", (100, 200, 300, 350))),
+        item_recharges={
+            int(position): {str(item): int(amount) for item, amount in recharges.items()}
+            for position, recharges in raw.get("item_recharges", {}).items()
+        } or SummerEventConfig().item_recharges,
+        item_max_stacks={
+            str(item): int(amount) for item, amount in raw.get("item_max_stacks", {}).items()
+        } or SummerEventConfig().item_max_stacks,
+        initial_item_stacks={
+            str(item): int(amount) for item, amount in raw.get("initial_item_stacks", {}).items()
+        } or SummerEventConfig().initial_item_stacks,
+        reset_items_after_failure=bool(raw.get("reset_items_after_failure", True)),
         finish_m=int(raw.get("finish_m", 400)),
         ends_at=raw.get("ends_at"),
         timezone=raw.get("timezone"),
         probability_data_file=str(raw.get("probability_data_file", "probability_data.json")),
         generated_policy_file=str(raw.get("generated_policy_file", "generated_policy.json")),
+        screen_layout_file=str(raw.get("screen_layout_file", "screen_layout.json")),
         unknown_probability_policy=str(raw.get("unknown_probability_policy", "interpolate_bounded_linear")),
         policy_mode=str(raw.get("policy_mode", "offline_with_runtime_adaptation")),
         data_sources=dict(
@@ -92,11 +135,16 @@ def load_event_bundle(config_path: Path) -> Tuple[SummerEventConfig, Probability
         success_probabilities=probabilities,
         reward_weights=config.reward_weights,
         reward_tiles=config.reward_tiles,
+        item_recharges=config.item_recharges,
+        item_max_stacks=config.item_max_stacks,
+        initial_item_stacks=config.initial_item_stacks,
+        reset_items_after_failure=config.reset_items_after_failure,
         finish_m=config.finish_m,
         ends_at=config.ends_at,
         timezone=config.timezone,
         probability_data_file=config.probability_data_file,
         generated_policy_file=config.generated_policy_file,
+        screen_layout_file=config.screen_layout_file,
         unknown_probability_policy=config.unknown_probability_policy,
         policy_mode=config.policy_mode,
         data_sources=config.data_sources,

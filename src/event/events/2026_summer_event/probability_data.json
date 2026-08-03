@@ -1,7 +1,29 @@
 {
   "schema_version": 1,
   "event_id": "2026_summer_event",
-  "updated_at": null,
+  "updated_at": "2026-08-03T00:00:00+09:00",
   "tiles": {
+    "0": {"success_probability": 1.0, "source": "provided"},
+    "10": {"success_probability": 0.96, "source": "provided"},
+    "20": {"success_probability": 0.92, "source": "provided"},
+    "30": {"success_probability": 0.88, "source": "provided"},
+    "40": {"success_probability": 0.84, "source": "provided"},
+    "50": {"success_probability": 0.80, "source": "provided"},
+    "60": {"success_probability": 0.75, "source": "provided"},
+    "70": {"success_probability": 0.70, "source": "provided"},
+    "80": {"success_probability": 0.65, "source": "provided"},
+    "90": {"success_probability": 0.60, "source": "provided"},
+    "100": {"success_probability": 0.75, "source": "provided"},
+    "110": {"success_probability": 0.69, "source": "provided"},
+    "120": {"success_probability": 0.63, "source": "provided"},
+    "140": {"success_probability": 0.50, "source": "provided"},
+    "150": {"success_probability": 0.70, "source": "provided"},
+    "160": {"success_probability": 0.64, "source": "provided"},
+    "190": {"success_probability": 0.45, "source": "provided"},
+    "210": {"success_probability": 0.61, "source": "provided"},
+    "220": {"success_probability": 0.55, "source": "provided"},
+    "250": {"success_probability": 0.63, "source": "provided"},
+    "280": {"success_probability": 0.46, "source": "provided"},
+    "290": {"success_probability": 0.41, "source": "provided"}
   }
 }

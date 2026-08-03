@@ -24,7 +24,17 @@ def collect_icons():
     return datas
 
 
-datas = collect_images() + [
+def collect_event_data():
+    datas = []
+    event_root = os.path.join('src', 'event', 'events')
+    for root, dirs, files in os.walk(event_root):
+        for f in files:
+            if f.lower().endswith('.json'):
+                datas.append((os.path.join(root, f), root))
+    return datas
+
+
+datas = collect_images() + collect_event_data() + [
     ('tools', 'tools'),
     ('images/equipment_options/README.txt', 'images/equipment_options'),
     ('update_config.json', '.'),

@@ -1,6 +1,7 @@
 {
   "probability_data_file": "probability_data.json",
   "generated_policy_file": "generated_policy.json",
+  "screen_layout_file": "screen_layout.json",
   "unknown_probability_policy": "interpolate_bounded_linear",
   "policy_mode": "offline_with_runtime_adaptation",
   "data_sources": {
@@ -14,6 +15,15 @@
     "350": 4.0
   },
   "reward_tiles": [100, 200, 300, 350],
+  "item_recharges": {
+    "100": {"shield": 2, "leap": 1},
+    "150": {"super_dash": 1},
+    "200": {"shield": 2, "leap": 1},
+    "300": {"shield": 2, "leap": 1, "super_dash": 1}
+  },
+  "item_max_stacks": {"shield": 4, "leap": 2, "super_dash": 2},
+  "initial_item_stacks": {"shield": 2, "leap": 1, "super_dash": 2},
+  "reset_items_after_failure": true,
   "finish_m": 400,
   "ends_at": null,
   "timezone": null

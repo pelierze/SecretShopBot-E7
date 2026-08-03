@@ -20,6 +20,16 @@ class EventAction(str, Enum):
     SUPER_DASH = "super_dash"
     STOP = "stop"
 
+    @property
+    def display_name(self) -> str:
+        return {
+            EventAction.BASIC: "달리기",
+            EventAction.SHIELD: "보호",
+            EventAction.LEAP: "도움닫기",
+            EventAction.SUPER_DASH: "슈퍼럭키",
+            EventAction.STOP: "중지",
+        }[self]
+
 
 class MoveOutcome(str, Enum):
     SUCCESS = "success"

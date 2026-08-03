@@ -1,0 +1,20 @@
+{
+  "reference_size": [1280, 720],
+  "regions": {
+    "current_node": [580, 205, 120, 80],
+    "success_probability": [540, 495, 205, 115],
+    "reward_popup_title": [550, 135, 180, 60],
+    "result_popup_title": [520, 80, 240, 80],
+    "shield_stacks": [850, 555, 115, 45],
+    "leap_stacks": [990, 555, 115, 45],
+    "super_dash_stacks": [1130, 555, 115, 45]
+  },
+  "tap_points": {
+    "basic": [640, 655],
+    "shield": [905, 640],
+    "leap": [1047, 640],
+    "super_dash": [1187, 640],
+    "close_reward_popup": [640, 525],
+    "confirm_result_popup": [640, 575]
+  }
+}

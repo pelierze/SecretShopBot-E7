@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
-from ...models import EventAction, EventState, MoveOutcome
+from ...models import EventAction, EventState, ItemInventory, MoveOutcome
 
 
 class SummerEventRules:
@@ -21,9 +21,30 @@ class SummerEventRules:
         EventAction.SUPER_DASH: 3,
     }
 
-    def __init__(self, reward_tiles: Iterable[int] = (100, 200, 300, 350), finish_m: int = 400):
+    DEFAULT_ITEM_RECHARGES = {
+        100: {"shield": 2, "leap": 1},
+        150: {"super_dash": 1},
+        200: {"shield": 2, "leap": 1},
+        300: {"shield": 2, "leap": 1, "super_dash": 1},
+    }
+    DEFAULT_ITEM_MAX_STACKS = {"shield": 4, "leap": 2, "super_dash": 2}
+    DEFAULT_INITIAL_ITEM_STACKS = {"shield": 2, "leap": 1, "super_dash": 2}
+
+    def __init__(
+        self,
+        reward_tiles: Iterable[int] = (100, 200, 300, 350),
+        finish_m: int = 400,
+        item_recharges: Optional[Dict[int, Dict[str, int]]] = None,
+        item_max_stacks: Optional[Dict[str, int]] = None,
+        initial_item_stacks: Optional[Dict[str, int]] = None,
+        reset_items_after_failure: bool = True,
+    ):
         self.reward_tiles = tuple(sorted(reward_tiles))
         self.finish_m = finish_m
+        self.item_recharges = item_recharges or self.DEFAULT_ITEM_RECHARGES
+        self.item_max_stacks = item_max_stacks or self.DEFAULT_ITEM_MAX_STACKS
+        self.initial_item_stacks = initial_item_stacks or self.DEFAULT_INITIAL_ITEM_STACKS
+        self.reset_items_after_failure = reset_items_after_failure
 
     def validate_action(self, state: EventState, action: EventAction) -> None:
         if not state.active:
@@ -57,15 +78,26 @@ class SummerEventRules:
             for tile in crossed:
                 state.stats.increment(state.stats.rewards, tile)
                 state.collected_reward_tiles.add(tile)
+            self._apply_crossed_recharges(state, old_position, state.position_m)
         else:
             state.stats.increment(state.stats.failures, action)
             if action is not EventAction.SHIELD:
                 state.position_m = 0
                 state.stats.rollbacks += 1
+                if self.reset_items_after_failure:
+                    state.items = ItemInventory(**self.initial_item_stacks)
         return state
 
     def crossed_rewards(self, start_m: int, end_m: int) -> Tuple[int, ...]:
         return tuple(tile for tile in self.reward_tiles if start_m < tile <= end_m)
+
+    def _apply_crossed_recharges(self, state: EventState, start_m: int, end_m: int) -> None:
+        for position, recharges in sorted(self.item_recharges.items()):
+            if not start_m < position <= end_m:
+                continue
+            for item, amount in recharges.items():
+                current = getattr(state.items, item)
+                setattr(state.items, item, min(self.item_max_stacks[item], current + amount))
 
     @staticmethod
     def probability_tile(position_m: int, action: EventAction) -> int:
