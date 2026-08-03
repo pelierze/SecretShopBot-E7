@@ -127,8 +127,6 @@ class SummerEventBot:
         if outcome is MoveOutcome.SUCCESS:
             for reward_m in self.rules.crossed_rewards(old_position, self.state.position_m):
                 logger.info("🏆 핵심 보상 구간 통과: %sM", reward_m)
-        if outcome is MoveOutcome.FAILURE and action is not EventAction.SHIELD:
-            self.state.active = False
         # The next decision must be based on a fresh scan rather than the
         # state predicted by the rules engine.
         self._state_initialized = False

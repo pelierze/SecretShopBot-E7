@@ -84,6 +84,7 @@ class SummerEventRules:
             if action is not EventAction.SHIELD:
                 state.position_m = 0
                 state.stats.rollbacks += 1
+                state.plan_success_recorded = False
                 if self.reset_items_after_failure:
                     state.items = ItemInventory(**self.initial_item_stacks)
         return state

@@ -551,7 +551,7 @@ class SummerEventBotSafetyTest(unittest.TestCase):
 
         self.assertEqual(bot.get_stats()["plan_successes"], 1)
 
-    def test_run_stops_after_unprotected_failure(self):
+    def test_unprotected_failure_resets_run_and_keeps_automation_active(self):
         class FailureObserver:
             def observe(self, state):
                 return state
@@ -575,12 +575,28 @@ class SummerEventBotSafetyTest(unittest.TestCase):
             executor=NoopExecutor(),
         )
 
-        stats = bot.run()
+        bot.step()
+        stats = bot.get_stats()
 
-        self.assertFalse(bot.state.active)
+        self.assertTrue(bot.state.active)
+        self.assertEqual(bot.state.position_m, 0)
         self.assertEqual(stats["attempts"], 1)
         self.assertEqual(stats["failures"], 1)
         self.assertEqual(stats["rollbacks"], 1)
+
+    def test_failure_allows_plan_success_to_be_counted_again_next_run(self):
+        state = EventState(
+            position_m=210,
+            plan=EventPlan.TARGET_200M,
+            plan_success_recorded=True,
+        )
+        state.stats.plan_successes = 1
+        rules = SummerEventRules()
+
+        rules.apply(state, EventAction.BASIC, MoveOutcome.FAILURE)
+
+        self.assertFalse(state.plan_success_recorded)
+        self.assertEqual(state.stats.plan_successes, 1)
 
     def test_first_action_uses_scanned_position_and_inventory(self):
         scanned_state = EventState(
