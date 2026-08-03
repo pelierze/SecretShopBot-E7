@@ -1,9 +1,35 @@
 import unittest
+from unittest.mock import Mock
 
 from src.gui import SessionView
 
 
 class SessionViewFormattingTest(unittest.TestCase):
+    def test_event_stats_show_consumed_drinks(self):
+        view = object.__new__(SessionView)
+        for attribute in (
+            "event_position_label",
+            "event_shield_label",
+            "event_leap_label",
+            "event_super_dash_label",
+            "event_attempts_label",
+            "event_rollbacks_label",
+            "event_drinks_used_label",
+            "event_plan_successes_label",
+            "event_core_rewards_total_label",
+            "event_reward_100_label",
+            "event_reward_200_label",
+            "event_reward_300_label",
+            "event_reward_350_label",
+            "event_reward_400_label",
+            "event_reward_500_label",
+        ):
+            setattr(view, attribute, Mock())
+
+        SessionView._update_event_stats(view, {"drinks_used": 17})
+
+        view.event_drinks_used_label.config.assert_called_once_with(text="17개")
+
     def test_format_draw_efficiency_returns_decimal_sky_stone_per_draw(self):
         view = object.__new__(SessionView)
 

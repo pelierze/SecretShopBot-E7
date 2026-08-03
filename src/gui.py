@@ -535,6 +535,7 @@ class SessionView:
             self.event_super_dash_label,
             self.event_attempts_label,
             self.event_rollbacks_label,
+            self.event_drinks_used_label,
             self.event_plan_successes_label,
             self.event_core_rewards_total_label,
             self.event_reward_100_label,
@@ -824,6 +825,7 @@ class SessionView:
             ("슈퍼럭키:", "event_super_dash_label", "2"),
             ("이동 시도:", "event_attempts_label", "0"),
             ("0M 복귀:", "event_rollbacks_label", "0"),
+            ("음료수 소모:", "event_drinks_used_label", "0개"),
             ("플랜 성공:", "event_plan_successes_label", "0회"),
             ("핵심 보상 합계:", "event_core_rewards_total_label", "0개"),
             ("100M 보상:", "event_reward_100_label", "0개"),
@@ -1807,6 +1809,7 @@ class SessionView:
         self.event_super_dash_label.config(text=str(stats.get("super_dash", 0)))
         self.event_attempts_label.config(text=str(stats.get("attempts", 0)))
         self.event_rollbacks_label.config(text=str(stats.get("rollbacks", 0)))
+        self.event_drinks_used_label.config(text=f"{stats.get('drinks_used', 0)}개")
         self.event_plan_successes_label.config(text=f"{stats.get('plan_successes', 0)}회")
         self.event_core_rewards_total_label.config(text=f"{stats.get('core_rewards_total', 0)}개")
         self.event_reward_100_label.config(text=f"{stats.get('rewards_100', 0)}개")
