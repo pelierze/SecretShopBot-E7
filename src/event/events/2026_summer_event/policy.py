@@ -124,12 +124,20 @@ class PlannedSummerEventPolicy:
             return
         if self.adaptive_model.observe(probability_tile_m, action, outcome):
             self._cache.clear()
-            logger.info(
-                "📊 이벤트 관측 확률 갱신: %sM, 관측 %s회, 추정 성공률 %.2f%%",
-                probability_tile_m,
-                self.adaptive_model.observation_count(probability_tile_m),
-                self.adaptive_model.probabilities[probability_tile_m] * 100,
-            )
+            displayed_probability = self.adaptive_model.displayed_probability(probability_tile_m)
+            if displayed_probability is not None:
+                logger.info(
+                    "📊 이벤트 확률 데이터: %sM, 화면 OCR %.2f%%, 결과 관측 %s회",
+                    probability_tile_m,
+                    displayed_probability * 100,
+                    self.adaptive_model.observation_count(probability_tile_m),
+                )
+            else:
+                logger.info(
+                    "📊 이벤트 결과 관측: %sM, 누적 %s회",
+                    probability_tile_m,
+                    self.adaptive_model.observation_count(probability_tile_m),
+                )
 
     def observe_displayed_probability(self, position_m: int, probability: float) -> bool:
         if self.adaptive_model is None or probability is None:

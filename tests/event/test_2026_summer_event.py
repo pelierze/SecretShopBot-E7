@@ -443,6 +443,29 @@ class SummerEventPlannerTest(unittest.TestCase):
         self.assertFalse(policy._cache)
         self.assertEqual(adaptive.observation_count(0), 1)
 
+    def test_missing_tile_log_reports_screen_ocr_instead_of_estimate(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config, dataset = load_event_bundle(config_path)
+        adaptive = AdaptiveProbabilityModel(
+            config.success_probabilities,
+            observed_tiles=dataset.tiles,
+            end_m=490,
+        )
+        policy = PlannedSummerEventPolicy(
+            config,
+            SummerEventPlanner(config),
+            adaptive_model=adaptive,
+        )
+        policy.observe_displayed_probability(330, 0.57)
+
+        with patch.object(policy_module.logger, "info") as info:
+            policy.observe_outcome(330, 330, EventAction.BASIC, MoveOutcome.SUCCESS)
+
+        message = info.call_args.args[0]
+        self.assertIn("화면 OCR", message)
+        self.assertNotIn("추정 성공률", message)
+        self.assertEqual(info.call_args.args[2], 0.57 * 100)
+
     def test_planner_builds_reproducible_target_plans(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
         config, _ = load_event_bundle(config_path)

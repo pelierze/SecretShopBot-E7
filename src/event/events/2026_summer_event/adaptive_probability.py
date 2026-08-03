@@ -25,6 +25,7 @@ class AdaptiveProbabilityModel:
         self.observed_prior_strength = float(observed_prior_strength)
         self.probabilities = probabilities
         self._prior = dict(probabilities)
+        self._displayed_probabilities = {}
         self._outcomes = defaultdict(lambda: [0, 0])
         self._seed_predictions(end_m)
 
@@ -50,11 +51,15 @@ class AdaptiveProbabilityModel:
         if tile_m in self.observed_tiles or not 0.0 <= probability <= 1.0:
             return False
         self._prior[tile_m] = probability
+        self._displayed_probabilities[tile_m] = probability
         successes, attempts = self._outcomes[tile_m]
         self.probabilities[tile_m] = (
             probability * self.prior_strength + successes
         ) / (self.prior_strength + attempts)
         return True
+
+    def displayed_probability(self, tile_m: int):
+        return self._displayed_probabilities.get(tile_m)
 
     def observation_count(self, tile_m: int) -> int:
         return self._outcomes[tile_m][1]
