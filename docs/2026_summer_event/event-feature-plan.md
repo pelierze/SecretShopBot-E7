@@ -73,7 +73,7 @@
 
 ### 3.2 이벤트 봇
 
-`src/event_bot.py`에 GUI와 분리된 이벤트 상태 머신을 구현한다.
+`src/event/events/2026_summer_event/bot.py`에 GUI와 분리된 이벤트 상태 머신을 구현한다. 공통 모델과 화면/입력 인터페이스는 `src/event/`에 두어 이후 이벤트에서도 재사용한다.
 
 주요 상태:
 
@@ -241,11 +241,16 @@ GUI/ADB와 독립적으로 테스트할 수 있도록 다음 데이터를 별도
 
 ## 7. 예상 변경 파일
 
-- `src/event_bot.py`: 이벤트 상태 머신과 실행 로직(신규)
-- `src/event_policy.py`: 행동 선택 정책 및 확률 데이터 처리(신규, 규모가 작으면 봇 모듈에 통합 가능)
+- `src/event/models.py`: 이벤트 공통 상태, 행동, 통계 모델(신규)
+- `src/event/ports.py`: 화면 인식기와 입력 실행기 인터페이스(신규)
+- `src/event/registry.py`: 연도별 이벤트 모듈 동적 로더(신규)
+- `src/event/events/2026_summer_event/bot.py`: 2026 여름 이벤트 상태 머신(신규)
+- `src/event/events/2026_summer_event/rules.py`: 이동, 소비, 보상 상태 전이(신규)
+- `src/event/events/2026_summer_event/policy.py`: 플랜별 행동 선택 정책(신규)
+- `src/event/events/2026_summer_event/config.py`: 확률 및 이벤트 설정 로더(신규)
+- `src/event/events/2026_summer_event/event_config.json`: 추후 제공 데이터를 입력할 설정 파일(신규)
 - `src/gui.py`: 이벤트 탭, 제어, 통계, 종료 표시
-- `tests/test_event_bot.py`: 상태 전이 및 소비 규칙 테스트(신규)
-- `tests/test_event_policy.py`: 정책 테스트(신규, 정책 분리 시)
+- `tests/event/test_2026_summer_event.py`: 상태 전이, 설정, 정책 테스트(신규)
 - `tests/test_gui.py`: 이벤트 탭과 버튼 상태 테스트
 - `images/...`: 이벤트 화면 인식 이미지
 - `README.md`: 이벤트 사용법과 종료 안내

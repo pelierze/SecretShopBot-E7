@@ -1,0 +1,13 @@
+{
+  "success_probabilities": {},
+  "reward_weights": {
+    "100": 1.0,
+    "200": 2.0,
+    "300": 3.0,
+    "350": 4.0
+  },
+  "reward_tiles": [100, 200, 300, 350],
+  "finish_m": 400,
+  "ends_at": null,
+  "timezone": null
+}
