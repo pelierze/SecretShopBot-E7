@@ -40,6 +40,7 @@ SummerEventObserver = event_module.SummerEventObserver
 EventScreenKind = event_module.EventScreenKind
 ObservedEventScreen = event_module.ObservedEventScreen
 UnknownTileProbabilityRecorder = event_module.UnknownTileProbabilityRecorder
+AdaptiveProbabilityModel = event_module.AdaptiveProbabilityModel
 
 
 class SummerEventRulesTest(unittest.TestCase):
@@ -121,6 +122,15 @@ class SummerEventRulesTest(unittest.TestCase):
     def test_leap_uses_previous_tile_probability(self):
         self.assertEqual(self.rules.probability_tile(100, EventAction.LEAP), 90)
         self.assertEqual(self.rules.probability_tile(0, EventAction.LEAP), 0)
+
+    def test_leap_from_100m_uses_90m_probability_and_finishes_at_130m(self):
+        state = EventState(position_m=100, items=ItemInventory(leap=1))
+
+        probability_tile = self.rules.probability_tile(state.position_m, EventAction.LEAP)
+        self.rules.apply(state, EventAction.LEAP, MoveOutcome.SUCCESS)
+
+        self.assertEqual(probability_tile, 90)
+        self.assertEqual(state.position_m, 130)
 
     def test_crossing_100m_recharges_shield_and_leap_to_caps(self):
         state = EventState(
@@ -334,11 +344,11 @@ class SummerEventPolicyTest(unittest.TestCase):
         with self.assertRaises(MissingProbabilityData):
             policy.choose_action(EventState(items=ItemInventory(super_dash=0)))
 
-    def test_policy_stops_at_400m(self):
+    def test_policy_stops_at_configured_finish(self):
         rules = SummerEventRules()
         policy = SummerEventPolicy(SummerEventConfig(), rules)
 
-        action = policy.choose_action(EventState(position_m=400, plan=EventPlan.TARGET_300M))
+        action = policy.choose_action(EventState(position_m=500, plan=EventPlan.TARGET_300M))
 
         self.assertIs(action, EventAction.STOP)
 
@@ -358,6 +368,66 @@ class SummerEventPolicyTest(unittest.TestCase):
 
 
 class SummerEventPlannerTest(unittest.TestCase):
+    def test_adaptive_model_predicts_unknown_tiles_and_learns_from_results(self):
+        probabilities = {position: 0.8 - position / 1000 for position in range(0, 300, 10)}
+        model = AdaptiveProbabilityModel(probabilities, observed_tiles={0, 10, 20}, end_m=490)
+        prior = probabilities[300]
+
+        changed = model.observe(300, EventAction.BASIC, MoveOutcome.SUCCESS)
+
+        self.assertTrue(changed)
+        self.assertIn(490, probabilities)
+        self.assertGreater(probabilities[300], prior)
+        self.assertEqual(model.observation_count(300), 1)
+        known_prior = probabilities[10]
+        self.assertTrue(model.observe(10, EventAction.BASIC, MoveOutcome.FAILURE))
+        self.assertLess(probabilities[10], known_prior)
+        self.assertFalse(model.observe(10, EventAction.SUPER_DASH, MoveOutcome.SUCCESS))
+
+    def test_500m_high_score_policy_stops_after_first_arrival(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config, dataset = load_event_bundle(config_path)
+        adaptive = AdaptiveProbabilityModel(
+            config.success_probabilities,
+            observed_tiles=dataset.tiles,
+            end_m=490,
+        )
+        policy = PlannedSummerEventPolicy(
+            config,
+            SummerEventPlanner(config),
+            adaptive_model=adaptive,
+        )
+
+        action = policy.choose_action(EventState(plan=EventPlan.TARGET_500M))
+
+        self.assertIn(action, {EventAction.BASIC, EventAction.SHIELD, EventAction.LEAP, EventAction.SUPER_DASH})
+        self.assertIs(
+            policy.choose_action(EventState(position_m=500, plan=EventPlan.TARGET_500M)),
+            EventAction.STOP,
+        )
+
+    def test_standard_plan_replans_after_observed_result(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config, dataset = load_event_bundle(config_path)
+        adaptive = AdaptiveProbabilityModel(
+            config.success_probabilities,
+            observed_tiles=dataset.tiles,
+            end_m=490,
+        )
+        policy = PlannedSummerEventPolicy(
+            config,
+            SummerEventPlanner(config),
+            adaptive_model=adaptive,
+        )
+        state = EventState(plan=EventPlan.TARGET_100M)
+        policy.choose_action(state)
+        self.assertTrue(policy._cache)
+
+        policy.observe_outcome(0, 0, EventAction.BASIC, MoveOutcome.FAILURE)
+
+        self.assertFalse(policy._cache)
+        self.assertEqual(adaptive.observation_count(0), 1)
+
     def test_planner_builds_reproducible_target_plans(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
         config, _ = load_event_bundle(config_path)
@@ -739,6 +809,31 @@ class SummerEventObserverTest(unittest.TestCase):
 
         self.assertIs(outcome, MoveOutcome.FAILURE)
         self.assertEqual(adb.taps, [(640, 575, 0.2)])
+
+    def test_repeated_lower_position_recovers_missed_leap_failure(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+        )
+        observer._before_action = EventState(
+            position_m=100,
+            items=ItemInventory(shield=1, leap=1, super_dash=1),
+        )
+        observer.capture_and_analyze = lambda: ObservedEventScreen(
+            EventScreenKind.NORMAL,
+            position_m=60,
+            items=ItemInventory(shield=1, leap=0, super_dash=1),
+        )
+
+        with self.assertRaises(EventOutcomePending):
+            observer.observe_outcome(EventAction.LEAP)
+        with self.assertRaises(EventOutcomePending):
+            observer.observe_outcome(EventAction.LEAP)
+
+        self.assertIs(observer.observe_outcome(EventAction.LEAP), MoveOutcome.FAILURE)
 
 
 if __name__ == "__main__":

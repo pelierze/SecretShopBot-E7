@@ -11,6 +11,7 @@ class SummerEventRules:
     MOVE_DISTANCE = {
         EventAction.BASIC: 10,
         EventAction.SHIELD: 10,
+        # The game first moves back 10M, then advances 40M on success.
         EventAction.LEAP: 30,
         EventAction.SUPER_DASH: 30,
     }
@@ -32,8 +33,8 @@ class SummerEventRules:
 
     def __init__(
         self,
-        reward_tiles: Iterable[int] = (100, 200, 300, 350, 400),
-        finish_m: int = 400,
+        reward_tiles: Iterable[int] = (100, 200, 300, 350, 400, 500),
+        finish_m: int = 500,
         item_recharges: Optional[Dict[int, Dict[str, int]]] = None,
         item_max_stacks: Optional[Dict[str, int]] = None,
         initial_item_stacks: Optional[Dict[str, int]] = None,

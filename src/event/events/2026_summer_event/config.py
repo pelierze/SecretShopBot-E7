@@ -17,9 +17,9 @@ class SummerEventConfig:
     success_probabilities: Dict[int, float] = field(default_factory=dict)
     reward_weights: Dict[int, float] = field(
         # Ordering-only placeholders until relative reward values are provided.
-        default_factory=lambda: {100: 1.0, 200: 2.0, 300: 3.0, 350: 4.0, 400: 5.0}
+        default_factory=lambda: {100: 1.0, 200: 2.0, 300: 3.0, 350: 4.0, 400: 5.0, 500: 6.0}
     )
-    reward_tiles: tuple = (100, 200, 300, 350, 400)
+    reward_tiles: tuple = (100, 200, 300, 350, 400, 500)
     item_recharges: Dict[int, Dict[str, int]] = field(
         default_factory=lambda: {
             100: {"shield": 2, "leap": 1},
@@ -37,7 +37,7 @@ class SummerEventConfig:
     reset_items_after_failure: bool = True
     verification_attempts: int = 3
     outcome_check_attempts: int = 30
-    finish_m: int = 400
+    finish_m: int = 500
     ends_at: Optional[str] = None
     timezone: Optional[str] = None
     probability_data_file: str = "probability_data.json"
@@ -103,7 +103,7 @@ def load_config(path: Path) -> SummerEventConfig:
     config = SummerEventConfig(
         success_probabilities={int(key): float(value) for key, value in raw.get("success_probabilities", {}).items()},
         reward_weights={int(key): float(value) for key, value in raw.get("reward_weights", {}).items()},
-        reward_tiles=tuple(int(value) for value in raw.get("reward_tiles", (100, 200, 300, 350, 400))),
+        reward_tiles=tuple(int(value) for value in raw.get("reward_tiles", (100, 200, 300, 350, 400, 500))),
         item_recharges={
             int(position): {str(item): int(amount) for item, amount in recharges.items()}
             for position, recharges in raw.get("item_recharges", {}).items()
@@ -117,7 +117,7 @@ def load_config(path: Path) -> SummerEventConfig:
         reset_items_after_failure=bool(raw.get("reset_items_after_failure", True)),
         verification_attempts=int(raw.get("verification_attempts", 3)),
         outcome_check_attempts=int(raw.get("outcome_check_attempts", 30)),
-        finish_m=int(raw.get("finish_m", 400)),
+        finish_m=int(raw.get("finish_m", 500)),
         ends_at=raw.get("ends_at"),
         timezone=raw.get("timezone"),
         probability_data_file=str(raw.get("probability_data_file", "probability_data.json")),

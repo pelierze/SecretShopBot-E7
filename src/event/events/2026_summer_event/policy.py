@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from ...models import EventAction, EventPlan, EventState
 from .config import SummerEventConfig
 from .rules import SummerEventRules
+
+
+logger = logging.getLogger(__name__)
 
 
 class MissingProbabilityData(RuntimeError):
@@ -73,17 +78,25 @@ class SummerEventPolicy:
 class PlannedSummerEventPolicy:
     """Use exact dynamic planning from the currently observed runtime state."""
 
-    def __init__(self, config: SummerEventConfig, planner):
+    def __init__(self, config: SummerEventConfig, planner, adaptive_model=None):
         self.config = config
         self.planner = planner
         self._cache = {}
+        self.adaptive_model = adaptive_model
 
     def choose_action(self, state: EventState) -> EventAction:
         if not state.active or self.config.has_ended():
             return EventAction.STOP
+        if state.plan is EventPlan.TARGET_500M:
+            if state.position_m >= 500:
+                return EventAction.STOP
+            return self._planned_action(state, EventPlan.TARGET_500M)
         if state.position_m >= 300:
             return self._choose_best_effort_action(state)
         target_plan = self._next_target_plan(state)
+        return self._planned_action(state, target_plan)
+
+    def _planned_action(self, state: EventState, target_plan: EventPlan) -> EventAction:
         state_key = self.planner.state_key(
             state.position_m,
             state.items.shield,
@@ -99,6 +112,24 @@ class PlannedSummerEventPolicy:
             return plan.actions[state_key]
         except KeyError as exc:
             raise MissingProbabilityData(f"No planned action for runtime state: {state_key}") from exc
+
+    def observe_outcome(
+        self,
+        position_m: int,
+        probability_tile_m: int,
+        action: EventAction,
+        outcome,
+    ) -> None:
+        if self.adaptive_model is None:
+            return
+        if self.adaptive_model.observe(probability_tile_m, action, outcome):
+            self._cache.clear()
+            logger.info(
+                "📊 이벤트 관측 확률 갱신: %sM, 관측 %s회, 추정 성공률 %.2f%%",
+                probability_tile_m,
+                self.adaptive_model.observation_count(probability_tile_m),
+                self.adaptive_model.probabilities[probability_tile_m] * 100,
+            )
 
     @staticmethod
     def _choose_best_effort_action(state: EventState) -> EventAction:

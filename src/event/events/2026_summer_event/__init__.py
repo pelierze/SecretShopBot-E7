@@ -1,6 +1,7 @@
 """2026 summer event implementation scaffold."""
 
 from .bot import SummerEventBot
+from .adaptive_probability import AdaptiveProbabilityModel
 from .config import SummerEventConfig, load_config, load_event_bundle
 from .derived_probability import DerivedProbability, derive_linear_probabilities
 from .generated_policy import GeneratedPolicy, load_generated_policy
@@ -18,6 +19,7 @@ EVENT_ID = "2026_summer_event"
 __all__ = [
     "EVENT_ID",
     "SummerEventBot",
+    "AdaptiveProbabilityModel",
     "SummerEventConfig",
     "SummerEventPolicy",
     "PlannedSummerEventPolicy",

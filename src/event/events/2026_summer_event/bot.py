@@ -23,6 +23,7 @@ PLAN_TARGETS = {
     "100m": 100,
     "200m": 200,
     "300m": 300,
+    "500m": 500,
 }
 
 
@@ -91,6 +92,7 @@ class SummerEventBot:
             "rewards_300": stats.rewards.get(300, 0),
             "rewards_350": stats.rewards.get(350, 0),
             "rewards_400": stats.rewards.get(400, 0),
+            "rewards_500": stats.rewards.get(500, 0),
             "core_rewards_total": sum(stats.rewards.get(tile, 0) for tile in self.rules.reward_tiles),
             "start_time": getattr(stats, "start_time", None),
         }
@@ -113,8 +115,11 @@ class SummerEventBot:
             )
         self.executor.execute(action)
         outcome = self._observe_outcome(action)
+        probability_tile = self.rules.probability_tile(old_position, action)
+        observe_outcome = getattr(self.policy, "observe_outcome", None)
+        if observe_outcome is not None:
+            observe_outcome(old_position, probability_tile, action, outcome)
         if self.probability_recorder is not None:
-            probability_tile = self.rules.probability_tile(old_position, action)
             if self.probability_recorder.record(old_position, probability_tile, action, outcome):
                 logger.info(
                     "📈 미등록 확률 표본 기록: %sM, %s, %s",

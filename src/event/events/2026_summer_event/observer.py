@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
@@ -14,6 +15,9 @@ import numpy as np
 from ...models import EventAction, EventState, ItemInventory, MoveOutcome
 from ...ports import EventOutcomePending, EventRecognitionError
 from .screen_layout import SummerEventScreenLayout
+
+
+logger = logging.getLogger(__name__)
 
 try:
     from rapidocr_onnxruntime import RapidOCR
@@ -69,6 +73,8 @@ class SummerEventObserver:
         self.reward_template = self._read_image(self.template_dir / "reward_popup_title.png")
         self.result_template = self._read_image(self.template_dir / "result_popup_title.png")
         self._before_action: Optional[EventState] = None
+        self._lower_position_key = None
+        self._lower_position_count = 0
 
     def observe(self, previous_state: EventState) -> EventState:
         screen = self.capture_and_analyze()
@@ -90,6 +96,7 @@ class SummerEventObserver:
             plan=previous_state.plan,
             items=ItemInventory(**vars(screen.items)),
         )
+        self._reset_lower_position_tracking()
         return previous_state
 
     def observe_outcome(self, action: EventAction) -> MoveOutcome:
@@ -98,6 +105,7 @@ class SummerEventObserver:
             self._tap("close_reward_popup")
             raise EventOutcomePending("보상 팝업 처리 후 이동 결과를 기다리는 중입니다.")
         if screen.kind is EventScreenKind.RESULT_POPUP:
+            self._reset_lower_position_tracking()
             self._tap("confirm_result_popup")
             return MoveOutcome.FAILURE
         if screen.kind is not EventScreenKind.NORMAL or screen.position_m is None or screen.items is None:
@@ -107,12 +115,35 @@ class SummerEventObserver:
 
         before = self._before_action
         if screen.position_m > before.position_m:
+            self._reset_lower_position_tracking()
             return MoveOutcome.SUCCESS
         if screen.position_m < before.position_m:
-            raise EventRecognitionError("결과창 확인 없이 현재 M이 감소했습니다.")
+            key = (action, before.position_m, screen.position_m)
+            if key == self._lower_position_key:
+                self._lower_position_count += 1
+            else:
+                self._lower_position_key = key
+                self._lower_position_count = 1
+            if (
+                self._lower_position_count >= 3
+                and action in (EventAction.BASIC, EventAction.LEAP)
+            ):
+                logger.warning(
+                    "결과창을 놓쳤지만 현재 M 감소가 반복 확인되어 실패로 처리합니다: %sM -> %sM",
+                    before.position_m,
+                    screen.position_m,
+                )
+                self._reset_lower_position_tracking()
+                return MoveOutcome.FAILURE
+            raise EventOutcomePending("이동 애니메이션 중 현재 M 감소가 보여 재확인합니다.")
         if action is EventAction.SHIELD and screen.items.shield < before.items.shield:
+            self._reset_lower_position_tracking()
             return MoveOutcome.FAILURE
         raise EventOutcomePending("현재 M과 스킬 스택의 확정 변화가 아직 없습니다.")
+
+    def _reset_lower_position_tracking(self) -> None:
+        self._lower_position_key = None
+        self._lower_position_count = 0
 
     def capture_and_analyze(self) -> ObservedEventScreen:
         self.screenshot_path.parent.mkdir(parents=True, exist_ok=True)

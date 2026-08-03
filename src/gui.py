@@ -542,6 +542,7 @@ class SessionView:
             self.event_reward_300_label,
             self.event_reward_350_label,
             self.event_reward_400_label,
+            self.event_reward_500_label,
         ]
         for widget in stat_value_widgets:
             widget.configure(style="StatValue.TLabel")
@@ -781,13 +782,17 @@ class SessionView:
 
         ttk.Label(self.event_settings_frame, text="플랜:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
         self.event_plan_combo = ttk.Combobox(self.event_settings_frame, width=14, state="readonly")
-        self.event_plan_combo["values"] = ["100M 플랜", "200M 플랜", "300M 플랜"]
+        self.event_plan_combo["values"] = ["100M 플랜", "200M 플랜", "300M 플랜", "500M 고점 모드"]
         self.event_plan_combo.current(0)
         self.event_plan_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
 
         self.event_plan_help_label = ttk.Label(
             self.event_settings_frame,
-            text="현재 상태에서 목표 도달 확률을 우선하고, 동률이면 음료수를 적게 쓰는 행동을 선택합니다.",
+            text=(
+                "모든 플랜은 실제 성공·실패 관측을 반영해 경로를 개선합니다. "
+                "500M 고점 모드는 미등록 구간의 예측 확률로 시작하며, 500M 최초 도달 시 종료합니다."
+            ),
+            wraplength=700,
         )
         self.event_plan_help_label.grid(row=1, column=0, columnspan=5, sticky=tk.W, padx=5, pady=5)
 
@@ -826,6 +831,7 @@ class SessionView:
             ("300M 보상:", "event_reward_300_label", "0개"),
             ("350M 보상:", "event_reward_350_label", "0개"),
             ("400M 보상:", "event_reward_400_label", "0개"),
+            ("500M 보상:", "event_reward_500_label", "0개"),
         ]
         for index, (title, attribute, initial) in enumerate(labels):
             row, pair = divmod(index, 3)
@@ -1447,6 +1453,7 @@ class SessionView:
                 "100M 플랜": EventPlan.TARGET_100M,
                 "200M 플랜": EventPlan.TARGET_200M,
                 "300M 플랜": EventPlan.TARGET_300M,
+                "500M 고점 모드": EventPlan.TARGET_500M,
             }[self.event_plan_combo.get()]
             layout = event_module.load_screen_layout(event_root / config.screen_layout_file)
             rules = event_module.SummerEventRules(
@@ -1457,8 +1464,13 @@ class SessionView:
                 initial_item_stacks=config.initial_item_stacks,
                 reset_items_after_failure=config.reset_items_after_failure,
             )
+            adaptive_model = event_module.AdaptiveProbabilityModel(
+                config.success_probabilities,
+                observed_tiles=probability_dataset.tiles,
+                end_m=490,
+            )
             planner = event_module.SummerEventPlanner(config, rules)
-            policy = event_module.PlannedSummerEventPolicy(config, planner)
+            policy = event_module.PlannedSummerEventPolicy(config, planner, adaptive_model=adaptive_model)
             self.runtime_dir.mkdir(parents=True, exist_ok=True)
             observer = event_module.SummerEventObserver(
                 self.adb_controller,
@@ -1800,6 +1812,7 @@ class SessionView:
         self.event_reward_300_label.config(text=f"{stats.get('rewards_300', 0)}개")
         self.event_reward_350_label.config(text=f"{stats.get('rewards_350', 0)}개")
         self.event_reward_400_label.config(text=f"{stats.get('rewards_400', 0)}개")
+        self.event_reward_500_label.config(text=f"{stats.get('rewards_500', 0)}개")
 
     def _format_stats_summary(self, title, stats):
         completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))

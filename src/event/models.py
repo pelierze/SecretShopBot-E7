@@ -11,6 +11,7 @@ class EventPlan(str, Enum):
     TARGET_100M = "100m"
     TARGET_200M = "200m"
     TARGET_300M = "300m"
+    TARGET_500M = "500m"
 
 
 class EventAction(str, Enum):

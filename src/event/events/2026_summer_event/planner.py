@@ -38,6 +38,7 @@ class SummerEventPlanner:
         EventPlan.TARGET_100M: 100,
         EventPlan.TARGET_200M: 200,
         EventPlan.TARGET_300M: 300,
+        EventPlan.TARGET_500M: 500,
     }
 
     def __init__(self, config: SummerEventConfig, rules: Optional[SummerEventRules] = None):
