@@ -98,6 +98,7 @@ class SummerEventObserver:
             self._tap("close_reward_popup")
             raise EventOutcomePending("보상 팝업 처리 후 이동 결과를 기다리는 중입니다.")
         if screen.kind is EventScreenKind.RESULT_POPUP:
+            self._tap("confirm_result_popup")
             return MoveOutcome.FAILURE
         if screen.kind is not EventScreenKind.NORMAL or screen.position_m is None or screen.items is None:
             raise EventRecognitionError("이동 후 이벤트 화면을 확인할 수 없습니다.")
@@ -154,7 +155,7 @@ class SummerEventObserver:
             match = re.search(r"(\d+)[mM]", text)
             if match and confidence >= 0.80:
                 position = int(match.group(1))
-                if 0 <= position <= 400 and position % 10 == 0:
+                if position >= 0 and position % 10 == 0:
                     return position
         raise EventRecognitionError("현재 노드의 M 숫자를 인식하지 못했습니다.")
 

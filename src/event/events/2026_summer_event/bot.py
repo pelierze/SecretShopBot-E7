@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 from ...models import EventAction, EventState, MoveOutcome
 from ...ports import EventExecutor, EventObserver, EventOutcomePending, EventRecognitionError
 from .policy import SummerEventPolicy
 from .rules import SummerEventRules
+
+
+logger = logging.getLogger(__name__)
+
+ACTION_NAMES = {
+    EventAction.SHIELD: "보호",
+    EventAction.LEAP: "도움닫기",
+    EventAction.SUPER_DASH: "슈퍼럭키",
+}
 
 
 class SummerEventBot:
@@ -20,6 +30,7 @@ class SummerEventBot:
         executor: EventExecutor,
         verification_attempts: int = 3,
         outcome_check_attempts: int = 30,
+        probability_recorder=None,
     ):
         self.state = state
         self.policy = policy
@@ -33,12 +44,22 @@ class SummerEventBot:
             raise ValueError("Outcome check attempts must be positive")
         self.outcome_check_attempts = outcome_check_attempts
         self.stop_requested = False
+        self._state_initialized = False
+        self.probability_recorder = probability_recorder
 
     def run(self) -> dict:
         self.state.stats.start_time = getattr(self.state.stats, "start_time", None) or time.time()
+        self.initialize_state()
         while self.state.active and not self.stop_requested:
             self.step()
         return self.get_stats()
+
+    def initialize_state(self) -> EventState:
+        """Scan the live event screen before the policy chooses its first action."""
+        if not self._state_initialized:
+            self.state = self._observe_state()
+            self._state_initialized = True
+        return self.state
 
     def set_user_action(self, action: str) -> None:
         if action == "stop":
@@ -60,20 +81,48 @@ class SummerEventBot:
             "rewards_100": stats.rewards.get(100, 0),
             "rewards_200": stats.rewards.get(200, 0),
             "rewards_300": stats.rewards.get(300, 0),
+            "rewards_350": stats.rewards.get(350, 0),
+            "rewards_400": stats.rewards.get(400, 0),
             "start_time": getattr(stats, "start_time", None),
         }
 
     def step(self) -> EventState:
-        self.state = self._observe_state()
+        self.initialize_state()
         action = self.policy.choose_action(self.state)
         if action is EventAction.STOP:
             self.state.active = False
             return self.state
 
         self.rules.validate_action(self.state, action)
+        old_position = self.state.position_m
+        if action in ACTION_NAMES:
+            logger.info(
+                "🎯 이벤트 아이템 사용: %s (현재 %sM, 사용 전 보유량: %s)",
+                ACTION_NAMES[action],
+                old_position,
+                getattr(self.state.items, action.value),
+            )
         self.executor.execute(action)
         outcome = self._observe_outcome(action)
-        return self.rules.apply(self.state, action, outcome)
+        if self.probability_recorder is not None:
+            probability_tile = self.rules.probability_tile(old_position, action)
+            if self.probability_recorder.record(old_position, probability_tile, action, outcome):
+                logger.info(
+                    "📈 미등록 확률 표본 기록: %sM, %s, %s",
+                    probability_tile,
+                    ACTION_NAMES.get(action, "일반 달리기"),
+                    "성공" if outcome is MoveOutcome.SUCCESS else "실패",
+                )
+        self.state = self.rules.apply(self.state, action, outcome)
+        if outcome is MoveOutcome.SUCCESS:
+            for reward_m in self.rules.crossed_rewards(old_position, self.state.position_m):
+                logger.info("🏆 핵심 보상 구간 통과: %sM", reward_m)
+        if outcome is MoveOutcome.FAILURE and action is not EventAction.SHIELD:
+            self.state.active = False
+        # The next decision must be based on a fresh scan rather than the
+        # state predicted by the rules engine.
+        self._state_initialized = False
+        return self.state
 
     def _observe_outcome(self, action: EventAction) -> MoveOutcome:
         for _ in range(self.outcome_check_attempts):

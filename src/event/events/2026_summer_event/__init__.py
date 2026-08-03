@@ -10,6 +10,7 @@ from .screen_layout import SummerEventScreenLayout, load_screen_layout
 from .planner import SimulationResult, SummerEventPlanner, TargetPlan
 from .executor import SummerEventExecutor
 from .observer import EventScreenKind, ObservedEventScreen, SummerEventObserver
+from .probability_recorder import UnknownTileProbabilityRecorder
 from .rules import SummerEventRules
 
 EVENT_ID = "2026_summer_event"
@@ -38,5 +39,6 @@ __all__ = [
     "EventScreenKind",
     "ObservedEventScreen",
     "SummerEventObserver",
+    "UnknownTileProbabilityRecorder",
     "derive_linear_probabilities",
 ]

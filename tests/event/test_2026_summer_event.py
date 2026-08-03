@@ -2,6 +2,7 @@ import importlib
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from src.event.ports import EventOutcomePending, EventRecognitionError
 
 event_module = importlib.import_module("src.event.events.2026_summer_event")
 policy_module = importlib.import_module("src.event.events.2026_summer_event.policy")
+bot_module = importlib.import_module("src.event.events.2026_summer_event.bot")
 SummerEventConfig = event_module.SummerEventConfig
 SummerEventPolicy = event_module.SummerEventPolicy
 SummerEventRules = event_module.SummerEventRules
@@ -36,6 +38,8 @@ PlannedSummerEventPolicy = event_module.PlannedSummerEventPolicy
 SummerEventExecutor = event_module.SummerEventExecutor
 SummerEventObserver = event_module.SummerEventObserver
 EventScreenKind = event_module.EventScreenKind
+ObservedEventScreen = event_module.ObservedEventScreen
+UnknownTileProbabilityRecorder = event_module.UnknownTileProbabilityRecorder
 
 
 class SummerEventRulesTest(unittest.TestCase):
@@ -396,7 +400,34 @@ class SummerEventPlannerTest(unittest.TestCase):
         action = policy.choose_action(state)
 
         self.assertIn(action, {EventAction.BASIC, EventAction.SHIELD, EventAction.LEAP, EventAction.SUPER_DASH})
-        self.assertIs(policy.choose_action(EventState(position_m=300)), EventAction.STOP)
+
+    def test_runtime_policy_continues_after_selected_target_with_remaining_items(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config, _ = load_event_bundle(config_path)
+        policy = PlannedSummerEventPolicy(config, SummerEventPlanner(config))
+
+        self.assertIs(
+            policy.choose_action(
+                EventState(
+                    position_m=300,
+                    plan=EventPlan.TARGET_300M,
+                    items=ItemInventory(shield=2, leap=1, super_dash=1),
+                )
+            ),
+            EventAction.SUPER_DASH,
+        )
+        self.assertIs(
+            policy.choose_action(
+                EventState(position_m=350, items=ItemInventory(shield=2, leap=1, super_dash=0))
+            ),
+            EventAction.SHIELD,
+        )
+        self.assertIs(
+            policy.choose_action(
+                EventState(position_m=400, items=ItemInventory(shield=0, leap=0, super_dash=0))
+            ),
+            EventAction.BASIC,
+        )
 
 
 class RecordingTapDevice:
@@ -431,7 +462,147 @@ class SummerEventExecutorTest(unittest.TestCase):
         self.assertEqual(adb.taps, [(1047, 640, 0.25), (640, 655, 0.5)])
 
 
+class UnknownTileProbabilityRecorderTest(unittest.TestCase):
+    def test_records_only_missing_tiles_with_cumulative_probability(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recorder = UnknownTileProbabilityRecorder(
+                Path(temp_dir) / "logs" / "events",
+                known_tiles={0, 10, 20},
+                session="세션 1",
+            )
+
+            self.assertFalse(
+                recorder.record(10, 10, EventAction.BASIC, MoveOutcome.SUCCESS)
+            )
+            self.assertFalse(
+                recorder.record(300, 300, EventAction.SUPER_DASH, MoveOutcome.SUCCESS)
+            )
+            self.assertTrue(
+                recorder.record(130, 130, EventAction.BASIC, MoveOutcome.SUCCESS)
+            )
+            self.assertTrue(
+                recorder.record(130, 130, EventAction.BASIC, MoveOutcome.FAILURE)
+            )
+
+            log_path = (
+                Path(temp_dir)
+                / "logs"
+                / "events"
+                / "2026_summer_event_unknown_probabilities.csv"
+            )
+            rows = log_path.read_text(encoding="utf-8-sig").splitlines()
+
+        self.assertEqual(len(rows), 3)
+        self.assertIn("probability_tile_m", rows[0])
+        self.assertIn("130,basic,failure,2,1,1,0.500000", rows[2])
+
+
 class SummerEventBotSafetyTest(unittest.TestCase):
+    def test_logs_item_use_and_crossed_core_reward(self):
+        class SuccessObserver:
+            def observe(self, state):
+                return state
+
+            def observe_outcome(self, action):
+                return MoveOutcome.SUCCESS
+
+        class ShieldPolicy:
+            def choose_action(self, state):
+                return EventAction.SHIELD
+
+        class NoopExecutor:
+            def execute(self, action):
+                pass
+
+        bot = event_module.SummerEventBot(
+            state=EventState(position_m=90, items=ItemInventory(shield=1, leap=0, super_dash=0)),
+            policy=ShieldPolicy(),
+            rules=SummerEventRules(),
+            observer=SuccessObserver(),
+            executor=NoopExecutor(),
+        )
+
+        with patch.object(bot_module.logger, "info") as info:
+            bot.step()
+
+        messages = [call.args[0] for call in info.call_args_list]
+        self.assertTrue(any("이벤트 아이템 사용" in message for message in messages))
+        self.assertTrue(any("핵심 보상 구간 통과" in message for message in messages))
+
+    def test_run_stops_after_unprotected_failure(self):
+        class FailureObserver:
+            def observe(self, state):
+                return state
+
+            def observe_outcome(self, action):
+                return MoveOutcome.FAILURE
+
+        class BasicPolicy:
+            def choose_action(self, state):
+                return EventAction.BASIC
+
+        class NoopExecutor:
+            def execute(self, action):
+                pass
+
+        bot = event_module.SummerEventBot(
+            state=EventState(position_m=320, items=ItemInventory(0, 0, 0)),
+            policy=BasicPolicy(),
+            rules=SummerEventRules(),
+            observer=FailureObserver(),
+            executor=NoopExecutor(),
+        )
+
+        stats = bot.run()
+
+        self.assertFalse(bot.state.active)
+        self.assertEqual(stats["attempts"], 1)
+        self.assertEqual(stats["failures"], 1)
+        self.assertEqual(stats["rollbacks"], 1)
+
+    def test_first_action_uses_scanned_position_and_inventory(self):
+        scanned_state = EventState(
+            position_m=190,
+            plan=EventPlan.TARGET_300M,
+            items=ItemInventory(shield=1, leap=0, super_dash=2),
+        )
+
+        class InitialObserver:
+            def __init__(self):
+                self.observe_calls = 0
+
+            def observe(self, previous_state):
+                self.observe_calls += 1
+                previous_state.position_m = scanned_state.position_m
+                previous_state.items = ItemInventory(**vars(scanned_state.items))
+                return previous_state
+
+        class RecordingPolicy:
+            def __init__(self):
+                self.states = []
+
+            def choose_action(self, state):
+                self.states.append(
+                    (state.position_m, state.items.shield, state.items.leap, state.items.super_dash)
+                )
+                return EventAction.STOP
+
+        observer = InitialObserver()
+        policy = RecordingPolicy()
+        bot = event_module.SummerEventBot(
+            state=EventState(plan=EventPlan.TARGET_300M),
+            policy=policy,
+            rules=SummerEventRules(),
+            observer=observer,
+            executor=None,
+        )
+
+        bot.run()
+
+        self.assertEqual(observer.observe_calls, 1)
+        self.assertEqual(policy.states, [(190, 1, 0, 2)])
+        self.assertEqual(bot.get_stats()["position_m"], 190)
+
     def test_verification_failure_stops_after_configured_attempts(self):
         bot = event_module.SummerEventBot(
             state=EventState(),
@@ -514,6 +685,22 @@ class SummerEventObserverTest(unittest.TestCase):
         result = self.observer.analyze_frame(self._read(self.fixture_root / "result_failure.png"))
 
         self.assertEqual(result.kind, EventScreenKind.RESULT_POPUP)
+
+    def test_failure_result_is_confirmed_before_reporting_failure(self):
+        adb = RecordingTapDevice()
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=adb,
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+        )
+        observer.capture_and_analyze = lambda: ObservedEventScreen(EventScreenKind.RESULT_POPUP)
+
+        outcome = observer.observe_outcome(EventAction.BASIC)
+
+        self.assertIs(outcome, MoveOutcome.FAILURE)
+        self.assertEqual(adb.taps, [(640, 575, 0.2)])
 
 
 if __name__ == "__main__":

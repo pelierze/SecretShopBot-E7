@@ -79,8 +79,10 @@ class PlannedSummerEventPolicy:
         self._cache = {}
 
     def choose_action(self, state: EventState) -> EventAction:
-        if not state.active or self.config.has_ended() or state.position_m >= 300:
+        if not state.active or self.config.has_ended():
             return EventAction.STOP
+        if state.position_m >= 300:
+            return self._choose_best_effort_action(state)
         target_plan = self._next_target_plan(state)
         state_key = self.planner.state_key(
             state.position_m,
@@ -97,6 +99,22 @@ class PlannedSummerEventPolicy:
             return plan.actions[state_key]
         except KeyError as exc:
             raise MissingProbabilityData(f"No planned action for runtime state: {state_key}") from exc
+
+    @staticmethod
+    def _choose_best_effort_action(state: EventState) -> EventAction:
+        """Continue beyond the planned target using the observed inventory.
+
+        Probability observations end at 290M, so post-300M actions deliberately
+        avoid invented probability estimates. Guaranteed movement is preferred,
+        followed by protection that cannot end the run, then the remaining leap.
+        """
+        if state.items.super_dash > 0:
+            return EventAction.SUPER_DASH
+        if state.items.shield > 0:
+            return EventAction.SHIELD
+        if state.items.leap > 0:
+            return EventAction.LEAP
+        return EventAction.BASIC
 
     @staticmethod
     def _next_target_plan(state: EventState) -> EventPlan:

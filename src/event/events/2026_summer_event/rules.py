@@ -32,7 +32,7 @@ class SummerEventRules:
 
     def __init__(
         self,
-        reward_tiles: Iterable[int] = (100, 200, 300, 350),
+        reward_tiles: Iterable[int] = (100, 200, 300, 350, 400),
         finish_m: int = 400,
         item_recharges: Optional[Dict[int, Dict[str, int]]] = None,
         item_max_stacks: Optional[Dict[str, int]] = None,
@@ -73,7 +73,7 @@ class SummerEventRules:
 
         if outcome is MoveOutcome.SUCCESS:
             state.stats.increment(state.stats.successes, action)
-            state.position_m = min(self.finish_m, old_position + self.MOVE_DISTANCE[action])
+            state.position_m = old_position + self.MOVE_DISTANCE[action]
             crossed = self.crossed_rewards(old_position, state.position_m)
             for tile in crossed:
                 state.stats.increment(state.stats.rewards, tile)

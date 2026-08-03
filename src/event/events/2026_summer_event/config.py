@@ -17,9 +17,9 @@ class SummerEventConfig:
     success_probabilities: Dict[int, float] = field(default_factory=dict)
     reward_weights: Dict[int, float] = field(
         # Ordering-only placeholders until relative reward values are provided.
-        default_factory=lambda: {100: 1.0, 200: 2.0, 300: 3.0, 350: 4.0}
+        default_factory=lambda: {100: 1.0, 200: 2.0, 300: 3.0, 350: 4.0, 400: 5.0}
     )
-    reward_tiles: tuple = (100, 200, 300, 350)
+    reward_tiles: tuple = (100, 200, 300, 350, 400)
     item_recharges: Dict[int, Dict[str, int]] = field(
         default_factory=lambda: {
             100: {"shield": 2, "leap": 1},
@@ -60,8 +60,8 @@ class SummerEventConfig:
                 raise ValueError(f"Probability must be between 0 and 1: {probability}")
         if tuple(sorted(self.reward_tiles)) != tuple(self.reward_tiles):
             raise ValueError("Reward tiles must be sorted")
-        if self.finish_m <= self.reward_tiles[-1]:
-            raise ValueError("Finish position must be beyond the final reward tile")
+        if self.finish_m < self.reward_tiles[-1]:
+            raise ValueError("Finish position must include the final reward tile")
         valid_items = {"shield", "leap", "super_dash"}
         if set(self.item_max_stacks) != valid_items:
             raise ValueError("Item max stacks must define shield, leap, and super_dash")
@@ -103,7 +103,7 @@ def load_config(path: Path) -> SummerEventConfig:
     config = SummerEventConfig(
         success_probabilities={int(key): float(value) for key, value in raw.get("success_probabilities", {}).items()},
         reward_weights={int(key): float(value) for key, value in raw.get("reward_weights", {}).items()},
-        reward_tiles=tuple(int(value) for value in raw.get("reward_tiles", (100, 200, 300, 350))),
+        reward_tiles=tuple(int(value) for value in raw.get("reward_tiles", (100, 200, 300, 350, 400))),
         item_recharges={
             int(position): {str(item): int(amount) for item, amount in recharges.items()}
             for position, recharges in raw.get("item_recharges", {}).items()

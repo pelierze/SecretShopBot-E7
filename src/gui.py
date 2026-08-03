@@ -1424,7 +1424,7 @@ class SessionView:
             event_module = load_event_module("2026_summer_event")
             resource_root = get_resource_root()
             event_root = resource_root / "src" / "event" / "events" / "2026_summer_event"
-            config, _ = event_module.load_event_bundle(event_root / "event_config.json")
+            config, probability_dataset = event_module.load_event_bundle(event_root / "event_config.json")
             if config.has_ended():
                 messagebox.showinfo("이벤트 종료", "2026 여름 이벤트가 종료되어 자동화를 시작할 수 없습니다.")
                 return
@@ -1458,6 +1458,11 @@ class SessionView:
                 layout,
                 screen_size=self.adb_controller.get_screen_size(),
             )
+            probability_recorder = event_module.UnknownTileProbabilityRecorder(
+                Path("logs") / "events",
+                known_tiles=probability_dataset.tiles,
+                session=self.name,
+            )
             self.bot = event_module.SummerEventBot(
                 EventState(plan=plan),
                 policy,
@@ -1466,6 +1471,7 @@ class SessionView:
                 executor,
                 verification_attempts=config.verification_attempts,
                 outcome_check_attempts=config.outcome_check_attempts,
+                probability_recorder=probability_recorder,
             )
             self.was_stopped_by_user = False
             self.is_running = True
