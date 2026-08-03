@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "v1.2.5"
+    [string]$Version = "v1.3.0-rc.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +11,14 @@ $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
 $NormalizedVersion = if ($Version.StartsWith("v")) { $Version } else { "v$Version" }
 $NumericVersion = if ($NormalizedVersion.StartsWith("v")) { $NormalizedVersion.Substring(1) } else { $NormalizedVersion }
+$CoreVersion = ($NumericVersion -split '-', 2)[0]
+$CoreParts = @($CoreVersion.Split('.') | ForEach-Object { [int]$_ })
+while ($CoreParts.Count -lt 3) { $CoreParts += 0 }
+$PreReleaseBuild = 0
+if ($NumericVersion -match '-(?:alpha|beta|rc)[.-]?(\d+)$') {
+    $PreReleaseBuild = [int]$Matches[1]
+}
+$FileVersionTuple = "$($CoreParts[0]), $($CoreParts[1]), $($CoreParts[2]), $PreReleaseBuild"
 $PackageName = "$AppName-$NormalizedVersion"
 $PackageDir = Join-Path $ReleaseRoot $PackageName
 $StagingPackageDir = $PackageDir
@@ -48,8 +56,8 @@ Write-Host "Generating Windows version metadata..."
 @"
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=($($NumericVersion.Replace('.', ', ')), 0),
-    prodvers=($($NumericVersion.Replace('.', ', ')), 0),
+    filevers=($FileVersionTuple),
+    prodvers=($FileVersionTuple),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -64,11 +72,11 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName', u'pelierze'),
           StringStruct(u'FileDescription', u'SecretShopBot-E7 for Epic Seven'),
-          StringStruct(u'FileVersion', u'$NumericVersion.0'),
+          StringStruct(u'FileVersion', u'$NumericVersion'),
           StringStruct(u'InternalName', u'SecretShopBot-E7'),
           StringStruct(u'OriginalFilename', u'SecretShopBot-E7.exe'),
           StringStruct(u'ProductName', u'SecretShopBot-E7'),
-          StringStruct(u'ProductVersion', u'$NumericVersion.0'),
+          StringStruct(u'ProductVersion', u'$NumericVersion'),
         ]
       )
     ]),

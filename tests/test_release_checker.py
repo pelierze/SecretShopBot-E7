@@ -8,6 +8,7 @@ class ReleaseCheckerTest(unittest.TestCase):
     def test_parse_version_supports_v_prefix(self):
         self.assertEqual(parse_version("v1.2.3"), (1, 2, 3))
         self.assertEqual(parse_version("1.2.3-beta"), (1, 2, 3))
+        self.assertEqual(parse_version("v1.3.0-rc.1"), (1, 3, 0))
 
     @patch("src.release_checker.fetch_latest_release")
     def test_get_available_update_returns_release_when_newer(self, mock_fetch):
