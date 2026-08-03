@@ -57,6 +57,9 @@ class SummerEventBot:
     def run(self) -> dict:
         self.state.stats.start_time = getattr(self.state.stats, "start_time", None) or time.time()
         self.initialize_state()
+        prepare_policy = getattr(self.policy, "prepare", None)
+        if prepare_policy is not None:
+            prepare_policy(self.state)
         while self.state.active and not self.stop_requested:
             self.step()
         self.state.active = False
@@ -72,16 +75,28 @@ class SummerEventBot:
                 "last_observed_success_probability",
                 None,
             )
-            observe_displayed = getattr(self.policy, "observe_displayed_probability", None)
-            if displayed_probability is not None and observe_displayed is not None:
-                if observe_displayed(self.state.position_m, displayed_probability):
-                    record_displayed = getattr(
-                        self.probability_recorder,
-                        "record_displayed_probability",
-                        None,
+            record_displayed = getattr(
+                self.probability_recorder,
+                "record_displayed_probability",
+                None,
+            )
+            if displayed_probability is not None and record_displayed is not None:
+                if record_displayed(self.state.position_m, displayed_probability):
+                    logger.info(
+                        "✅ 신규 타일 OCR 확률 확정: %sM = %.2f%% (동일 관측 3회)",
+                        self.state.position_m,
+                        displayed_probability * 100,
                     )
-                    if record_displayed is not None:
-                        record_displayed(self.state.position_m, displayed_probability)
+                get_confirmed = getattr(
+                    self.probability_recorder,
+                    "confirmed_probability",
+                    None,
+                )
+                confirmed = get_confirmed(self.state.position_m) if get_confirmed else None
+                if confirmed is not None:
+                    set_confirmed = getattr(self.observer, "set_confirmed_probability", None)
+                    if set_confirmed is not None:
+                        set_confirmed(self.state.position_m, confirmed)
             self._record_plan_success_if_reached()
         return self.state
 
@@ -134,9 +149,6 @@ class SummerEventBot:
         self.executor.execute(action)
         outcome = self._observe_outcome(action)
         observation_tile = self.rules.observation_tile(old_position, action)
-        observe_outcome = getattr(self.policy, "observe_outcome", None)
-        if observe_outcome is not None:
-            observe_outcome(old_position, observation_tile, action, outcome)
         if self.probability_recorder is not None:
             if self.probability_recorder.record(old_position, observation_tile, action, outcome):
                 logger.info(

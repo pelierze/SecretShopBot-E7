@@ -1476,8 +1476,43 @@ class SessionView:
                 observed_tiles=probability_dataset.tiles,
                 end_m=490,
             )
-            for position_m, probability in probability_recorder.load_displayed_probabilities().items():
+            confirmed_probabilities = probability_recorder.load_displayed_probabilities()
+            for position_m, probability in confirmed_probabilities.items():
                 adaptive_model.set_displayed_probability(position_m, probability)
+            outcome_counts = probability_recorder.load_outcome_counts()
+            applied_observations = adaptive_model.apply_historical_outcomes(outcome_counts)
+            probability_sources = {}
+            for position_m in config.success_probabilities:
+                has_outcomes = position_m in outcome_counts
+                if position_m in probability_dataset.tiles and has_outcomes:
+                    probability_sources[position_m] = "bundled+outcomes"
+                elif position_m in confirmed_probabilities and has_outcomes:
+                    probability_sources[position_m] = "confirmed_ocr+outcomes"
+                elif position_m in probability_dataset.tiles:
+                    probability_sources[position_m] = "bundled"
+                elif position_m in confirmed_probabilities:
+                    probability_sources[position_m] = "confirmed_ocr"
+                elif has_outcomes:
+                    probability_sources[position_m] = "outcome_adjusted"
+                elif position_m < 300:
+                    probability_sources[position_m] = "interpolated"
+                else:
+                    probability_sources[position_m] = "predicted"
+            applied_log_path = probability_recorder.write_applied_probabilities(
+                config.success_probabilities,
+                probability_sources,
+            )
+            logger.info(
+                "📚 이벤트 시작 확률 업데이트: 확정 OCR %s개, 누적 결과 %s건 반영",
+                len(confirmed_probabilities),
+                applied_observations,
+            )
+            logger.info("📄 적용된 M별 확률 기록: %s", applied_log_path)
+            logger.info(
+                "📄 앱 OCR 관측 기록: %s (확정 데이터: %s)",
+                probability_recorder.ocr_log_path,
+                probability_recorder.confirmed_log_path,
+            )
             planner = event_module.SummerEventPlanner(config, rules)
             policy = event_module.PlannedSummerEventPolicy(config, planner, adaptive_model=adaptive_model)
             self.runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -1487,6 +1522,7 @@ class SessionView:
                 self.runtime_dir / "event_screen.png",
                 resource_root / "images" / "2026_summer_event",
                 screen_size=self.adb_controller.get_screen_size(),
+                confirmed_probabilities=confirmed_probabilities,
             )
             executor = event_module.SummerEventExecutor(
                 self.adb_controller,

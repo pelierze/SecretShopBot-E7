@@ -59,6 +59,7 @@ class SummerEventObserver:
         template_dir: Path,
         screen_size: Tuple[int, int] = (1280, 720),
         ocr_engine=None,
+        confirmed_probabilities=None,
     ):
         self.adb = adb
         self.layout = layout
@@ -77,6 +78,10 @@ class SummerEventObserver:
         self._lower_position_key = None
         self._lower_position_count = 0
         self.last_observed_success_probability: Optional[float] = None
+        self.confirmed_probabilities = dict(confirmed_probabilities or {})
+
+    def set_confirmed_probability(self, position_m: int, probability: float) -> None:
+        self.confirmed_probabilities[int(position_m)] = float(probability)
 
     def observe(self, previous_state: EventState) -> EventState:
         screen = self.capture_and_analyze()
@@ -166,11 +171,14 @@ class SummerEventObserver:
         if self._template_similarity(frame, self.reward_template) >= self.TEMPLATE_THRESHOLD:
             return ObservedEventScreen(EventScreenKind.REWARD_POPUP)
         try:
-            try:
-                success_probability = self._recognize_success_probability(frame)
-            except EventRecognitionError:
-                success_probability = None
             position = self._recognize_position(frame)
+            if position in self.confirmed_probabilities:
+                success_probability = self.confirmed_probabilities[position]
+            else:
+                try:
+                    success_probability = self._recognize_success_probability(frame)
+                except EventRecognitionError:
+                    success_probability = None
             items = ItemInventory(
                 shield=self._count_stars(frame, "shield_stacks"),
                 leap=self._count_stars(frame, "leap_stacks"),

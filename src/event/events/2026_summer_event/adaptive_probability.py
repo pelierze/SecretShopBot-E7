@@ -64,6 +64,28 @@ class AdaptiveProbabilityModel:
     def observation_count(self, tile_m: int) -> int:
         return self._outcomes[tile_m][1]
 
+    @property
+    def total_observations(self) -> int:
+        return sum(attempts for _successes, attempts in self._outcomes.values())
+
+    def apply_historical_outcomes(self, outcome_counts) -> int:
+        applied = 0
+        for tile_m, (successes, attempts) in outcome_counts.items():
+            if attempts <= 0 or tile_m not in self._prior:
+                continue
+            self._outcomes[tile_m] = [int(successes), int(attempts)]
+            prior = self._prior[tile_m]
+            strength = (
+                self.observed_prior_strength
+                if tile_m in self.observed_tiles
+                else self.prior_strength
+            )
+            self.probabilities[tile_m] = (
+                prior * strength + successes
+            ) / (strength + attempts)
+            applied += attempts
+        return applied
+
     def _seed_predictions(self, end_m: int) -> None:
         source = dict(self.probabilities)
         for position in range(0, end_m + 1, 10):

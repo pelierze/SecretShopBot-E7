@@ -82,7 +82,40 @@ class PlannedSummerEventPolicy:
         self.config = config
         self.planner = planner
         self._cache = {}
+        self._prepared = False
         self.adaptive_model = adaptive_model
+
+    def prepare(self, state: EventState) -> None:
+        if self._prepared:
+            return
+        targets = {
+            EventPlan.TARGET_100M: (
+                EventPlan.TARGET_100M,
+                EventPlan.TARGET_200M,
+                EventPlan.TARGET_300M,
+            ),
+            EventPlan.TARGET_200M: (EventPlan.TARGET_200M, EventPlan.TARGET_300M),
+            EventPlan.TARGET_300M: (EventPlan.TARGET_300M,),
+            EventPlan.TARGET_500M: (EventPlan.TARGET_500M,),
+        }[state.plan]
+        state_key = self.planner.state_key(
+            state.position_m,
+            state.items.shield,
+            state.items.leap,
+            state.items.super_dash,
+        )
+        for target_plan in targets:
+            self._cache[target_plan] = self.planner.build_plan(
+                target_plan,
+                initial_state=state_key,
+            )
+        self._prepared = True
+        observations = self.adaptive_model.total_observations if self.adaptive_model else 0
+        logger.info(
+            "🧭 이벤트 경로 업데이트 완료: 시작 시 누적 관측 %s건 반영, 준비 플랜 %s",
+            observations,
+            ", ".join(plan.value for plan in targets),
+        )
 
     def choose_action(self, state: EventState) -> EventAction:
         if not state.active or self.config.has_ended():
@@ -97,21 +130,20 @@ class PlannedSummerEventPolicy:
         return self._planned_action(state, target_plan)
 
     def _planned_action(self, state: EventState, target_plan: EventPlan) -> EventAction:
+        if not self._prepared:
+            self.prepare(state)
         state_key = self.planner.state_key(
             state.position_m,
             state.items.shield,
             state.items.leap,
             state.items.super_dash,
         )
-        cache_key = (target_plan, state_key)
-        plan = self._cache.get(cache_key)
-        if plan is None:
-            plan = self.planner.build_plan(target_plan, initial_state=state_key)
-            self._cache[cache_key] = plan
+        plan = self._cache[target_plan]
         try:
             return plan.actions[state_key]
-        except KeyError as exc:
-            raise MissingProbabilityData(f"No planned action for runtime state: {state_key}") from exc
+        except KeyError:
+            logger.warning("사전 계산 경로에 없는 상태입니다. 실시간 재계산 없이 안전 우선 행동을 사용합니다: %s", state_key)
+            return self._choose_best_effort_action(state)
 
     def observe_outcome(
         self,
@@ -120,37 +152,12 @@ class PlannedSummerEventPolicy:
         action: EventAction,
         outcome,
     ) -> None:
-        if self.adaptive_model is None:
-            return
-        if self.adaptive_model.observe(probability_tile_m, action, outcome):
-            self._cache.clear()
-            displayed_probability = self.adaptive_model.displayed_probability(probability_tile_m)
-            if displayed_probability is not None:
-                logger.info(
-                    "📊 이벤트 확률 데이터: %sM, 화면 OCR %.2f%%, 결과 관측 %s회",
-                    probability_tile_m,
-                    displayed_probability * 100,
-                    self.adaptive_model.observation_count(probability_tile_m),
-                )
-            else:
-                logger.info(
-                    "📊 이벤트 결과 관측: %sM, 누적 %s회",
-                    probability_tile_m,
-                    self.adaptive_model.observation_count(probability_tile_m),
-                )
+        # Runtime observations are persisted by the recorder and applied only
+        # once when the next event session starts.
+        return None
 
     def observe_displayed_probability(self, position_m: int, probability: float) -> bool:
-        if self.adaptive_model is None or probability is None:
-            return False
-        changed = self.adaptive_model.set_displayed_probability(position_m, probability)
-        if changed:
-            self._cache.clear()
-            logger.info(
-                "🔎 미등록 타일 화면 확률 반영: %sM, OCR 성공률 %.2f%%",
-                position_m,
-                probability * 100,
-            )
-        return changed
+        return False
 
     @staticmethod
     def _choose_best_effort_action(state: EventState) -> EventAction:

@@ -399,6 +399,17 @@ class SummerEventPlannerTest(unittest.TestCase):
         self.assertFalse(model.set_displayed_probability(10, 0.25))
         self.assertEqual(probabilities[10], 0.8)
 
+    def test_historical_outcomes_are_applied_once_before_planning(self):
+        probabilities = {position: 0.8 for position in range(0, 300, 10)}
+        model = AdaptiveProbabilityModel(probabilities, observed_tiles={0, 10, 20}, end_m=490)
+
+        applied = model.apply_historical_outcomes({0: (3, 4), 330: (1, 2)})
+
+        self.assertEqual(applied, 6)
+        self.assertEqual(model.total_observations, 6)
+        self.assertEqual(model.observation_count(0), 4)
+        self.assertLess(probabilities[0], 0.8)
+
     def test_500m_high_score_policy_stops_after_first_arrival(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
         config, dataset = load_event_bundle(config_path)
@@ -421,7 +432,7 @@ class SummerEventPlannerTest(unittest.TestCase):
             EventAction.STOP,
         )
 
-    def test_standard_plan_replans_after_observed_result(self):
+    def test_standard_plan_does_not_replan_after_runtime_result(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
         config, dataset = load_event_bundle(config_path)
         adaptive = AdaptiveProbabilityModel(
@@ -437,13 +448,16 @@ class SummerEventPlannerTest(unittest.TestCase):
         state = EventState(plan=EventPlan.TARGET_100M)
         policy.choose_action(state)
         self.assertTrue(policy._cache)
+        cached_plans = dict(policy._cache)
 
         policy.observe_outcome(0, 0, EventAction.BASIC, MoveOutcome.FAILURE)
+        policy.choose_action(state)
 
-        self.assertFalse(policy._cache)
-        self.assertEqual(adaptive.observation_count(0), 1)
+        self.assertEqual(policy._cache, cached_plans)
+        self.assertTrue(all(policy._cache[key] is value for key, value in cached_plans.items()))
+        self.assertEqual(adaptive.observation_count(0), 0)
 
-    def test_missing_tile_log_reports_screen_ocr_instead_of_estimate(self):
+    def test_runtime_observations_do_not_change_prepared_probability_model(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
         config, dataset = load_event_bundle(config_path)
         adaptive = AdaptiveProbabilityModel(
@@ -456,15 +470,13 @@ class SummerEventPlannerTest(unittest.TestCase):
             SummerEventPlanner(config),
             adaptive_model=adaptive,
         )
-        policy.observe_displayed_probability(330, 0.57)
+        before = adaptive.probabilities[330]
 
-        with patch.object(policy_module.logger, "info") as info:
-            policy.observe_outcome(330, 330, EventAction.BASIC, MoveOutcome.SUCCESS)
+        self.assertFalse(policy.observe_displayed_probability(330, 0.57))
+        policy.observe_outcome(330, 330, EventAction.BASIC, MoveOutcome.SUCCESS)
 
-        message = info.call_args.args[0]
-        self.assertIn("화면 OCR", message)
-        self.assertNotIn("추정 성공률", message)
-        self.assertEqual(info.call_args.args[2], 0.57 * 100)
+        self.assertEqual(adaptive.probabilities[330], before)
+        self.assertEqual(adaptive.observation_count(330), 0)
 
     def test_planner_builds_reproducible_target_plans(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
@@ -612,9 +624,14 @@ class UnknownTileProbabilityRecorderTest(unittest.TestCase):
                 session="세션 1",
             )
 
+            self.assertFalse(recorder.record_displayed_probability(330, 0.57))
+            self.assertFalse(recorder.record_displayed_probability(330, 0.57))
             self.assertTrue(recorder.record_displayed_probability(330, 0.57))
             self.assertFalse(recorder.record_displayed_probability(330, 0.57))
             rows = recorder.ocr_log_path.read_text(encoding="utf-8-sig").splitlines()
+            confirmed_rows = recorder.confirmed_log_path.read_text(
+                encoding="utf-8-sig"
+            ).splitlines()
             reloaded = UnknownTileProbabilityRecorder(
                 Path(temp_dir) / "logs" / "events",
                 known_tiles={0, 10},
@@ -623,14 +640,67 @@ class UnknownTileProbabilityRecorderTest(unittest.TestCase):
             loaded = reloaded.load_displayed_probabilities()
             duplicate_recorded = reloaded.record_displayed_probability(330, 0.57)
 
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 4)
         self.assertIn("330,0.570000", rows[1])
+        self.assertIn("330,0.570000,3,high", confirmed_rows[1])
         self.assertEqual(loaded, {330: 0.57})
         self.assertFalse(duplicate_recorded)
 
+    def test_ocr_confirmation_requires_three_consecutive_equal_values(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recorder = UnknownTileProbabilityRecorder(
+                Path(temp_dir) / "logs" / "events",
+                known_tiles={0, 10},
+            )
+
+            self.assertFalse(recorder.record_displayed_probability(330, 0.57))
+            self.assertFalse(recorder.record_displayed_probability(330, 0.58))
+            self.assertFalse(recorder.record_displayed_probability(330, 0.58))
+            self.assertIsNone(recorder.confirmed_probability(330))
+            self.assertTrue(recorder.record_displayed_probability(330, 0.58))
+
+            self.assertEqual(recorder.confirmed_probability(330), 0.58)
+
+    def test_writes_applied_probability_table_by_position(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recorder = UnknownTileProbabilityRecorder(
+                Path(temp_dir) / "logs" / "events",
+                known_tiles={0},
+            )
+
+            path = recorder.write_applied_probabilities(
+                {0: 1.0, 330: 0.57},
+                {0: "bundled", 330: "confirmed_ocr"},
+            )
+            rows = path.read_text(encoding="utf-8-sig").splitlines()
+
+        self.assertEqual(len(rows), 3)
+        self.assertIn("0,1.000000,bundled", rows[1])
+        self.assertIn("330,0.570000,confirmed_ocr", rows[2])
+
+    def test_promotes_three_matching_historical_ocr_rows_on_load(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            first = UnknownTileProbabilityRecorder(
+                Path(temp_dir) / "logs" / "events",
+                known_tiles={0},
+            )
+            self.assertFalse(first.record_displayed_probability(330, 0.57))
+            self.assertFalse(first.record_displayed_probability(330, 0.57))
+            # Simulate a legacy third raw row without a confirmed-data file.
+            with first.ocr_log_path.open("a", encoding="utf-8") as stream:
+                stream.write("2026-08-04T00:00:00+09:00,test,330,0.570000\n")
+
+            reloaded = UnknownTileProbabilityRecorder(
+                Path(temp_dir) / "logs" / "events",
+                known_tiles={0},
+            )
+
+            self.assertEqual(reloaded.confirmed_probability(330), 0.57)
+            self.assertFalse(reloaded.record_displayed_probability(330, 0.57))
+
 
 class SummerEventBotSafetyTest(unittest.TestCase):
-    def test_leap_learning_and_log_use_current_displayed_position(self):
+    def test_leap_result_is_recorded_without_runtime_policy_learning(self):
         class LeapPolicy:
             def __init__(self):
                 self.observations = []
@@ -674,7 +744,7 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         bot.step()
 
         expected = (100, 100, EventAction.LEAP, MoveOutcome.SUCCESS)
-        self.assertEqual(policy.observations, [expected])
+        self.assertEqual(policy.observations, [])
         self.assertEqual(recorder.records, [expected])
         self.assertEqual(bot.state.position_m, 130)
 
@@ -952,6 +1022,26 @@ class SummerEventObserverTest(unittest.TestCase):
         self.assertEqual(one_ninety.position_m, 190)
         self.assertEqual(one_ninety.success_probability, 0.45)
         self.assertEqual(one_ninety.items, ItemInventory(shield=1, leap=0, super_dash=2))
+
+    def test_confirmed_tile_skips_probability_ocr(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            confirmed_probabilities={190: 0.45},
+        )
+
+        with patch.object(
+            observer,
+            "_recognize_success_probability",
+            side_effect=AssertionError("confirmed tiles must not run probability OCR"),
+        ):
+            screen = observer.analyze_frame(self._read(self.fixture_root / "normal_190m.png"))
+
+        self.assertEqual(screen.position_m, 190)
+        self.assertEqual(screen.success_probability, 0.45)
 
     def test_recognizes_stylized_75_percent_from_real_screen(self):
         path = Path(r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_22.45.35.771.png")
