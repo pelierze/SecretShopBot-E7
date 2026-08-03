@@ -1464,11 +1464,18 @@ class SessionView:
                 initial_item_stacks=config.initial_item_stacks,
                 reset_items_after_failure=config.reset_items_after_failure,
             )
+            probability_recorder = event_module.UnknownTileProbabilityRecorder(
+                Path("logs") / "events",
+                known_tiles=probability_dataset.tiles,
+                session=self.name,
+            )
             adaptive_model = event_module.AdaptiveProbabilityModel(
                 config.success_probabilities,
                 observed_tiles=probability_dataset.tiles,
                 end_m=490,
             )
+            for position_m, probability in probability_recorder.load_displayed_probabilities().items():
+                adaptive_model.set_displayed_probability(position_m, probability)
             planner = event_module.SummerEventPlanner(config, rules)
             policy = event_module.PlannedSummerEventPolicy(config, planner, adaptive_model=adaptive_model)
             self.runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -1483,11 +1490,6 @@ class SessionView:
                 self.adb_controller,
                 layout,
                 screen_size=self.adb_controller.get_screen_size(),
-            )
-            probability_recorder = event_module.UnknownTileProbabilityRecorder(
-                Path("logs") / "events",
-                known_tiles=probability_dataset.tiles,
-                session=self.name,
             )
             self.bot = event_module.SummerEventBot(
                 EventState(plan=plan),

@@ -108,6 +108,11 @@ class SummerEventRules:
         return position_m
 
     @staticmethod
+    def observation_tile(position_m: int, action: EventAction) -> int:
+        """Map screen OCR and runtime outcomes to the currently displayed M."""
+        return position_m
+
+    @staticmethod
     def _consume_item(state: EventState, action: EventAction) -> None:
         if action is EventAction.SHIELD:
             state.items.shield -= 1

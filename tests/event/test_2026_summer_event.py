@@ -123,6 +123,10 @@ class SummerEventRulesTest(unittest.TestCase):
         self.assertEqual(self.rules.probability_tile(100, EventAction.LEAP), 90)
         self.assertEqual(self.rules.probability_tile(0, EventAction.LEAP), 0)
 
+    def test_leap_observation_is_mapped_to_current_displayed_position(self):
+        self.assertEqual(self.rules.observation_tile(100, EventAction.LEAP), 100)
+        self.assertEqual(self.rules.observation_tile(60, EventAction.LEAP), 60)
+
     def test_leap_from_100m_uses_90m_probability_and_finishes_at_130m(self):
         state = EventState(position_m=100, items=ItemInventory(leap=1))
 
@@ -384,6 +388,17 @@ class SummerEventPlannerTest(unittest.TestCase):
         self.assertLess(probabilities[10], known_prior)
         self.assertFalse(model.observe(10, EventAction.SUPER_DASH, MoveOutcome.SUCCESS))
 
+    def test_ocr_probability_replaces_prediction_for_missing_tile(self):
+        probabilities = {position: 0.8 for position in range(0, 300, 10)}
+        model = AdaptiveProbabilityModel(probabilities, observed_tiles={0, 10, 20}, end_m=490)
+
+        changed = model.set_displayed_probability(300, 0.37)
+
+        self.assertTrue(changed)
+        self.assertEqual(probabilities[300], 0.37)
+        self.assertFalse(model.set_displayed_probability(10, 0.25))
+        self.assertEqual(probabilities[10], 0.8)
+
     def test_500m_high_score_policy_stops_after_first_arrival(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
         config, dataset = load_event_bundle(config_path)
@@ -566,8 +581,139 @@ class UnknownTileProbabilityRecorderTest(unittest.TestCase):
         self.assertIn("probability_tile_m", rows[0])
         self.assertIn("130,basic,failure,2,1,1,0.500000", rows[2])
 
+    def test_records_ocr_probability_in_separate_event_log(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            recorder = UnknownTileProbabilityRecorder(
+                Path(temp_dir) / "logs" / "events",
+                known_tiles={0, 10},
+                session="세션 1",
+            )
+
+            self.assertTrue(recorder.record_displayed_probability(330, 0.57))
+            self.assertFalse(recorder.record_displayed_probability(330, 0.57))
+            rows = recorder.ocr_log_path.read_text(encoding="utf-8-sig").splitlines()
+            reloaded = UnknownTileProbabilityRecorder(
+                Path(temp_dir) / "logs" / "events",
+                known_tiles={0, 10},
+                session="세션 2",
+            )
+            loaded = reloaded.load_displayed_probabilities()
+            duplicate_recorded = reloaded.record_displayed_probability(330, 0.57)
+
+        self.assertEqual(len(rows), 2)
+        self.assertIn("330,0.570000", rows[1])
+        self.assertEqual(loaded, {330: 0.57})
+        self.assertFalse(duplicate_recorded)
+
 
 class SummerEventBotSafetyTest(unittest.TestCase):
+    def test_leap_learning_and_log_use_current_displayed_position(self):
+        class LeapPolicy:
+            def __init__(self):
+                self.observations = []
+
+            def choose_action(self, state):
+                return EventAction.LEAP
+
+            def observe_outcome(self, position_m, observation_tile, action, outcome):
+                self.observations.append((position_m, observation_tile, action, outcome))
+
+        class SuccessObserver:
+            def observe(self, state):
+                return state
+
+            def observe_outcome(self, action):
+                return MoveOutcome.SUCCESS
+
+        class RecordingProbabilityRecorder:
+            def __init__(self):
+                self.records = []
+
+            def record(self, position_m, observation_tile, action, outcome):
+                self.records.append((position_m, observation_tile, action, outcome))
+                return True
+
+        class NoopExecutor:
+            def execute(self, action):
+                pass
+
+        policy = LeapPolicy()
+        recorder = RecordingProbabilityRecorder()
+        bot = event_module.SummerEventBot(
+            state=EventState(position_m=100, items=ItemInventory(leap=1)),
+            policy=policy,
+            rules=SummerEventRules(),
+            observer=SuccessObserver(),
+            executor=NoopExecutor(),
+            probability_recorder=recorder,
+        )
+
+        bot.step()
+
+        expected = (100, 100, EventAction.LEAP, MoveOutcome.SUCCESS)
+        self.assertEqual(policy.observations, [expected])
+        self.assertEqual(recorder.records, [expected])
+        self.assertEqual(bot.state.position_m, 130)
+
+    def test_stop_request_during_outcome_does_not_invalidate_active_action(self):
+        class StopDuringOutcomeObserver:
+            def __init__(self):
+                self.bot = None
+
+            def observe(self, state):
+                return state
+
+            def observe_outcome(self, action):
+                self.bot.set_user_action("stop")
+                return MoveOutcome.SUCCESS
+
+        class BasicPolicy:
+            def choose_action(self, state):
+                return EventAction.BASIC
+
+        class NoopExecutor:
+            def execute(self, action):
+                pass
+
+        observer = StopDuringOutcomeObserver()
+        bot = event_module.SummerEventBot(
+            state=EventState(),
+            policy=BasicPolicy(),
+            rules=SummerEventRules(),
+            observer=observer,
+            executor=NoopExecutor(),
+        )
+        observer.bot = bot
+
+        stats = bot.run()
+
+        self.assertFalse(bot.state.active)
+        self.assertEqual(stats["attempts"], 1)
+        self.assertEqual(stats["successes"], 1)
+        self.assertEqual(stats["position_m"], 10)
+
+    def test_stop_request_before_step_skips_input(self):
+        class NoopObserver:
+            def observe(self, state):
+                return state
+
+        class FailingPolicy:
+            def choose_action(self, state):
+                raise AssertionError("policy must not run after stop")
+
+        bot = event_module.SummerEventBot(
+            state=EventState(),
+            policy=FailingPolicy(),
+            rules=SummerEventRules(),
+            observer=NoopObserver(),
+            executor=None,
+        )
+        bot.set_user_action("stop")
+
+        bot.step()
+
+        self.assertFalse(bot.state.active)
+
     def test_logs_item_use_and_crossed_core_reward(self):
         class SuccessObserver:
             def observe(self, state):
@@ -778,9 +924,21 @@ class SummerEventObserverTest(unittest.TestCase):
 
         self.assertEqual(zero.kind, EventScreenKind.NORMAL)
         self.assertEqual(zero.position_m, 0)
+        self.assertEqual(zero.success_probability, 1.0)
         self.assertEqual(zero.items, ItemInventory(shield=2, leap=1, super_dash=2))
         self.assertEqual(one_ninety.position_m, 190)
+        self.assertEqual(one_ninety.success_probability, 0.45)
         self.assertEqual(one_ninety.items, ItemInventory(shield=1, leap=0, super_dash=2))
+
+    def test_recognizes_stylized_75_percent_from_real_screen(self):
+        path = Path(r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_22.45.35.771.png")
+        if not path.exists():
+            self.skipTest("User-provided screenshot is not available")
+
+        screen = self.observer.analyze_frame(self._read(path))
+
+        self.assertEqual(screen.position_m, 60)
+        self.assertEqual(screen.success_probability, 0.75)
 
     def test_recognizes_general_and_core_reward_as_same_popup_flow(self):
         general = self.observer.analyze_frame(self._read(self.fixture_root / "reward_general.png"))

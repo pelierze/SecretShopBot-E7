@@ -59,6 +59,7 @@ class SummerEventBot:
         self.initialize_state()
         while self.state.active and not self.stop_requested:
             self.step()
+        self.state.active = False
         return self.get_stats()
 
     def initialize_state(self) -> EventState:
@@ -66,13 +67,27 @@ class SummerEventBot:
         if not self._state_initialized:
             self.state = self._observe_state()
             self._state_initialized = True
+            displayed_probability = getattr(
+                self.observer,
+                "last_observed_success_probability",
+                None,
+            )
+            observe_displayed = getattr(self.policy, "observe_displayed_probability", None)
+            if displayed_probability is not None and observe_displayed is not None:
+                if observe_displayed(self.state.position_m, displayed_probability):
+                    record_displayed = getattr(
+                        self.probability_recorder,
+                        "record_displayed_probability",
+                        None,
+                    )
+                    if record_displayed is not None:
+                        record_displayed(self.state.position_m, displayed_probability)
             self._record_plan_success_if_reached()
         return self.state
 
     def set_user_action(self, action: str) -> None:
         if action == "stop":
             self.stop_requested = True
-            self.state.active = False
 
     def get_stats(self) -> dict:
         stats = self.state.stats
@@ -99,6 +114,9 @@ class SummerEventBot:
 
     def step(self) -> EventState:
         self.initialize_state()
+        if self.stop_requested:
+            self.state.active = False
+            return self.state
         action = self.policy.choose_action(self.state)
         if action is EventAction.STOP:
             self.state.active = False
@@ -115,15 +133,15 @@ class SummerEventBot:
             )
         self.executor.execute(action)
         outcome = self._observe_outcome(action)
-        probability_tile = self.rules.probability_tile(old_position, action)
+        observation_tile = self.rules.observation_tile(old_position, action)
         observe_outcome = getattr(self.policy, "observe_outcome", None)
         if observe_outcome is not None:
-            observe_outcome(old_position, probability_tile, action, outcome)
+            observe_outcome(old_position, observation_tile, action, outcome)
         if self.probability_recorder is not None:
-            if self.probability_recorder.record(old_position, probability_tile, action, outcome):
+            if self.probability_recorder.record(old_position, observation_tile, action, outcome):
                 logger.info(
                     "📈 미등록 확률 표본 기록: %sM, %s, %s",
-                    probability_tile,
+                    observation_tile,
                     ACTION_NAMES.get(action, "일반 달리기"),
                     "성공" if outcome is MoveOutcome.SUCCESS else "실패",
                 )

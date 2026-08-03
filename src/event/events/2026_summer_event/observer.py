@@ -45,6 +45,7 @@ class ObservedEventScreen:
     kind: EventScreenKind
     position_m: Optional[int] = None
     items: Optional[ItemInventory] = None
+    success_probability: Optional[float] = None
 
 
 class SummerEventObserver:
@@ -75,6 +76,7 @@ class SummerEventObserver:
         self._before_action: Optional[EventState] = None
         self._lower_position_key = None
         self._lower_position_count = 0
+        self.last_observed_success_probability: Optional[float] = None
 
     def observe(self, previous_state: EventState) -> EventState:
         screen = self.capture_and_analyze()
@@ -91,6 +93,7 @@ class SummerEventObserver:
             raise EventRecognitionError("이벤트 기본 화면을 확인할 수 없습니다.")
         previous_state.position_m = screen.position_m
         previous_state.items = screen.items
+        self.last_observed_success_probability = screen.success_probability
         self._before_action = EventState(
             position_m=screen.position_m,
             plan=previous_state.plan,
@@ -163,6 +166,10 @@ class SummerEventObserver:
         if self._template_similarity(frame, self.reward_template) >= self.TEMPLATE_THRESHOLD:
             return ObservedEventScreen(EventScreenKind.REWARD_POPUP)
         try:
+            try:
+                success_probability = self._recognize_success_probability(frame)
+            except EventRecognitionError:
+                success_probability = None
             position = self._recognize_position(frame)
             items = ItemInventory(
                 shield=self._count_stars(frame, "shield_stacks"),
@@ -171,7 +178,12 @@ class SummerEventObserver:
             )
         except EventRecognitionError:
             return ObservedEventScreen(EventScreenKind.UNKNOWN)
-        return ObservedEventScreen(EventScreenKind.NORMAL, position_m=position, items=items)
+        return ObservedEventScreen(
+            EventScreenKind.NORMAL,
+            position_m=position,
+            items=items,
+            success_probability=success_probability,
+        )
 
     def _recognize_position(self, frame: np.ndarray) -> int:
         if self.ocr_engine is None:
@@ -203,6 +215,81 @@ class SummerEventObserver:
             if 60 <= area <= 180 and 10 <= component_width <= 24 and 12 <= component_height <= 24:
                 stars += 1
         return stars
+
+    def _recognize_success_probability(self, frame: np.ndarray) -> float:
+        if self.ocr_engine is None:
+            raise EventRecognitionError("성공 확률 OCR 엔진을 사용할 수 없습니다.")
+        crop = self._crop(frame, "success_probability")
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        saturated = cv2.inRange(hsv, np.array([0, 80, 100]), np.array([179, 255, 255]))
+        component_count, _, stats, _ = cv2.connectedComponentsWithStats(saturated)
+        digit_boxes = []
+        for index in range(1, component_count):
+            x, y, width, height, area = stats[index]
+            if (
+                20 <= x <= 130
+                and 20 <= y <= 45
+                and 20 <= width <= 55
+                and 50 <= height <= 70
+                and area >= 800
+            ):
+                digit_boxes.append((int(x), int(y), int(width), int(height)))
+        digit_boxes.sort()
+        if not 1 <= len(digit_boxes) <= 3:
+            raise EventRecognitionError("성공 확률 숫자 영역을 분리하지 못했습니다.")
+
+        if len(digit_boxes) == 3 and digit_boxes[0][2] < digit_boxes[1][2]:
+            value = 100
+        else:
+            digits = []
+            for x, y, width, height in digit_boxes:
+                digit_crop = crop[y:y + height, x:x + width]
+                recognized = self._recognize_single_digit(digit_crop)
+                if recognized is None:
+                    digits = []
+                    break
+                digits.append(recognized)
+            value = (
+                int("".join(digits))
+                if digits
+                else self._recognize_probability_from_full_crop(crop, len(digit_boxes))
+            )
+        if not 0 <= value <= 100:
+            raise EventRecognitionError(f"성공 확률 OCR 값이 범위를 벗어났습니다: {value}")
+        return value / 100.0
+
+    def _recognize_single_digit(self, crop: np.ndarray) -> Optional[str]:
+        candidates = []
+        for padding in (10, 20):
+            padded = cv2.copyMakeBorder(
+                crop,
+                padding,
+                padding,
+                padding,
+                padding,
+                cv2.BORDER_CONSTANT,
+                value=(255, 255, 255),
+            )
+            enlarged = cv2.resize(padded, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+            for image in (enlarged, cv2.cvtColor(enlarged, cv2.COLOR_BGR2GRAY)):
+                result, _ = self.ocr_engine(image, use_cls=False)
+                for item in result or []:
+                    text = str(item[1]).strip().replace("O", "0").replace("o", "0")
+                    confidence = float(item[2])
+                    match = re.fullmatch(r"(\d)", text)
+                    if match and confidence >= 0.65:
+                        candidates.append((confidence, match.group(1)))
+        return max(candidates)[1] if candidates else None
+
+    def _recognize_probability_from_full_crop(self, crop: np.ndarray, digit_count: int) -> int:
+        result, _ = self.ocr_engine(crop, use_cls=False)
+        pieces = []
+        for item in result or []:
+            text = str(item[1]).replace("O", "0").replace("o", "0")
+            pieces.extend(re.findall(r"\d", text))
+        if len(pieces) != digit_count:
+            raise EventRecognitionError("성공 확률 숫자를 OCR로 인식하지 못했습니다.")
+        return int("".join(pieces))
 
     def _crop(self, frame: np.ndarray, region_name: str) -> np.ndarray:
         x, y, width, height = self.layout.scale_box(region_name, self.screen_size)

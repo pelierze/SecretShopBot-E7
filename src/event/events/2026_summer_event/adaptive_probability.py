@@ -46,6 +46,16 @@ class AdaptiveProbabilityModel:
         ) / (strength + attempts)
         return True
 
+    def set_displayed_probability(self, tile_m: int, probability: float) -> bool:
+        if tile_m in self.observed_tiles or not 0.0 <= probability <= 1.0:
+            return False
+        self._prior[tile_m] = probability
+        successes, attempts = self._outcomes[tile_m]
+        self.probabilities[tile_m] = (
+            probability * self.prior_strength + successes
+        ) / (self.prior_strength + attempts)
+        return True
+
     def observation_count(self, tile_m: int) -> int:
         return self._outcomes[tile_m][1]
 

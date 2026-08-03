@@ -33,10 +33,57 @@ class UnknownTileProbabilityRecorder:
     def __init__(self, log_dir: Path, known_tiles: Iterable[int], session: str = ""):
         self.log_dir = Path(log_dir)
         self.log_path = self.log_dir / "2026_summer_event_unknown_probabilities.csv"
+        self.ocr_log_path = self.log_dir / "2026_summer_event_ocr_probabilities.csv"
         self.known_tiles = frozenset(int(position) for position in known_tiles)
         self.session = session
         self._counts = {}
+        self._recorded_ocr_values = set()
         self._load_existing_counts()
+        self._ocr_probabilities = self.load_displayed_probabilities()
+
+    def load_displayed_probabilities(self):
+        probabilities = {}
+        if not self.ocr_log_path.exists():
+            return probabilities
+        try:
+            with self.ocr_log_path.open("r", newline="", encoding="utf-8-sig") as stream:
+                for row in csv.DictReader(stream):
+                    position = int(row["position_m"])
+                    probability = float(row["ocr_success_probability"])
+                    probabilities[position] = probability
+                    self._recorded_ocr_values.add((position, round(probability, 6)))
+        except (OSError, KeyError, TypeError, ValueError):
+            return {}
+        return probabilities
+
+    def record_displayed_probability(self, position_m: int, probability: float) -> bool:
+        key = (int(position_m), round(float(probability), 6))
+        with self._file_lock:
+            if key in self._recorded_ocr_values:
+                return False
+            try:
+                self.log_dir.mkdir(parents=True, exist_ok=True)
+                write_header = not self.ocr_log_path.exists() or self.ocr_log_path.stat().st_size == 0
+                with self.ocr_log_path.open("a", newline="", encoding="utf-8-sig") as stream:
+                    writer = csv.DictWriter(
+                        stream,
+                        fieldnames=("timestamp", "session", "position_m", "ocr_success_probability"),
+                    )
+                    if write_header:
+                        writer.writeheader()
+                    writer.writerow(
+                        {
+                            "timestamp": datetime.now().astimezone().isoformat(timespec="seconds"),
+                            "session": self.session,
+                            "position_m": position_m,
+                            "ocr_success_probability": f"{probability:.6f}",
+                        }
+                    )
+                self._recorded_ocr_values.add(key)
+                return True
+            except OSError as exc:
+                logger.warning("미등록 타일 OCR 확률 로그를 저장하지 못했습니다: %s", exc)
+                return False
 
     def record(
         self,

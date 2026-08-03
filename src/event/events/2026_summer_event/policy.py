@@ -131,6 +131,19 @@ class PlannedSummerEventPolicy:
                 self.adaptive_model.probabilities[probability_tile_m] * 100,
             )
 
+    def observe_displayed_probability(self, position_m: int, probability: float) -> bool:
+        if self.adaptive_model is None or probability is None:
+            return False
+        changed = self.adaptive_model.set_displayed_probability(position_m, probability)
+        if changed:
+            self._cache.clear()
+            logger.info(
+                "🔎 미등록 타일 화면 확률 반영: %sM, OCR 성공률 %.2f%%",
+                position_m,
+                probability * 100,
+            )
+        return changed
+
     @staticmethod
     def _choose_best_effort_action(state: EventState) -> EventAction:
         """Continue beyond the planned target using the observed inventory.
