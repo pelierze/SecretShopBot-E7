@@ -20,6 +20,10 @@ SummerEventConfig = event_module.SummerEventConfig
 SummerEventPolicy = event_module.SummerEventPolicy
 SummerEventRules = event_module.SummerEventRules
 load_config = event_module.load_config
+load_event_bundle = event_module.load_event_bundle
+load_generated_policy = event_module.load_generated_policy
+load_probability_data = event_module.load_probability_data
+derive_linear_probabilities = event_module.derive_linear_probabilities
 MissingProbabilityData = policy_module.MissingProbabilityData
 
 
@@ -115,6 +119,99 @@ class SummerEventConfigTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             config.validate()
+
+    def test_sparse_probability_file_accepts_only_known_tiles(self):
+        payload = {
+            "schema_version": 1,
+            "event_id": "2026_summer_event",
+            "tiles": {
+                "20": {"success_probability": 0.75, "source": "provided"},
+                "170": {"success_probability": 0.42, "note": "partial data"},
+            },
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "probability_data.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            dataset = load_probability_data(path)
+
+        self.assertEqual(dataset.probabilities, {20: 0.75, 170: 0.42})
+        self.assertEqual(dataset.missing_positions((0, 10, 20, 30)), (0, 10, 30))
+
+    def test_probability_fingerprint_changes_when_data_changes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "probability_data.json"
+            path.write_text(json.dumps({"tiles": {"20": 0.75}}), encoding="utf-8")
+            first = load_probability_data(path)
+            path.write_text(json.dumps({"tiles": {"20": 0.76}}), encoding="utf-8")
+            second = load_probability_data(path)
+
+        self.assertNotEqual(first.fingerprint, second.fingerprint)
+
+    def test_missing_probability_is_interpolated_between_known_tiles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "probability_data.json"
+            path.write_text(
+                json.dumps({"tiles": {"20": 0.8, "50": 0.5}}),
+                encoding="utf-8",
+            )
+            dataset = load_probability_data(path)
+
+        derived = derive_linear_probabilities(dataset, start_m=0, end_m=60)
+
+        self.assertAlmostEqual(derived[30].success_probability, 0.7)
+        self.assertAlmostEqual(derived[40].success_probability, 0.6)
+        self.assertTrue(derived[30].derived)
+        self.assertFalse(derived[20].derived)
+        self.assertNotIn(10, derived)
+        self.assertNotIn(60, derived)
+
+    def test_event_bundle_resolves_probability_file_relative_to_config(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "probability_data.json").write_text(
+                json.dumps({"tiles": {"40": {"success_probability": 0.6}}}),
+                encoding="utf-8",
+            )
+            (root / "event_config.json").write_text(
+                json.dumps({"probability_data_file": "probability_data.json"}),
+                encoding="utf-8",
+            )
+
+            config, dataset = load_event_bundle(root / "event_config.json")
+
+        self.assertEqual(config.success_probabilities, {40: 0.6})
+        self.assertEqual(dataset.probabilities, {40: 0.6})
+
+    def test_event_bundle_includes_bounded_inferred_probabilities(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "probability_data.json").write_text(
+                json.dumps({"tiles": {"20": 0.8, "40": 0.6}}),
+                encoding="utf-8",
+            )
+            (root / "event_config.json").write_text("{}", encoding="utf-8")
+
+            config, dataset = load_event_bundle(root / "event_config.json")
+
+        self.assertEqual(dataset.probabilities, {20: 0.8, 40: 0.6})
+        self.assertAlmostEqual(config.success_probabilities[30], 0.7)
+        self.assertNotIn(10, config.success_probabilities)
+
+    def test_generated_policy_is_stale_when_probability_data_changes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            probability_path = root / "probability_data.json"
+            probability_path.write_text(json.dumps({"tiles": {"0": 0.9}}), encoding="utf-8")
+            dataset = load_probability_data(probability_path)
+            policy_path = root / "generated_policy.json"
+            policy_path.write_text(
+                json.dumps({"source_probability_fingerprint": "old", "plans": {}}),
+                encoding="utf-8",
+            )
+
+            generated_policy = load_generated_policy(policy_path)
+
+        self.assertTrue(generated_policy.is_stale_for(dataset))
 
 
 class SummerEventPolicyTest(unittest.TestCase):

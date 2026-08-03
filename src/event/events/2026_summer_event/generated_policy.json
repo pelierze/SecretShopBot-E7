@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "event_id": "2026_summer_event",
+  "source_probability_fingerprint": null,
+  "generated_at": null,
+  "generator_version": null,
+  "probability_coverage": {
+    "observed_tiles": [],
+    "derived_tiles": [],
+    "unresolved_tiles": []
+  },
+  "runtime_adaptation": {
+    "enabled": true,
+    "max_local_search_states": null
+  },
+  "plans": {
+    "100m": {},
+    "200m": {},
+    "300m": {}
+  }
+}

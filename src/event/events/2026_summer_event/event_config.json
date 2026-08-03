@@ -1,5 +1,12 @@
 {
-  "success_probabilities": {},
+  "probability_data_file": "probability_data.json",
+  "generated_policy_file": "generated_policy.json",
+  "unknown_probability_policy": "interpolate_bounded_linear",
+  "policy_mode": "offline_with_runtime_adaptation",
+  "data_sources": {
+    "bundled": "probability_data.json",
+    "personal": "event_data/2026_summer_event/personal_probability_data.json"
+  },
   "reward_weights": {
     "100": 1.0,
     "200": 2.0,
