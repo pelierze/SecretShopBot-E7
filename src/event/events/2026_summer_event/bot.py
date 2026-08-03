@@ -19,6 +19,12 @@ ACTION_NAMES = {
     EventAction.SUPER_DASH: "슈퍼럭키",
 }
 
+PLAN_TARGETS = {
+    "100m": 100,
+    "200m": 200,
+    "300m": 300,
+}
+
 
 class SummerEventBot:
     def __init__(
@@ -59,6 +65,7 @@ class SummerEventBot:
         if not self._state_initialized:
             self.state = self._observe_state()
             self._state_initialized = True
+            self._record_plan_success_if_reached()
         return self.state
 
     def set_user_action(self, action: str) -> None:
@@ -75,6 +82,7 @@ class SummerEventBot:
             "super_dash": self.state.items.super_dash,
             "drinks_used": stats.drinks_used,
             "rollbacks": stats.rollbacks,
+            "plan_successes": stats.plan_successes,
             "attempts": sum(stats.attempts.values()),
             "successes": sum(stats.successes.values()),
             "failures": sum(stats.failures.values()),
@@ -83,6 +91,7 @@ class SummerEventBot:
             "rewards_300": stats.rewards.get(300, 0),
             "rewards_350": stats.rewards.get(350, 0),
             "rewards_400": stats.rewards.get(400, 0),
+            "core_rewards_total": sum(stats.rewards.get(tile, 0) for tile in self.rules.reward_tiles),
             "start_time": getattr(stats, "start_time", None),
         }
 
@@ -114,6 +123,7 @@ class SummerEventBot:
                     "성공" if outcome is MoveOutcome.SUCCESS else "실패",
                 )
         self.state = self.rules.apply(self.state, action, outcome)
+        self._record_plan_success_if_reached()
         if outcome is MoveOutcome.SUCCESS:
             for reward_m in self.rules.crossed_rewards(old_position, self.state.position_m):
                 logger.info("🏆 핵심 보상 구간 통과: %sM", reward_m)
@@ -123,6 +133,13 @@ class SummerEventBot:
         # state predicted by the rules engine.
         self._state_initialized = False
         return self.state
+
+    def _record_plan_success_if_reached(self) -> None:
+        target_m = PLAN_TARGETS[self.state.plan.value]
+        if self.state.position_m >= target_m and not self.state.plan_success_recorded:
+            self.state.stats.plan_successes += 1
+            self.state.plan_success_recorded = True
+            logger.info("✅ 선택 플랜 성공: %sM 도달", target_m)
 
     def _observe_outcome(self, action: EventAction) -> MoveOutcome:
         for _ in range(self.outcome_check_attempts):

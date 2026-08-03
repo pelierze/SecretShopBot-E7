@@ -528,6 +528,28 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         messages = [call.args[0] for call in info.call_args_list]
         self.assertTrue(any("이벤트 아이템 사용" in message for message in messages))
         self.assertTrue(any("핵심 보상 구간 통과" in message for message in messages))
+        self.assertEqual(bot.get_stats()["plan_successes"], 1)
+        self.assertEqual(bot.get_stats()["core_rewards_total"], 1)
+        self.assertEqual(bot.get_stats()["rewards_100"], 1)
+
+    def test_initial_scan_beyond_target_counts_plan_success_only_once(self):
+        class ExistingProgressObserver:
+            def observe(self, state):
+                state.position_m = 210
+                return state
+
+        bot = event_module.SummerEventBot(
+            state=EventState(plan=EventPlan.TARGET_200M),
+            policy=None,
+            rules=SummerEventRules(),
+            observer=ExistingProgressObserver(),
+            executor=None,
+        )
+
+        bot.initialize_state()
+        bot.initialize_state()
+
+        self.assertEqual(bot.get_stats()["plan_successes"], 1)
 
     def test_run_stops_after_unprotected_failure(self):
         class FailureObserver:

@@ -51,6 +51,7 @@ class EventStats:
     rewards: Dict[int, int] = field(default_factory=dict)
     drinks_used: int = 0
     rollbacks: int = 0
+    plan_successes: int = 0
     start_time: float = 0.0
 
     def increment(self, bucket: Dict, key) -> None:
@@ -65,3 +66,4 @@ class EventState:
     collected_reward_tiles: Set[int] = field(default_factory=set)
     stats: EventStats = field(default_factory=EventStats)
     active: bool = True
+    plan_success_recorded: bool = False
