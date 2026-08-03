@@ -2,7 +2,11 @@ import importlib
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+
+import cv2
+import numpy as np
 
 from src.event import (
     EventAction,
@@ -12,6 +16,7 @@ from src.event import (
     MoveOutcome,
     load_event_module,
 )
+from src.event.ports import EventOutcomePending, EventRecognitionError
 
 
 event_module = importlib.import_module("src.event.events.2026_summer_event")
@@ -27,6 +32,10 @@ load_screen_layout = event_module.load_screen_layout
 derive_linear_probabilities = event_module.derive_linear_probabilities
 MissingProbabilityData = policy_module.MissingProbabilityData
 SummerEventPlanner = event_module.SummerEventPlanner
+PlannedSummerEventPolicy = event_module.PlannedSummerEventPolicy
+SummerEventExecutor = event_module.SummerEventExecutor
+SummerEventObserver = event_module.SummerEventObserver
+EventScreenKind = event_module.EventScreenKind
 
 
 class SummerEventRulesTest(unittest.TestCase):
@@ -265,6 +274,10 @@ class SummerEventConfigTest(unittest.TestCase):
         self.assertEqual(config.item_max_stacks, {"shield": 4, "leap": 2, "super_dash": 2})
         self.assertEqual(config.initial_item_stacks, {"shield": 2, "leap": 1, "super_dash": 2})
         self.assertTrue(config.reset_items_after_failure)
+        self.assertEqual(config.verification_attempts, 3)
+        self.assertEqual(config.outcome_check_attempts, 30)
+        self.assertEqual(config.ends_at, "2026-08-27T12:00:00+09:00")
+        self.assertEqual(config.timezone, "Asia/Seoul")
         self.assertEqual(config.screen_layout_file, "screen_layout.json")
 
     def test_screen_layout_loads_reference_regions_and_taps(self):
@@ -277,6 +290,13 @@ class SummerEventConfigTest(unittest.TestCase):
         self.assertEqual(layout.tap_points["shield"], (905, 640))
         self.assertEqual(layout.tap_points["leap"], (1047, 640))
         self.assertEqual(layout.tap_points["super_dash"], (1187, 640))
+
+    def test_event_end_time_uses_absolute_korean_timestamp(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config = load_config(config_path)
+
+        self.assertFalse(config.has_ended(datetime(2026, 8, 27, 2, 59, tzinfo=timezone.utc)))
+        self.assertTrue(config.has_ended(datetime(2026, 8, 27, 3, 0, tzinfo=timezone.utc)))
 
     def test_screen_layout_scales_to_device_resolution(self):
         layout_path = Path(event_module.__file__).parent / "screen_layout.json"
@@ -356,6 +376,144 @@ class SummerEventPlannerTest(unittest.TestCase):
         result = planner.simulate(plan, trials=20_000, seed=20260803)
 
         self.assertAlmostEqual(result.success_rate, plan.success_probability, delta=0.015)
+
+    def test_runtime_policy_uses_exact_plan_for_observed_state(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config, _ = load_event_bundle(config_path)
+        planner = SummerEventPlanner(config)
+        policy = PlannedSummerEventPolicy(config, planner)
+
+        action = policy.choose_action(EventState(plan=EventPlan.TARGET_100M))
+
+        self.assertIs(action, EventAction.BASIC)
+
+    def test_runtime_policy_advances_to_next_supported_target(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config, _ = load_event_bundle(config_path)
+        policy = PlannedSummerEventPolicy(config, SummerEventPlanner(config))
+        state = EventState(position_m=100, plan=EventPlan.TARGET_100M)
+
+        action = policy.choose_action(state)
+
+        self.assertIn(action, {EventAction.BASIC, EventAction.SHIELD, EventAction.LEAP, EventAction.SUPER_DASH})
+        self.assertIs(policy.choose_action(EventState(position_m=300)), EventAction.STOP)
+
+
+class RecordingTapDevice:
+    def __init__(self, results=None):
+        self.results = list(results or [])
+        self.taps = []
+
+    def tap(self, x, y, delay=0.5):
+        self.taps.append((x, y, delay))
+        return self.results.pop(0) if self.results else True
+
+
+class SummerEventExecutorTest(unittest.TestCase):
+    def setUp(self):
+        layout_path = Path(event_module.__file__).parent / "screen_layout.json"
+        self.layout = load_screen_layout(layout_path)
+
+    def test_basic_action_taps_run_once(self):
+        adb = RecordingTapDevice()
+        executor = SummerEventExecutor(adb, self.layout)
+
+        executor.execute(EventAction.BASIC)
+
+        self.assertEqual(adb.taps, [(640, 655, 0.5)])
+
+    def test_skill_action_selects_skill_then_taps_run(self):
+        adb = RecordingTapDevice()
+        executor = SummerEventExecutor(adb, self.layout)
+
+        executor.execute(EventAction.LEAP)
+
+        self.assertEqual(adb.taps, [(1047, 640, 0.25), (640, 655, 0.5)])
+
+
+class SummerEventBotSafetyTest(unittest.TestCase):
+    def test_verification_failure_stops_after_configured_attempts(self):
+        bot = event_module.SummerEventBot(
+            state=EventState(),
+            policy=None,
+            rules=SummerEventRules(),
+            observer=None,
+            executor=None,
+            verification_attempts=3,
+        )
+        calls = 0
+
+        def fail_recognition():
+            nonlocal calls
+            calls += 1
+            raise EventRecognitionError("unknown screen")
+
+        with self.assertRaisesRegex(EventRecognitionError, "3회 실패"):
+            bot._verify(fail_recognition, "테스트 화면")
+
+        self.assertEqual(calls, 3)
+        self.assertFalse(bot.state.active)
+
+    def test_pending_outcome_is_polled_until_node_change_is_confirmed(self):
+        outcomes = [EventOutcomePending("animating"), EventOutcomePending("animating"), MoveOutcome.SUCCESS]
+
+        class PendingObserver:
+            def observe_outcome(self, action):
+                result = outcomes.pop(0)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+
+        bot = event_module.SummerEventBot(
+            state=EventState(),
+            policy=None,
+            rules=SummerEventRules(),
+            observer=PendingObserver(),
+            executor=None,
+            outcome_check_attempts=5,
+        )
+
+        self.assertIs(bot._observe_outcome(EventAction.SUPER_DASH), MoveOutcome.SUCCESS)
+        self.assertEqual(outcomes, [])
+
+
+class SummerEventObserverTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        event_root = Path(event_module.__file__).parent
+        cls.fixture_root = Path(__file__).parents[1] / "fixtures" / "2026_summer_event"
+        cls.observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+        )
+
+    @staticmethod
+    def _read(path):
+        return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+
+    def test_recognizes_normal_screen_position_and_skill_stacks(self):
+        zero = self.observer.analyze_frame(self._read(self.fixture_root / "normal_0m.png"))
+        one_ninety = self.observer.analyze_frame(self._read(self.fixture_root / "normal_190m.png"))
+
+        self.assertEqual(zero.kind, EventScreenKind.NORMAL)
+        self.assertEqual(zero.position_m, 0)
+        self.assertEqual(zero.items, ItemInventory(shield=2, leap=1, super_dash=2))
+        self.assertEqual(one_ninety.position_m, 190)
+        self.assertEqual(one_ninety.items, ItemInventory(shield=1, leap=0, super_dash=2))
+
+    def test_recognizes_general_and_core_reward_as_same_popup_flow(self):
+        general = self.observer.analyze_frame(self._read(self.fixture_root / "reward_general.png"))
+        core = self.observer.analyze_frame(self._read(self.fixture_root / "reward_core.png"))
+
+        self.assertEqual(general.kind, EventScreenKind.REWARD_POPUP)
+        self.assertEqual(core.kind, EventScreenKind.REWARD_POPUP)
+
+    def test_recognizes_failure_result_popup(self):
+        result = self.observer.analyze_frame(self._read(self.fixture_root / "result_failure.png"))
+
+        self.assertEqual(result.kind, EventScreenKind.RESULT_POPUP)
 
 
 if __name__ == "__main__":

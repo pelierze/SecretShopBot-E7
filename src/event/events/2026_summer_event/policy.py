@@ -25,7 +25,7 @@ class SummerEventPolicy:
         self.rules = rules
 
     def choose_action(self, state: EventState) -> EventAction:
-        if not state.active or state.position_m >= self.config.finish_m:
+        if not state.active or self.config.has_ended() or state.position_m >= self.config.finish_m:
             return EventAction.STOP
 
         target = self._current_target(state)
@@ -68,3 +68,44 @@ class SummerEventPolicy:
         target_bonus = 100.0 if reaches_target else 0.0
         shield_failure_value = (1.0 - probability) * 20.0 if action is EventAction.SHIELD else 0.0
         return target_bonus + shield_failure_value + (probability * distance / drink_cost)
+
+
+class PlannedSummerEventPolicy:
+    """Use exact dynamic planning from the currently observed runtime state."""
+
+    def __init__(self, config: SummerEventConfig, planner):
+        self.config = config
+        self.planner = planner
+        self._cache = {}
+
+    def choose_action(self, state: EventState) -> EventAction:
+        if not state.active or self.config.has_ended() or state.position_m >= 300:
+            return EventAction.STOP
+        target_plan = self._next_target_plan(state)
+        state_key = self.planner.state_key(
+            state.position_m,
+            state.items.shield,
+            state.items.leap,
+            state.items.super_dash,
+        )
+        cache_key = (target_plan, state_key)
+        plan = self._cache.get(cache_key)
+        if plan is None:
+            plan = self.planner.build_plan(target_plan, initial_state=state_key)
+            self._cache[cache_key] = plan
+        try:
+            return plan.actions[state_key]
+        except KeyError as exc:
+            raise MissingProbabilityData(f"No planned action for runtime state: {state_key}") from exc
+
+    @staticmethod
+    def _next_target_plan(state: EventState) -> EventPlan:
+        if state.plan is EventPlan.TARGET_300M:
+            return EventPlan.TARGET_300M
+        if state.plan is EventPlan.TARGET_200M:
+            return EventPlan.TARGET_200M if state.position_m < 200 else EventPlan.TARGET_300M
+        if state.position_m < 100:
+            return EventPlan.TARGET_100M
+        if state.position_m < 200:
+            return EventPlan.TARGET_200M
+        return EventPlan.TARGET_300M

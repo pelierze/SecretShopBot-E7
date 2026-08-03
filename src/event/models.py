@@ -51,6 +51,7 @@ class EventStats:
     rewards: Dict[int, int] = field(default_factory=dict)
     drinks_used: int = 0
     rollbacks: int = 0
+    start_time: float = 0.0
 
     def increment(self, bucket: Dict, key) -> None:
         bucket[key] = bucket.get(key, 0) + 1

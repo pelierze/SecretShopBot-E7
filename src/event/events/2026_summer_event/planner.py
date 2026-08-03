@@ -51,7 +51,7 @@ class SummerEventPlanner:
             reset_items_after_failure=config.reset_items_after_failure,
         )
 
-    def build_plan(self, plan: EventPlan) -> TargetPlan:
+    def build_plan(self, plan: EventPlan, initial_state: Optional[PlannerState] = None) -> TargetPlan:
         target_m = self.PLAN_TARGETS[plan]
         decisions: Dict[PlannerState, EventAction] = {}
 
@@ -95,7 +95,7 @@ class SummerEventPlanner:
             decisions[state] = best_action
             return best_probability, best_drinks
 
-        initial = self._initial_state()
+        initial = initial_state or self._initial_state()
         probability, expected_drinks = solve(initial)
         return TargetPlan(
             target_m=target_m,
@@ -103,6 +103,10 @@ class SummerEventPlanner:
             expected_drinks=expected_drinks,
             actions=decisions,
         )
+
+    @staticmethod
+    def state_key(position_m: int, shield: int, leap: int, super_dash: int) -> PlannerState:
+        return position_m, shield, leap, super_dash
 
     def simulate(self, plan: TargetPlan, trials: int = 100_000, seed: int = 20260803) -> SimulationResult:
         if trials <= 0:

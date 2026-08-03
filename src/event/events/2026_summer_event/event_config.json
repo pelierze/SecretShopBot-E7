@@ -24,7 +24,9 @@
   "item_max_stacks": {"shield": 4, "leap": 2, "super_dash": 2},
   "initial_item_stacks": {"shield": 2, "leap": 1, "super_dash": 2},
   "reset_items_after_failure": true,
+  "verification_attempts": 3,
+  "outcome_check_attempts": 30,
   "finish_m": 400,
-  "ends_at": null,
-  "timezone": null
+  "ends_at": "2026-08-27T12:00:00+09:00",
+  "timezone": "Asia/Seoul"
 }

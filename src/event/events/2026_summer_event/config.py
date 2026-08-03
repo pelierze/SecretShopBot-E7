@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -34,6 +35,8 @@ class SummerEventConfig:
         default_factory=lambda: {"shield": 2, "leap": 1, "super_dash": 2}
     )
     reset_items_after_failure: bool = True
+    verification_attempts: int = 3
+    outcome_check_attempts: int = 30
     finish_m: int = 400
     ends_at: Optional[str] = None
     timezone: Optional[str] = None
@@ -74,10 +77,25 @@ class SummerEventConfig:
                 raise ValueError(f"Unknown recharge item at {position}M")
             if any(amount < 0 for amount in recharges.values()):
                 raise ValueError(f"Recharge amount cannot be negative at {position}M")
+        if self.verification_attempts <= 0:
+            raise ValueError("Verification attempts must be positive")
+        if self.outcome_check_attempts <= 0:
+            raise ValueError("Outcome check attempts must be positive")
         if self.unknown_probability_policy not in ("require_explicit", "interpolate_bounded_linear"):
             raise ValueError(f"Unsupported unknown probability policy: {self.unknown_probability_policy}")
         if self.policy_mode != "offline_with_runtime_adaptation":
             raise ValueError(f"Unsupported policy mode: {self.policy_mode}")
+        if self.ends_at is not None and datetime.fromisoformat(self.ends_at).tzinfo is None:
+            raise ValueError("Event end time must include a timezone offset")
+
+    def has_ended(self, now: Optional[datetime] = None) -> bool:
+        if self.ends_at is None:
+            return False
+        end_time = datetime.fromisoformat(self.ends_at)
+        current_time = now or datetime.now(end_time.tzinfo)
+        if current_time.tzinfo is None:
+            raise ValueError("Current time must be timezone-aware")
+        return current_time >= end_time
 
 
 def load_config(path: Path) -> SummerEventConfig:
@@ -97,6 +115,8 @@ def load_config(path: Path) -> SummerEventConfig:
             str(item): int(amount) for item, amount in raw.get("initial_item_stacks", {}).items()
         } or SummerEventConfig().initial_item_stacks,
         reset_items_after_failure=bool(raw.get("reset_items_after_failure", True)),
+        verification_attempts=int(raw.get("verification_attempts", 3)),
+        outcome_check_attempts=int(raw.get("outcome_check_attempts", 30)),
         finish_m=int(raw.get("finish_m", 400)),
         ends_at=raw.get("ends_at"),
         timezone=raw.get("timezone"),
@@ -139,6 +159,8 @@ def load_event_bundle(config_path: Path) -> Tuple[SummerEventConfig, Probability
         item_max_stacks=config.item_max_stacks,
         initial_item_stacks=config.initial_item_stacks,
         reset_items_after_failure=config.reset_items_after_failure,
+        verification_attempts=config.verification_attempts,
+        outcome_check_attempts=config.outcome_check_attempts,
         finish_m=config.finish_m,
         ends_at=config.ends_at,
         timezone=config.timezone,

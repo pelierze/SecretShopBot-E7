@@ -37,6 +37,7 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(project_root))
     from src.adb_controller import ADBController
     from src.equipment_reroll_bot import EquipmentRerollBot
+    from src.event import EventPlan, EventState, load_event_module
     from src.image_matcher import read_image
     from src.json_macro_engine import JsonMacroEngine
     from src.penguin_bot import PenguinBot
@@ -47,6 +48,7 @@ if __package__ in (None, ""):
 else:
     from .adb_controller import ADBController
     from .equipment_reroll_bot import EquipmentRerollBot
+    from .event import EventPlan, EventState, load_event_module
     from .image_matcher import read_image
     from .json_macro_engine import JsonMacroEngine
     from .penguin_bot import PenguinBot
@@ -299,9 +301,11 @@ class SessionView:
         self.shop_tab = ttk.Frame(self.mode_notebook)
         self.reroll_tab = ttk.Frame(self.mode_notebook)
         self.penguin_tab = ttk.Frame(self.mode_notebook)
+        self.event_tab = ttk.Frame(self.mode_notebook)
         self.mode_notebook.add(self.shop_tab, text="비밀상점")
         self.mode_notebook.add(self.reroll_tab, text="장비 리롤")
         self.mode_notebook.add(self.penguin_tab, text="펭귄")
+        self.mode_notebook.add(self.event_tab, text="이벤트")
 
         self.settings_frame = ttk.LabelFrame(self.shop_tab, text="매크로 설정", padding=10)
         self.settings_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -453,6 +457,7 @@ class SessionView:
 
         self._create_reroll_widgets()
         self._create_penguin_widgets()
+        self._create_event_widgets()
 
         self.log_frame = ttk.Frame(self.frame, style="Card.TFrame", padding=10)
         self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -481,6 +486,8 @@ class SessionView:
         self.reroll_stats_frame.configure(style="Card.TLabelframe")
         self.penguin_settings_frame.configure(style="Card.TLabelframe")
         self.penguin_stats_frame.configure(style="Card.TLabelframe")
+        self.event_settings_frame.configure(style="Card.TLabelframe")
+        self.event_stats_frame.configure(style="Card.TLabelframe")
 
         accent_buttons = [
             self.scan_btn,
@@ -490,6 +497,7 @@ class SessionView:
             self.test_btn,
             self.reroll_start_btn,
             self.penguin_start_btn,
+            self.event_start_btn,
         ]
         for button in accent_buttons:
             button.configure(style="Accent.TButton")
@@ -501,6 +509,7 @@ class SessionView:
             self.clear_log_btn,
             self.reroll_stop_btn,
             self.penguin_stop_btn,
+            self.event_stop_btn,
         ]
         for button in subtle_buttons:
             button.configure(style="Secondary.TButton")
@@ -520,6 +529,12 @@ class SessionView:
             self.penguin_cycle_label,
             self.penguin_attempt_label,
             self.penguin_purchase_label,
+            self.event_position_label,
+            self.event_shield_label,
+            self.event_leap_label,
+            self.event_super_dash_label,
+            self.event_attempts_label,
+            self.event_rollbacks_label,
         ]
         for widget in stat_value_widgets:
             widget.configure(style="StatValue.TLabel")
@@ -752,6 +767,59 @@ class SessionView:
         ttk.Label(stats_grid, text="구매 완료:").grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
         self.penguin_purchase_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.penguin_purchase_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
+
+    def _create_event_widgets(self):
+        self.event_settings_frame = ttk.LabelFrame(self.event_tab, text="2026 여름 이벤트 설정", padding=10)
+        self.event_settings_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(self.event_settings_frame, text="플랜:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        self.event_plan_combo = ttk.Combobox(self.event_settings_frame, width=14, state="readonly")
+        self.event_plan_combo["values"] = ["100M 플랜", "200M 플랜", "300M 플랜"]
+        self.event_plan_combo.current(0)
+        self.event_plan_combo.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
+
+        self.event_plan_help_label = ttk.Label(
+            self.event_settings_frame,
+            text="현재 상태에서 목표 도달 확률을 우선하고, 동률이면 음료수를 적게 쓰는 행동을 선택합니다.",
+        )
+        self.event_plan_help_label.grid(row=1, column=0, columnspan=5, sticky=tk.W, padx=5, pady=5)
+
+        event_control_frame = ttk.Frame(self.event_tab, style="CardInner.TFrame", padding=10)
+        event_control_frame.pack(fill=tk.X, padx=10, pady=5)
+        self.event_start_btn = ttk.Button(
+            event_control_frame,
+            text="이벤트 시작",
+            command=self._start_event_bot,
+            state=tk.DISABLED,
+        )
+        self.event_start_btn.pack(side=tk.LEFT, padx=5)
+        self.event_stop_btn = ttk.Button(
+            event_control_frame,
+            text="이벤트 중지",
+            command=self._stop_bot,
+            state=tk.DISABLED,
+        )
+        self.event_stop_btn.pack(side=tk.LEFT, padx=5)
+
+        self.event_stats_frame = ttk.LabelFrame(self.event_tab, text="이벤트 상태 및 통계", padding=10)
+        self.event_stats_frame.pack(fill=tk.X, padx=10, pady=5)
+        grid = ttk.Frame(self.event_stats_frame, style="CardInner.TFrame")
+        grid.pack(fill=tk.X)
+        labels = [
+            ("현재 위치:", "event_position_label", "0M"),
+            ("보호:", "event_shield_label", "2"),
+            ("도움닫기:", "event_leap_label", "1"),
+            ("슈퍼럭키:", "event_super_dash_label", "2"),
+            ("이동 시도:", "event_attempts_label", "0"),
+            ("0M 복귀:", "event_rollbacks_label", "0"),
+        ]
+        for index, (title, attribute, initial) in enumerate(labels):
+            row, pair = divmod(index, 3)
+            column = pair * 2
+            ttk.Label(grid, text=title).grid(row=row, column=column, sticky=tk.W, padx=5, pady=3)
+            value = ttk.Label(grid, text=initial, foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
+            value.grid(row=row, column=column + 1, sticky=tk.W, padx=5, pady=3)
+            setattr(self, attribute, value)
 
     def _get_reroll_option_rule(self, option_name):
         return self.REROLL_OPTION_RULES.get(option_name, self.REROLL_OPTION_RULES["속도"])
@@ -1120,6 +1188,7 @@ class SessionView:
                     self.start_btn.config(state=tk.NORMAL)
                     self.reroll_start_btn.config(state=tk.NORMAL)
                     self.penguin_start_btn.config(state=tk.NORMAL)
+                    self.event_start_btn.config(state=tk.NORMAL)
                     self.test_btn.config(state=tk.NORMAL)
                     self.connect_btn.config(state=tk.DISABLED)
                     self.disconnect_btn.config(state=tk.NORMAL)
@@ -1344,6 +1413,68 @@ class SessionView:
             self.bot_thread = threading.Thread(target=self._run_penguin_bot, daemon=True)
             self.bot_thread.start()
 
+    def _start_event_bot(self):
+        with log_session(self.name):
+            if self.is_running:
+                return
+            if not self.adb_controller:
+                messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+                return
+
+            event_module = load_event_module("2026_summer_event")
+            resource_root = get_resource_root()
+            event_root = resource_root / "src" / "event" / "events" / "2026_summer_event"
+            config, _ = event_module.load_event_bundle(event_root / "event_config.json")
+            if config.has_ended():
+                messagebox.showinfo("이벤트 종료", "2026 여름 이벤트가 종료되어 자동화를 시작할 수 없습니다.")
+                return
+
+            plan = {
+                "100M 플랜": EventPlan.TARGET_100M,
+                "200M 플랜": EventPlan.TARGET_200M,
+                "300M 플랜": EventPlan.TARGET_300M,
+            }[self.event_plan_combo.get()]
+            layout = event_module.load_screen_layout(event_root / config.screen_layout_file)
+            rules = event_module.SummerEventRules(
+                reward_tiles=config.reward_tiles,
+                finish_m=config.finish_m,
+                item_recharges=config.item_recharges,
+                item_max_stacks=config.item_max_stacks,
+                initial_item_stacks=config.initial_item_stacks,
+                reset_items_after_failure=config.reset_items_after_failure,
+            )
+            planner = event_module.SummerEventPlanner(config, rules)
+            policy = event_module.PlannedSummerEventPolicy(config, planner)
+            self.runtime_dir.mkdir(parents=True, exist_ok=True)
+            observer = event_module.SummerEventObserver(
+                self.adb_controller,
+                layout,
+                self.runtime_dir / "event_screen.png",
+                resource_root / "images" / "2026_summer_event",
+                screen_size=self.adb_controller.get_screen_size(),
+            )
+            executor = event_module.SummerEventExecutor(
+                self.adb_controller,
+                layout,
+                screen_size=self.adb_controller.get_screen_size(),
+            )
+            self.bot = event_module.SummerEventBot(
+                EventState(plan=plan),
+                policy,
+                rules,
+                observer,
+                executor,
+                verification_attempts=config.verification_attempts,
+                outcome_check_attempts=config.outcome_check_attempts,
+            )
+            self.was_stopped_by_user = False
+            self.is_running = True
+            self.current_mode = "event"
+            self._set_running_ui(True)
+            self._update_event_stats(self.bot.get_stats())
+            self.bot_thread = threading.Thread(target=self._run_event_bot, daemon=True)
+            self.bot_thread.start()
+
     def _get_selected_macro(self):
         selected_index = self.macro_combo.current()
         if selected_index < 0 or selected_index >= len(self.app.macro_definitions):
@@ -1418,6 +1549,25 @@ class SessionView:
                     else:
                         self.root.after(0, self._play_complete_sound)
 
+    def _run_event_bot(self):
+        with log_session(self.name):
+            has_error = False
+            try:
+                self.root.after(500, self._update_running_state)
+                final_stats = self.bot.run()
+                self.root.after(0, lambda: self._update_event_stats(final_stats))
+                self.log("이벤트 자동화가 종료되었습니다.")
+            except Exception as e:
+                has_error = True
+                logger.error("이벤트 자동화 중 오류: %s", e, exc_info=True)
+                if not self.app.is_closing:
+                    self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 이벤트 자동화 중 오류 발생:\n{str(e)}"))
+            finally:
+                self.is_running = False
+                if not self.app.is_closing:
+                    self.root.after(0, lambda: self._set_running_ui(False))
+                    self.root.after(0, self._play_stopped_sound if self.was_stopped_by_user or has_error else self._play_complete_sound)
+
     def _update_running_state(self):
         if self.is_running and self.bot:
             stats = self.bot.get_stats()
@@ -1425,6 +1575,8 @@ class SessionView:
                 self._update_reroll_stats(stats)
             elif self.current_mode == "penguin":
                 self._update_penguin_stats(stats)
+            elif self.current_mode == "event":
+                self._update_event_stats(stats)
             else:
                 self._update_stats(stats)
 
@@ -1470,6 +1622,8 @@ class SessionView:
                     self.log(self._format_reroll_summary("장비 리롤 중지", stats))
                 elif self.current_mode == "penguin":
                     self.log(self._format_penguin_summary("펭귄 구매 중지", stats))
+                elif self.current_mode == "event":
+                    self.log("이벤트 자동화 중지")
                 elif stats.get("total_refreshes", 0) > 0:
                     self.log(self._format_stats_summary("⛔ 자동화 중지", stats))
                 else:
@@ -1527,6 +1681,8 @@ class SessionView:
             self.reroll_stop_btn.config(state=tk.DISABLED)
             self.penguin_start_btn.config(state=tk.DISABLED)
             self.penguin_stop_btn.config(state=tk.DISABLED)
+            self.event_start_btn.config(state=tk.DISABLED)
+            self.event_stop_btn.config(state=tk.DISABLED)
             self.test_btn.config(state=tk.DISABLED)
             self.connect_btn.config(state=tk.NORMAL)
             self.disconnect_btn.config(state=tk.DISABLED)
@@ -1536,8 +1692,10 @@ class SessionView:
         self.start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         self.reroll_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         self.penguin_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
+        self.event_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         self.reroll_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.penguin_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
+        self.event_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.test_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         is_shop_mode = self.current_mode == "shop"
         self.pause_btn.config(state=tk.NORMAL if running and is_shop_mode else tk.DISABLED)
@@ -1560,6 +1718,7 @@ class SessionView:
         ):
             entry.config(state=state)
         self.penguin_cycle_entry.config(state=state)
+        self.event_plan_combo.config(state=tk.DISABLED if running else "readonly")
         if running:
             self.buy_count_entry.config(state=tk.DISABLED)
         else:
@@ -1606,6 +1765,14 @@ class SessionView:
         self.penguin_cycle_label.config(text=str(stats.get("cycles_completed", 0)))
         self.penguin_attempt_label.config(text=str(stats.get("purchase_attempts", 0)))
         self.penguin_purchase_label.config(text=str(stats.get("penguins_bought", 0)))
+
+    def _update_event_stats(self, stats):
+        self.event_position_label.config(text=f"{stats.get('position_m', 0)}M")
+        self.event_shield_label.config(text=str(stats.get("shield", 0)))
+        self.event_leap_label.config(text=str(stats.get("leap", 0)))
+        self.event_super_dash_label.config(text=str(stats.get("super_dash", 0)))
+        self.event_attempts_label.config(text=str(stats.get("attempts", 0)))
+        self.event_rollbacks_label.config(text=str(stats.get("rollbacks", 0)))
 
     def _format_stats_summary(self, title, stats):
         completed_runs = stats.get("completed_runs", stats.get("total_refreshes", 0))

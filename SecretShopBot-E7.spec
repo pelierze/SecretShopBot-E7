@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 # 백업 파일 제외하고 이미지 수집
 def collect_images():
@@ -49,7 +49,9 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=['cv2', 'numpy', 'PIL', 'tkinter', 'rapidocr_onnxruntime'],
+    hiddenimports=[
+        'cv2', 'numpy', 'PIL', 'tkinter', 'rapidocr_onnxruntime',
+    ] + collect_submodules('src.event.events.2026_summer_event'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
