@@ -208,6 +208,7 @@ class SessionView:
         self.buy_count_default_label_text = "구매 완료 검증 횟수:"
         self.buy_count_default_unit_text = "회"
         self.buy_count_steps_unit_text = "JSON steps 매크로는 이 값 대신 각 step 설정을 사용합니다."
+        self._shop_input_syncing = False
 
         self.frame = ttk.Frame(parent)
         self._create_widgets()
@@ -312,11 +313,29 @@ class SessionView:
 
         self.refresh_count_label = ttk.Label(self.settings_frame, text="리프레시 횟수:")
         self.refresh_count_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.refresh_count_entry = ttk.Entry(self.settings_frame, width=10)
-        self.refresh_count_entry.insert(0, "100")
+        self.refresh_count_var = tk.StringVar(value="100")
+        self.refresh_count_entry = ttk.Entry(
+            self.settings_frame,
+            width=10,
+            textvariable=self.refresh_count_var,
+        )
         self.refresh_count_entry.grid(row=0, column=1, sticky=tk.W, padx=5, pady=5)
         self.refresh_count_unit_label = ttk.Label(self.settings_frame, text="회")
         self.refresh_count_unit_label.grid(row=0, column=2, sticky=tk.W)
+
+        self.sky_stone_budget_label = ttk.Label(self.settings_frame, text="사용 하늘석:")
+        self.sky_stone_budget_label.grid(row=0, column=3, sticky=tk.W, padx=(20, 5), pady=5)
+        self.sky_stone_budget_var = tk.StringVar(value="300")
+        self.sky_stone_budget_entry = ttk.Entry(
+            self.settings_frame,
+            width=10,
+            textvariable=self.sky_stone_budget_var,
+        )
+        self.sky_stone_budget_entry.grid(row=0, column=4, sticky=tk.W, padx=5, pady=5)
+        self.sky_stone_budget_unit_label = ttk.Label(self.settings_frame, text="개")
+        self.sky_stone_budget_unit_label.grid(row=0, column=5, sticky=tk.W)
+        self.refresh_count_var.trace_add("write", self._sync_sky_stones_from_refresh_count)
+        self.sky_stone_budget_var.trace_add("write", self._sync_refresh_count_from_sky_stones)
 
         self.buy_count_label = ttk.Label(self.settings_frame, text="구매 완료 검증 횟수:")
         self.buy_count_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
@@ -339,49 +358,49 @@ class SessionView:
             text="=== 이미지 매칭 정확도 (70-99) ===",
             font=("맑은 고딕", 9, "bold"),
         )
-        self.threshold_header_label.grid(row=0, column=3, columnspan=3, sticky=tk.W, padx=(30, 5), pady=(0, 5))
+        self.threshold_header_label.grid(row=0, column=6, columnspan=3, sticky=tk.W, padx=(30, 5), pady=(0, 5))
 
         self.mystic_medal_threshold_label = ttk.Label(self.settings_frame, text="신비의 메달:")
-        self.mystic_medal_threshold_label.grid(row=1, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.mystic_medal_threshold_label.grid(row=1, column=6, sticky=tk.W, padx=(30, 5), pady=2)
         self.mystic_medal_threshold = ttk.Entry(self.settings_frame, width=8)
         self.mystic_medal_threshold.insert(0, "95")
-        self.mystic_medal_threshold.grid(row=1, column=4, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=1, column=5, sticky=tk.W)
+        self.mystic_medal_threshold.grid(row=1, column=7, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=1, column=8, sticky=tk.W)
 
         self.covenant_bookmark_threshold_label = ttk.Label(self.settings_frame, text="성약의 책갈피:")
-        self.covenant_bookmark_threshold_label.grid(row=2, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.covenant_bookmark_threshold_label.grid(row=2, column=6, sticky=tk.W, padx=(30, 5), pady=2)
         self.covenant_bookmark_threshold = ttk.Entry(self.settings_frame, width=8)
         self.covenant_bookmark_threshold.insert(0, "95")
-        self.covenant_bookmark_threshold.grid(row=2, column=4, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=2, column=5, sticky=tk.W)
+        self.covenant_bookmark_threshold.grid(row=2, column=7, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=2, column=8, sticky=tk.W)
 
         self.friendship_point_threshold_label = ttk.Label(self.settings_frame, text="우정 포인트:")
-        self.friendship_point_threshold_label.grid(row=3, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.friendship_point_threshold_label.grid(row=3, column=6, sticky=tk.W, padx=(30, 5), pady=2)
         self.friendship_point_threshold = ttk.Entry(self.settings_frame, width=8)
         self.friendship_point_threshold.insert(0, "95")
-        self.friendship_point_threshold.grid(row=3, column=4, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=3, column=5, sticky=tk.W)
+        self.friendship_point_threshold.grid(row=3, column=7, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=3, column=8, sticky=tk.W)
 
         self.purchase_button_threshold_label = ttk.Label(self.settings_frame, text="구입 버튼:")
-        self.purchase_button_threshold_label.grid(row=4, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.purchase_button_threshold_label.grid(row=4, column=6, sticky=tk.W, padx=(30, 5), pady=2)
         self.purchase_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.purchase_button_threshold.insert(0, "92")
-        self.purchase_button_threshold.grid(row=4, column=4, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=4, column=5, sticky=tk.W)
+        self.purchase_button_threshold.grid(row=4, column=7, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=4, column=8, sticky=tk.W)
 
         self.buy_button_threshold_label = ttk.Label(self.settings_frame, text="구매 버튼:")
-        self.buy_button_threshold_label.grid(row=5, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.buy_button_threshold_label.grid(row=5, column=6, sticky=tk.W, padx=(30, 5), pady=2)
         self.buy_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.buy_button_threshold.insert(0, "92")
-        self.buy_button_threshold.grid(row=5, column=4, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=5, column=5, sticky=tk.W)
+        self.buy_button_threshold.grid(row=5, column=7, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=5, column=8, sticky=tk.W)
 
         self.refresh_button_threshold_label = ttk.Label(self.settings_frame, text="갱신 버튼:")
-        self.refresh_button_threshold_label.grid(row=6, column=3, sticky=tk.W, padx=(30, 5), pady=2)
+        self.refresh_button_threshold_label.grid(row=6, column=6, sticky=tk.W, padx=(30, 5), pady=2)
         self.refresh_button_threshold = ttk.Entry(self.settings_frame, width=8)
         self.refresh_button_threshold.insert(0, "92")
-        self.refresh_button_threshold.grid(row=6, column=4, sticky=tk.W, padx=5, pady=2)
-        ttk.Label(self.settings_frame, text="%").grid(row=6, column=5, sticky=tk.W)
+        self.refresh_button_threshold.grid(row=6, column=7, sticky=tk.W, padx=5, pady=2)
+        ttk.Label(self.settings_frame, text="%").grid(row=6, column=8, sticky=tk.W)
 
         control_frame = ttk.Frame(self.shop_tab, style="CardInner.TFrame", padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -1038,6 +1057,8 @@ class SessionView:
             "device": self.device_label,
             "refresh_count": self.refresh_count_label,
             "refresh_count_unit": self.refresh_count_unit_label,
+            "sky_stone_budget": self.sky_stone_budget_label,
+            "sky_stone_budget_unit": self.sky_stone_budget_unit_label,
             "purchase_verification_count": self.buy_count_label,
             "purchase_verification_count_unit": self.buy_count_unit_label,
             "threshold_header": self.threshold_header_label,
@@ -1091,6 +1112,48 @@ class SessionView:
         for key, widget in stat_widgets.items():
             if key in stats:
                 widget.config(text=stats[key])
+
+    @classmethod
+    def _refresh_count_to_sky_stones(cls, refresh_count):
+        return int(refresh_count) * cls.SKY_STONES_PER_REFRESH
+
+    @classmethod
+    def _sky_stones_to_refresh_count(cls, sky_stones):
+        return int(sky_stones) // cls.SKY_STONES_PER_REFRESH
+
+    def _sync_sky_stones_from_refresh_count(self, *_args):
+        if getattr(self, "_shop_input_syncing", False):
+            return
+        try:
+            refresh_count = int(self.refresh_count_var.get().strip())
+        except ValueError:
+            return
+        if refresh_count < 0:
+            return
+        self._shop_input_syncing = True
+        try:
+            self.sky_stone_budget_var.set(
+                str(self._refresh_count_to_sky_stones(refresh_count))
+            )
+        finally:
+            self._shop_input_syncing = False
+
+    def _sync_refresh_count_from_sky_stones(self, *_args):
+        if getattr(self, "_shop_input_syncing", False):
+            return
+        try:
+            sky_stones = int(self.sky_stone_budget_var.get().strip())
+        except ValueError:
+            return
+        if sky_stones < 0:
+            return
+        self._shop_input_syncing = True
+        try:
+            self.refresh_count_var.set(
+                str(self._sky_stones_to_refresh_count(sky_stones))
+            )
+        finally:
+            self._shop_input_syncing = False
 
     def _replace_entry(self, entry, value):
         entry.delete(0, tk.END)
@@ -1247,6 +1310,7 @@ class SessionView:
 
             try:
                 refresh_count = int(self.refresh_count_entry.get())
+                sky_stone_budget = int(self.sky_stone_budget_entry.get())
                 buy_count = int(self.buy_count_entry.get())
                 thresholds = {
                     key: int(value) / 100.0
@@ -1260,7 +1324,12 @@ class SessionView:
                     "buy_button": int(self.buy_button_threshold.get()) / 100.0,
                     "refresh_button": int(self.refresh_button_threshold.get()) / 100.0,
                 })
-                if refresh_count <= 0 or buy_count <= 0:
+                if (
+                    refresh_count <= 0
+                    or sky_stone_budget < self.SKY_STONES_PER_REFRESH
+                    or refresh_count != self._sky_stones_to_refresh_count(sky_stone_budget)
+                    or buy_count <= 0
+                ):
                     raise ValueError()
                 for key, val in thresholds.items():
                     if not 0.7 <= val <= 0.99:
@@ -1268,7 +1337,7 @@ class SessionView:
             except ValueError as e:
                 messagebox.showerror(
                     "오류",
-                    f"설정값이 올바르지 않습니다.\n{str(e)}\n리프레시 횟수와 구매 횟수는 양수여야 하며,\n매칭 정확도는 70~99 사이여야 합니다.",
+                    f"설정값이 올바르지 않습니다.\n{str(e)}\n리프레시 횟수와 사용할 하늘석, 구매 횟수는 양수여야 하며,\n매칭 정확도는 70~99 사이여야 합니다.",
                 )
                 return
 
@@ -1781,6 +1850,7 @@ class SessionView:
         state = tk.DISABLED if running else tk.NORMAL
         for entry in (
             self.refresh_count_entry,
+            self.sky_stone_budget_entry,
             self.mystic_medal_threshold,
             self.covenant_bookmark_threshold,
             self.friendship_point_threshold,

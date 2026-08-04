@@ -5,6 +5,39 @@ from src.gui import SessionView
 
 
 class SessionViewFormattingTest(unittest.TestCase):
+    def test_refresh_count_is_converted_to_sky_stones(self):
+        self.assertEqual(SessionView._refresh_count_to_sky_stones(100), 300)
+
+    def test_sky_stones_are_converted_to_refresh_count(self):
+        self.assertEqual(SessionView._sky_stones_to_refresh_count(6000), 2000)
+
+    def test_sky_stone_remainder_is_discarded(self):
+        self.assertEqual(SessionView._sky_stones_to_refresh_count(6002), 2000)
+
+    def test_refresh_count_input_updates_sky_stone_input(self):
+        view = object.__new__(SessionView)
+        view._shop_input_syncing = False
+        view.refresh_count_var = Mock()
+        view.refresh_count_var.get.return_value = "100"
+        view.sky_stone_budget_var = Mock()
+
+        SessionView._sync_sky_stones_from_refresh_count(view)
+
+        view.sky_stone_budget_var.set.assert_called_once_with("300")
+        self.assertFalse(view._shop_input_syncing)
+
+    def test_sky_stone_input_updates_refresh_count_with_floor(self):
+        view = object.__new__(SessionView)
+        view._shop_input_syncing = False
+        view.refresh_count_var = Mock()
+        view.sky_stone_budget_var = Mock()
+        view.sky_stone_budget_var.get.return_value = "6002"
+
+        SessionView._sync_refresh_count_from_sky_stones(view)
+
+        view.refresh_count_var.set.assert_called_once_with("2000")
+        self.assertFalse(view._shop_input_syncing)
+
     def test_event_stats_show_consumed_drinks(self):
         view = object.__new__(SessionView)
         for attribute in (
