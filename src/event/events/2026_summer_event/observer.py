@@ -316,27 +316,11 @@ class SummerEventObserver:
         x, y, width, height = self.layout.scale_box(region_name, self.screen_size)
         return frame[y:y + height, x:x + width]
 
-    def _template_similarity(self, frame: np.ndarray, template: np.ndarray) -> float:
-        template = self._scale_template(template)
+    @staticmethod
+    def _template_similarity(frame: np.ndarray, template: np.ndarray) -> float:
         if template is None or frame.shape[0] < template.shape[0] or frame.shape[1] < template.shape[1]:
             return 0.0
         return float(cv2.minMaxLoc(cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED))[1])
-
-    def _scale_template(self, template: np.ndarray) -> Optional[np.ndarray]:
-        if template is None:
-            return None
-        reference_width, reference_height = self.layout.reference_size
-        screen_width, screen_height = self.screen_size
-        target_width = max(1, int(template.shape[1] * screen_width / reference_width + 0.5))
-        target_height = max(1, int(template.shape[0] * screen_height / reference_height + 0.5))
-        if (target_width, target_height) == (template.shape[1], template.shape[0]):
-            return template
-        interpolation = (
-            cv2.INTER_AREA
-            if target_width < template.shape[1] or target_height < template.shape[0]
-            else cv2.INTER_CUBIC
-        )
-        return cv2.resize(template, (target_width, target_height), interpolation=interpolation)
 
     def _template_similarity_summary(self) -> str:
         return (

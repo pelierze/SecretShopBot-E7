@@ -1049,26 +1049,6 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         self.assertFalse(bot.state.active)
 
 
-class SummerEventObserverRobustnessTest(unittest.TestCase):
-    def test_template_matching_scales_template_to_current_screen_size(self):
-        event_root = Path(event_module.__file__).parent
-        observer = object.__new__(SummerEventObserver)
-        observer.layout = load_screen_layout(event_root / "screen_layout.json")
-        observer.screen_size = (640, 360)
-        template = cv2.imdecode(
-            np.fromfile(Path("images") / "2026_summer_event" / "reward_popup_title.png", dtype=np.uint8),
-            cv2.IMREAD_COLOR,
-        )
-        scaled = observer._scale_template(template)
-        frame = np.zeros((360, 640, 3), dtype=np.uint8)
-        frame[40:40 + scaled.shape[0], 80:80 + scaled.shape[1]] = scaled
-
-        similarity = observer._template_similarity(frame, template)
-
-        self.assertGreater(similarity, 0.99)
-        self.assertEqual(scaled.shape[:2], (28, 90))
-
-
 class SummerEventObserverTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
