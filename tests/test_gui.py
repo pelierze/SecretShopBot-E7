@@ -99,6 +99,17 @@ class SessionViewFormattingTest(unittest.TestCase):
         for option_name in ("공격력", "생명력", "방어력"):
             self.assertEqual(SessionView._get_reroll_target_range(view, option_name, True), (4, 8))
 
+    def test_reroll_option_label_only_shows_option_name(self):
+        view = object.__new__(SessionView)
+
+        self.assertEqual(SessionView._format_reroll_option_label(view, "공격력", True), "공격력")
+        self.assertEqual(SessionView._format_reroll_option_label(view, "생명력", False), "생명력")
+
+    def test_reroll_option_name_accepts_legacy_range_label(self):
+        view = object.__new__(SessionView)
+
+        self.assertEqual(SessionView._extract_reroll_option_name(view, "방어력 (4~8%)"), "방어력")
+
 
 if __name__ == "__main__":
     unittest.main()

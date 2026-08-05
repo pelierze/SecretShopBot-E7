@@ -901,8 +901,7 @@ class SessionView:
         return f"{target_range[0]}~{target_range[1]}{range_suffix}"
 
     def _format_reroll_option_label(self, option_name, use_percent):
-        target_range = self._get_reroll_target_range(option_name, use_percent)
-        return f"{option_name} ({self._format_reroll_range_text(target_range, use_percent)})"
+        return option_name
 
     def _extract_reroll_option_name(self, display_value):
         text = str(display_value or "").strip()
