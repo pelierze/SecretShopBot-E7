@@ -28,6 +28,8 @@ PLAN_TARGETS = {
 
 
 class SummerEventBot:
+    VERIFICATION_RETRY_DELAY_SECONDS = 0.25
+
     def __init__(
         self,
         state: EventState,
@@ -175,35 +177,59 @@ class SummerEventBot:
             logger.info("✅ 선택 플랜 성공: %sM 도달", target_m)
 
     def _observe_outcome(self, action: EventAction) -> MoveOutcome:
+        last_error = None
         for _ in range(self.outcome_check_attempts):
             try:
-                return self._verify(lambda: self.observer.observe_outcome(action), "이동 결과 인식")
+                return self._verify(
+                    lambda: self.observer.observe_outcome(action),
+                    "이동 결과 인식",
+                    deactivate_on_failure=False,
+                )
             except EventOutcomePending:
                 continue
+            except EventRecognitionError as exc:
+                last_error = exc
+                continue
         self.state.active = False
+        detail = f" 마지막 오류: {last_error}" if last_error is not None else ""
         raise EventRecognitionError(
-            f"이동 후 M/스택 변화 또는 결과창을 {self.outcome_check_attempts}회 확인하지 못해 안전하게 중지했습니다."
+            f"이동 후 M/스택 변화 또는 결과창을 {self.outcome_check_attempts}회 확인하지 못해 안전하게 중지했습니다.{detail}"
         )
 
     def _observe_state(self) -> EventState:
+        last_error = None
         for _ in range(self.outcome_check_attempts):
             try:
-                return self._verify(lambda: self.observer.observe(self.state), "이벤트 화면 인식")
+                return self._verify(
+                    lambda: self.observer.observe(self.state),
+                    "이벤트 화면 인식",
+                    deactivate_on_failure=False,
+                )
             except EventOutcomePending:
                 continue
+            except EventRecognitionError as exc:
+                last_error = exc
+                continue
         self.state.active = False
+        detail = f" 마지막 오류: {last_error}" if last_error is not None else ""
         raise EventRecognitionError(
-            f"팝업 처리 후 기본 화면을 {self.outcome_check_attempts}회 확인하지 못해 안전하게 중지했습니다."
+            f"팝업 처리 후 기본 화면을 {self.outcome_check_attempts}회 확인하지 못해 안전하게 중지했습니다.{detail}"
         )
 
-    def _verify(self, operation, label):
+    def _verify(self, operation, label, deactivate_on_failure=True):
         last_error = None
-        for _ in range(self.verification_attempts):
+        for attempt in range(self.verification_attempts):
             try:
                 return operation()
             except EventRecognitionError as exc:
                 last_error = exc
-        self.state.active = False
+                if attempt + 1 < self.verification_attempts:
+                    time.sleep(self.VERIFICATION_RETRY_DELAY_SECONDS)
+        if deactivate_on_failure:
+            self.state.active = False
+            failure_action = "안전하게 중지했습니다"
+        else:
+            failure_action = "다음 확인 주기로 넘어갑니다"
         raise EventRecognitionError(
-            f"{label}에 {self.verification_attempts}회 실패하여 안전하게 중지했습니다: {last_error}"
+            f"{label}에 {self.verification_attempts}회 실패하여 {failure_action}: {last_error}"
         ) from last_error

@@ -78,6 +78,7 @@ class SummerEventObserver:
         self._lower_position_key = None
         self._lower_position_count = 0
         self.last_observed_success_probability: Optional[float] = None
+        self.last_template_similarities = {"result": 0.0, "reward": 0.0}
         self.confirmed_probabilities = dict(confirmed_probabilities or {})
 
     def set_confirmed_probability(self, position_m: int, probability: float) -> None:
@@ -95,7 +96,10 @@ class SummerEventObserver:
             self._before_action = None
             raise EventOutcomePending("결과창을 닫고 0M 화면을 기다리는 중입니다.")
         if screen.kind is not EventScreenKind.NORMAL or screen.position_m is None or screen.items is None:
-            raise EventRecognitionError("이벤트 기본 화면을 확인할 수 없습니다.")
+            raise EventRecognitionError(
+                f"이벤트 기본 화면을 확인할 수 없습니다. "
+                f"({self._template_similarity_summary()})"
+            )
         previous_state.position_m = screen.position_m
         previous_state.items = screen.items
         self.last_observed_success_probability = screen.success_probability
@@ -117,7 +121,10 @@ class SummerEventObserver:
             self._tap("confirm_result_popup")
             return MoveOutcome.FAILURE
         if screen.kind is not EventScreenKind.NORMAL or screen.position_m is None or screen.items is None:
-            raise EventRecognitionError("이동 후 이벤트 화면을 확인할 수 없습니다.")
+            raise EventRecognitionError(
+                f"이동 후 이벤트 화면을 확인할 수 없습니다. "
+                f"({self._template_similarity_summary()})"
+            )
         if self._before_action is None:
             raise EventRecognitionError("이동 전 기준 상태가 없습니다.")
 
@@ -166,9 +173,15 @@ class SummerEventObserver:
         height, width = frame.shape[:2]
         if (width, height) != self.screen_size:
             self.screen_size = (width, height)
-        if self._template_similarity(frame, self.result_template) >= self.TEMPLATE_THRESHOLD:
+        result_similarity = self._template_similarity(frame, self.result_template)
+        reward_similarity = self._template_similarity(frame, self.reward_template)
+        self.last_template_similarities = {
+            "result": result_similarity,
+            "reward": reward_similarity,
+        }
+        if result_similarity >= self.TEMPLATE_THRESHOLD:
             return ObservedEventScreen(EventScreenKind.RESULT_POPUP)
-        if self._template_similarity(frame, self.reward_template) >= self.TEMPLATE_THRESHOLD:
+        if reward_similarity >= self.TEMPLATE_THRESHOLD:
             return ObservedEventScreen(EventScreenKind.REWARD_POPUP)
         try:
             position = self._recognize_position(frame)
@@ -303,11 +316,35 @@ class SummerEventObserver:
         x, y, width, height = self.layout.scale_box(region_name, self.screen_size)
         return frame[y:y + height, x:x + width]
 
-    @staticmethod
-    def _template_similarity(frame: np.ndarray, template: np.ndarray) -> float:
+    def _template_similarity(self, frame: np.ndarray, template: np.ndarray) -> float:
+        template = self._scale_template(template)
         if template is None or frame.shape[0] < template.shape[0] or frame.shape[1] < template.shape[1]:
             return 0.0
         return float(cv2.minMaxLoc(cv2.matchTemplate(frame, template, cv2.TM_CCOEFF_NORMED))[1])
+
+    def _scale_template(self, template: np.ndarray) -> Optional[np.ndarray]:
+        if template is None:
+            return None
+        reference_width, reference_height = self.layout.reference_size
+        screen_width, screen_height = self.screen_size
+        target_width = max(1, int(template.shape[1] * screen_width / reference_width + 0.5))
+        target_height = max(1, int(template.shape[0] * screen_height / reference_height + 0.5))
+        if (target_width, target_height) == (template.shape[1], template.shape[0]):
+            return template
+        interpolation = (
+            cv2.INTER_AREA
+            if target_width < template.shape[1] or target_height < template.shape[0]
+            else cv2.INTER_CUBIC
+        )
+        return cv2.resize(template, (target_width, target_height), interpolation=interpolation)
+
+    def _template_similarity_summary(self) -> str:
+        return (
+            f"결과 팝업 유사도 "
+            f"{self.last_template_similarities.get('result', 0.0):.3f}, "
+            f"보상 팝업 유사도 "
+            f"{self.last_template_similarities.get('reward', 0.0):.3f}"
+        )
 
     def _tap(self, point_name: str) -> None:
         x, y = self.layout.scale_point(point_name, self.screen_size)

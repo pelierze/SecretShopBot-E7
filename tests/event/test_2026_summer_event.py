@@ -994,6 +994,80 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         self.assertIs(bot._observe_outcome(EventAction.SUPER_DASH), MoveOutcome.SUCCESS)
         self.assertEqual(outcomes, [])
 
+    def test_recognition_failure_batch_is_retried_before_stopping(self):
+        calls = 0
+
+        class TemporarilyUnknownObserver:
+            def observe_outcome(self, action):
+                nonlocal calls
+                calls += 1
+                if calls <= 3:
+                    raise EventRecognitionError("reward popup animation")
+                return MoveOutcome.SUCCESS
+
+        bot = event_module.SummerEventBot(
+            state=EventState(),
+            policy=None,
+            rules=SummerEventRules(),
+            observer=TemporarilyUnknownObserver(),
+            executor=None,
+            verification_attempts=3,
+            outcome_check_attempts=2,
+        )
+
+        with patch.object(bot_module.time, "sleep"):
+            outcome = bot._observe_outcome(EventAction.BASIC)
+
+        self.assertIs(outcome, MoveOutcome.SUCCESS)
+        self.assertEqual(calls, 4)
+        self.assertTrue(bot.state.active)
+
+    def test_persistent_recognition_failure_stops_after_all_polling_batches(self):
+        calls = 0
+
+        class UnknownObserver:
+            def observe_outcome(self, action):
+                nonlocal calls
+                calls += 1
+                raise EventRecognitionError("unknown reward popup")
+
+        bot = event_module.SummerEventBot(
+            state=EventState(),
+            policy=None,
+            rules=SummerEventRules(),
+            observer=UnknownObserver(),
+            executor=None,
+            verification_attempts=3,
+            outcome_check_attempts=2,
+        )
+
+        with patch.object(bot_module.time, "sleep"):
+            with self.assertRaisesRegex(EventRecognitionError, "2회 확인하지 못해"):
+                bot._observe_outcome(EventAction.BASIC)
+
+        self.assertEqual(calls, 6)
+        self.assertFalse(bot.state.active)
+
+
+class SummerEventObserverRobustnessTest(unittest.TestCase):
+    def test_template_matching_scales_template_to_current_screen_size(self):
+        event_root = Path(event_module.__file__).parent
+        observer = object.__new__(SummerEventObserver)
+        observer.layout = load_screen_layout(event_root / "screen_layout.json")
+        observer.screen_size = (640, 360)
+        template = cv2.imdecode(
+            np.fromfile(Path("images") / "2026_summer_event" / "reward_popup_title.png", dtype=np.uint8),
+            cv2.IMREAD_COLOR,
+        )
+        scaled = observer._scale_template(template)
+        frame = np.zeros((360, 640, 3), dtype=np.uint8)
+        frame[40:40 + scaled.shape[0], 80:80 + scaled.shape[1]] = scaled
+
+        similarity = observer._template_similarity(frame, template)
+
+        self.assertGreater(similarity, 0.99)
+        self.assertEqual(scaled.shape[:2], (28, 90))
+
 
 class SummerEventObserverTest(unittest.TestCase):
     @classmethod
