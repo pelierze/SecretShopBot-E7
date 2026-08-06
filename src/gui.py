@@ -1596,6 +1596,8 @@ class SessionView:
                 self.adb_controller,
                 layout,
                 screen_size=self.adb_controller.get_screen_size(),
+                selection_verifier=observer,
+                selection_attempts=config.verification_attempts,
             )
             self.bot = event_module.SummerEventBot(
                 EventState(plan=plan),

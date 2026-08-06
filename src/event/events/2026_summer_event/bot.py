@@ -150,6 +150,12 @@ class SummerEventBot:
             )
         self.executor.execute(action)
         outcome = self._observe_outcome(action)
+        if action is EventAction.SUPER_DASH and outcome is MoveOutcome.FAILURE:
+            self.state.active = False
+            raise EventRecognitionError(
+                "슈퍼럭키 Cancel 상태 확인 후 실패 결과창이 감지되어 안전하게 중지했습니다. "
+                "입력 적용 또는 결과창 인식을 확인해주세요."
+            )
         observation_tile = self.rules.observation_tile(old_position, action)
         if self.probability_recorder is not None:
             if self.probability_recorder.record(old_position, observation_tile, action, outcome):

@@ -50,6 +50,12 @@ class ObservedEventScreen:
 
 class SummerEventObserver:
     TEMPLATE_THRESHOLD = 0.82
+    SKILL_SELECTION_THRESHOLD = 0.93
+    SKILL_BUTTON_REGIONS = {
+        EventAction.SHIELD: "shield_button",
+        EventAction.LEAP: "leap_button",
+        EventAction.SUPER_DASH: "super_dash_button",
+    }
 
     def __init__(
         self,
@@ -83,6 +89,32 @@ class SummerEventObserver:
 
     def set_confirmed_probability(self, position_m: int, probability: float) -> None:
         self.confirmed_probabilities[int(position_m)] = float(probability)
+
+    def is_skill_selected(self, action: EventAction) -> bool:
+        """Capture the skill button and verify that it changed to Cancel."""
+        region_name = self.SKILL_BUTTON_REGIONS.get(action)
+        if region_name is None or self.ocr_engine is None:
+            return False
+        self.screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.adb.screenshot(str(self.screenshot_path)):
+            logger.warning("스킬 Cancel 상태 확인용 스크린샷 캡처에 실패했습니다.")
+            return False
+        frame = self._read_image(self.screenshot_path)
+        return self.analyze_skill_selection(frame, action)
+
+    def analyze_skill_selection(self, frame: np.ndarray, action: EventAction) -> bool:
+        region_name = self.SKILL_BUTTON_REGIONS.get(action)
+        if region_name is None or self.ocr_engine is None or frame is None or frame.size == 0:
+            return False
+        crop = self._crop(frame, region_name)
+        enlarged = cv2.resize(crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        result, _ = self.ocr_engine(enlarged, use_cls=False)
+        for item in [] if not result else result:
+            text = re.sub(r"[^a-z]", "", str(item[1]).lower())
+            confidence = float(item[2])
+            if "cancel" in text and confidence >= self.SKILL_SELECTION_THRESHOLD:
+                return True
+        return False
 
     def observe(self, previous_state: EventState) -> EventState:
         screen = self.capture_and_analyze()

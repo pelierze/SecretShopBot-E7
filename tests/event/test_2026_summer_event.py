@@ -17,7 +17,7 @@ from src.event import (
     MoveOutcome,
     load_event_module,
 )
-from src.event.ports import EventOutcomePending, EventRecognitionError
+from src.event.ports import EventInputError, EventOutcomePending, EventRecognitionError
 
 
 event_module = importlib.import_module("src.event.events.2026_summer_event")
@@ -305,6 +305,9 @@ class SummerEventConfigTest(unittest.TestCase):
 
         self.assertEqual(layout.reference_size, (1280, 720))
         self.assertEqual(layout.regions["current_node"], (580, 205, 120, 80))
+        self.assertEqual(layout.regions["shield_button"], (845, 585, 120, 125))
+        self.assertEqual(layout.regions["leap_button"], (985, 585, 120, 125))
+        self.assertEqual(layout.regions["super_dash_button"], (1125, 585, 120, 125))
         self.assertEqual(layout.tap_points["shield"], (905, 640))
         self.assertEqual(layout.tap_points["leap"], (1047, 640))
         self.assertEqual(layout.tap_points["super_dash"], (1187, 640))
@@ -560,6 +563,16 @@ class RecordingTapDevice:
         return self.results.pop(0) if self.results else True
 
 
+class SequenceSkillVerifier:
+    def __init__(self, results):
+        self.results = list(results)
+        self.actions = []
+
+    def is_skill_selected(self, action):
+        self.actions.append(action)
+        return self.results.pop(0)
+
+
 class SummerEventExecutorTest(unittest.TestCase):
     def setUp(self):
         layout_path = Path(event_module.__file__).parent / "screen_layout.json"
@@ -573,13 +586,59 @@ class SummerEventExecutorTest(unittest.TestCase):
 
         self.assertEqual(adb.taps, [(640, 655, 0.5)])
 
-    def test_skill_action_selects_skill_then_taps_run(self):
+    def test_every_skill_requires_cancel_state_before_tapping_run(self):
+        expected_points = {
+            EventAction.SHIELD: (905, 640),
+            EventAction.LEAP: (1047, 640),
+            EventAction.SUPER_DASH: (1187, 640),
+        }
+        for action, point in expected_points.items():
+            with self.subTest(action=action):
+                adb = RecordingTapDevice()
+                verifier = SequenceSkillVerifier([True])
+                executor = SummerEventExecutor(
+                    adb,
+                    self.layout,
+                    selection_verifier=verifier,
+                )
+
+                executor.execute(action)
+
+                self.assertEqual(
+                    adb.taps,
+                    [(point[0], point[1], 0.25), (640, 655, 0.5)],
+                )
+                self.assertEqual(verifier.actions, [action])
+
+    def test_skill_selection_retries_until_cancel_state_is_visible(self):
         adb = RecordingTapDevice()
-        executor = SummerEventExecutor(adb, self.layout)
+        verifier = SequenceSkillVerifier([False, True])
+        executor = SummerEventExecutor(
+            adb,
+            self.layout,
+            selection_verifier=verifier,
+        )
 
         executor.execute(EventAction.LEAP)
 
-        self.assertEqual(adb.taps, [(1047, 640, 0.25), (640, 655, 0.5)])
+        self.assertEqual(
+            adb.taps,
+            [(1047, 640, 0.25), (1047, 640, 0.25), (640, 655, 0.5)],
+        )
+
+    def test_skill_selection_failure_never_taps_run(self):
+        adb = RecordingTapDevice()
+        verifier = SequenceSkillVerifier([False, False, False])
+        executor = SummerEventExecutor(
+            adb,
+            self.layout,
+            selection_verifier=verifier,
+        )
+
+        with self.assertRaisesRegex(EventInputError, "Cancel 상태"):
+            executor.execute(EventAction.SUPER_DASH)
+
+        self.assertEqual(adb.taps, [(1187, 640, 0.25)] * 3)
 
 
 class UnknownTileProbabilityRecorderTest(unittest.TestCase):
@@ -893,6 +952,35 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         self.assertEqual(stats["failures"], 1)
         self.assertEqual(stats["rollbacks"], 1)
 
+    def test_super_dash_result_popup_stops_with_recognition_error_not_value_error(self):
+        class FailureObserver:
+            def observe(self, state):
+                return state
+
+            def observe_outcome(self, action):
+                return MoveOutcome.FAILURE
+
+        class SuperDashPolicy:
+            def choose_action(self, state):
+                return EventAction.SUPER_DASH
+
+        class NoopExecutor:
+            def execute(self, action):
+                pass
+
+        bot = event_module.SummerEventBot(
+            state=EventState(items=ItemInventory(super_dash=1)),
+            policy=SuperDashPolicy(),
+            rules=SummerEventRules(),
+            observer=FailureObserver(),
+            executor=NoopExecutor(),
+        )
+
+        with self.assertRaisesRegex(EventRecognitionError, "슈퍼럭키 Cancel 상태"):
+            bot.step()
+
+        self.assertFalse(bot.state.active)
+
     def test_failure_allows_plan_success_to_be_counted_again_next_run(self):
         state = EventState(
             position_m=210,
@@ -1076,6 +1164,56 @@ class SummerEventObserverTest(unittest.TestCase):
         self.assertEqual(one_ninety.position_m, 190)
         self.assertEqual(one_ninety.success_probability, 0.45)
         self.assertEqual(one_ninety.items, ItemInventory(shield=1, leap=0, super_dash=2))
+
+    def test_recognizes_cancel_state_for_every_skill_from_real_screens(self):
+        samples = {
+            EventAction.SHIELD: Path(
+                r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_20.28.45.121.png"
+            ),
+            EventAction.LEAP: Path(
+                r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_20.28.28.454.png"
+            ),
+            EventAction.SUPER_DASH: Path(
+                r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_20.28.58.071.png"
+            ),
+        }
+        if not all(path.exists() for path in samples.values()):
+            self.skipTest("User-provided Cancel screenshots are not available")
+
+        for action, path in samples.items():
+            with self.subTest(action=action):
+                frame = self._read(path)
+                self.assertTrue(self.observer.analyze_skill_selection(frame, action))
+
+                other_actions = set(samples) - {action}
+                self.assertTrue(
+                    all(
+                        not self.observer.analyze_skill_selection(frame, other)
+                        for other in other_actions
+                    )
+                )
+
+    def test_cancel_ocr_requires_at_least_93_percent_confidence(self):
+        event_root = Path(event_module.__file__).parent
+
+        def result_with_confidence(confidence):
+            return (
+                [[[[0, 0], [10, 0], [10, 10], [0, 10]], "Cancel", confidence]],
+                None,
+            )
+
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            ocr_engine=lambda *_args, **_kwargs: result_with_confidence(0.929),
+        )
+        frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+
+        self.assertFalse(observer.analyze_skill_selection(frame, EventAction.SHIELD))
+        observer.ocr_engine = lambda *_args, **_kwargs: result_with_confidence(0.93)
+        self.assertTrue(observer.analyze_skill_selection(frame, EventAction.SHIELD))
 
     def test_confirmed_tile_skips_probability_ocr(self):
         event_root = Path(event_module.__file__).parent
