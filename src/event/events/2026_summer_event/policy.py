@@ -105,10 +105,23 @@ class PlannedSummerEventPolicy:
             state.items.super_dash,
         )
         for target_plan in targets:
-            self._cache[target_plan] = self.planner.build_plan(
-                target_plan,
-                initial_state=state_key,
-            )
+            if state.plan is EventPlan.TARGET_500M:
+                # Preserve the existing 500M planning behavior.
+                self._cache[target_plan] = self.planner.build_plan(
+                    target_plan,
+                    initial_state=state_key,
+                )
+                continue
+
+            # Standard plans can fail and return to the canonical 0M inventory.
+            # Build that route first so a rollback never falls out of the cache.
+            cached_plan = self.planner.build_plan(target_plan)
+            if state.position_m < cached_plan.target_m and state_key not in cached_plan.actions:
+                # A session may also start from an unusual in-progress inventory.
+                # Merge that route without performing any planning during runtime.
+                current_plan = self.planner.build_plan(target_plan, initial_state=state_key)
+                cached_plan.actions.update(current_plan.actions)
+            self._cache[target_plan] = cached_plan
         self._prepared = True
         observations = self.adaptive_model.total_observations if self.adaptive_model else 0
         logger.info(

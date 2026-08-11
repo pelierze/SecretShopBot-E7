@@ -525,6 +525,29 @@ class SummerEventPlannerTest(unittest.TestCase):
 
         self.assertIn(action, {EventAction.BASIC, EventAction.SHIELD, EventAction.LEAP, EventAction.SUPER_DASH})
 
+    def test_runtime_policy_keeps_canonical_zero_route_after_midrun_start(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config, _ = load_event_bundle(config_path)
+        planner = SummerEventPlanner(config)
+        policy = PlannedSummerEventPolicy(config, planner)
+        policy.prepare(
+            EventState(
+                position_m=50,
+                plan=EventPlan.TARGET_200M,
+                items=ItemInventory(shield=1, leap=0, super_dash=1),
+            )
+        )
+        reset_state = EventState(position_m=0, plan=EventPlan.TARGET_200M)
+        expected = SummerEventPlanner(config).build_plan(EventPlan.TARGET_200M).actions[
+            (0, 2, 1, 2)
+        ]
+
+        with patch.object(policy_module.logger, "warning") as warning:
+            action = policy.choose_action(reset_state)
+
+        self.assertEqual(action, expected)
+        warning.assert_not_called()
+
     def test_runtime_policy_continues_after_selected_target_with_remaining_items(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
         config, _ = load_event_bundle(config_path)
