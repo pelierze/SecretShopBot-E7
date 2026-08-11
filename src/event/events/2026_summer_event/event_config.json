@@ -28,6 +28,7 @@
   "reset_items_after_failure": true,
   "verification_attempts": 3,
   "outcome_check_attempts": 30,
+  "outcome_poll_interval_seconds": 0.2,
   "finish_m": 500,
   "ends_at": "2026-08-27T12:00:00+09:00",
   "timezone": "Asia/Seoul"

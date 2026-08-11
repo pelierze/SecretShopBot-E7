@@ -37,6 +37,7 @@ class SummerEventConfig:
     reset_items_after_failure: bool = True
     verification_attempts: int = 3
     outcome_check_attempts: int = 30
+    outcome_poll_interval_seconds: float = 0.2
     finish_m: int = 500
     ends_at: Optional[str] = None
     timezone: Optional[str] = None
@@ -81,6 +82,8 @@ class SummerEventConfig:
             raise ValueError("Verification attempts must be positive")
         if self.outcome_check_attempts <= 0:
             raise ValueError("Outcome check attempts must be positive")
+        if self.outcome_poll_interval_seconds < 0:
+            raise ValueError("Outcome poll interval must not be negative")
         if self.unknown_probability_policy not in ("require_explicit", "interpolate_bounded_linear"):
             raise ValueError(f"Unsupported unknown probability policy: {self.unknown_probability_policy}")
         if self.policy_mode != "offline_with_runtime_adaptation":
@@ -117,6 +120,7 @@ def load_config(path: Path) -> SummerEventConfig:
         reset_items_after_failure=bool(raw.get("reset_items_after_failure", True)),
         verification_attempts=int(raw.get("verification_attempts", 3)),
         outcome_check_attempts=int(raw.get("outcome_check_attempts", 30)),
+        outcome_poll_interval_seconds=float(raw.get("outcome_poll_interval_seconds", 0.2)),
         finish_m=int(raw.get("finish_m", 500)),
         ends_at=raw.get("ends_at"),
         timezone=raw.get("timezone"),
@@ -161,6 +165,7 @@ def load_event_bundle(config_path: Path) -> Tuple[SummerEventConfig, Probability
         reset_items_after_failure=config.reset_items_after_failure,
         verification_attempts=config.verification_attempts,
         outcome_check_attempts=config.outcome_check_attempts,
+        outcome_poll_interval_seconds=config.outcome_poll_interval_seconds,
         finish_m=config.finish_m,
         ends_at=config.ends_at,
         timezone=config.timezone,

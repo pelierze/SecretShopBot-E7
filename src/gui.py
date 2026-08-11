@@ -1607,6 +1607,7 @@ class SessionView:
                 executor,
                 verification_attempts=config.verification_attempts,
                 outcome_check_attempts=config.outcome_check_attempts,
+                outcome_poll_interval_seconds=config.outcome_poll_interval_seconds,
                 probability_recorder=probability_recorder,
             )
             self.was_stopped_by_user = False

@@ -144,7 +144,7 @@ class SummerEventObserver:
         return previous_state
 
     def observe_outcome(self, action: EventAction) -> MoveOutcome:
-        screen = self.capture_and_analyze()
+        screen = self.capture_and_analyze(recognize_probability=False)
         if screen.kind is EventScreenKind.REWARD_POPUP:
             self._tap("close_reward_popup")
             raise EventOutcomePending("보상 팝업 처리 후 이동 결과를 기다리는 중입니다.")
@@ -192,14 +192,18 @@ class SummerEventObserver:
         self._lower_position_key = None
         self._lower_position_count = 0
 
-    def capture_and_analyze(self) -> ObservedEventScreen:
+    def capture_and_analyze(self, recognize_probability: bool = True) -> ObservedEventScreen:
         self.screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.adb.screenshot(str(self.screenshot_path)):
             raise EventRecognitionError("ADB 스크린샷 캡처에 실패했습니다.")
         frame = self._read_image(self.screenshot_path)
-        return self.analyze_frame(frame)
+        return self.analyze_frame(frame, recognize_probability=recognize_probability)
 
-    def analyze_frame(self, frame: np.ndarray) -> ObservedEventScreen:
+    def analyze_frame(
+        self,
+        frame: np.ndarray,
+        recognize_probability: bool = True,
+    ) -> ObservedEventScreen:
         if frame is None or frame.size == 0:
             return ObservedEventScreen(EventScreenKind.UNKNOWN)
         height, width = frame.shape[:2]
@@ -217,7 +221,9 @@ class SummerEventObserver:
             return ObservedEventScreen(EventScreenKind.REWARD_POPUP)
         try:
             position = self._recognize_position(frame)
-            if position in self.confirmed_probabilities:
+            if not recognize_probability:
+                success_probability = None
+            elif position in self.confirmed_probabilities:
                 success_probability = self.confirmed_probabilities[position]
             else:
                 try:

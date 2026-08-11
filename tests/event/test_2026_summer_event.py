@@ -294,6 +294,7 @@ class SummerEventConfigTest(unittest.TestCase):
         self.assertTrue(config.reset_items_after_failure)
         self.assertEqual(config.verification_attempts, 3)
         self.assertEqual(config.outcome_check_attempts, 30)
+        self.assertEqual(config.outcome_poll_interval_seconds, 0.2)
         self.assertEqual(config.ends_at, "2026-08-27T12:00:00+09:00")
         self.assertEqual(config.timezone, "Asia/Seoul")
         self.assertEqual(config.screen_layout_file, "screen_layout.json")
@@ -1079,7 +1080,11 @@ class SummerEventBotSafetyTest(unittest.TestCase):
             outcome_check_attempts=5,
         )
 
-        self.assertIs(bot._observe_outcome(EventAction.SUPER_DASH), MoveOutcome.SUCCESS)
+        with patch.object(bot_module.time, "sleep") as sleep:
+            self.assertIs(bot._observe_outcome(EventAction.SUPER_DASH), MoveOutcome.SUCCESS)
+
+        self.assertEqual(sleep.call_count, 2)
+        sleep.assert_called_with(0.2)
         self.assertEqual(outcomes, [])
 
     def test_recognition_failure_batch_is_retried_before_stopping(self):
@@ -1235,6 +1240,19 @@ class SummerEventObserverTest(unittest.TestCase):
         self.assertEqual(screen.position_m, 190)
         self.assertEqual(screen.success_probability, 0.45)
 
+    def test_outcome_analysis_skips_probability_ocr(self):
+        frame = self._read(self.fixture_root / "normal_190m.png")
+
+        with patch.object(
+            self.observer,
+            "_recognize_success_probability",
+            side_effect=AssertionError("outcome polling must not run probability OCR"),
+        ):
+            screen = self.observer.analyze_frame(frame, recognize_probability=False)
+
+        self.assertEqual(screen.position_m, 190)
+        self.assertIsNone(screen.success_probability)
+
     def test_recognizes_stylized_75_percent_from_real_screen(self):
         path = Path(r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_22.45.35.771.png")
         if not path.exists():
@@ -1266,7 +1284,7 @@ class SummerEventObserverTest(unittest.TestCase):
             screenshot_path=Path("unused.png"),
             template_dir=Path("images") / "2026_summer_event",
         )
-        observer.capture_and_analyze = lambda: ObservedEventScreen(EventScreenKind.RESULT_POPUP)
+        observer.capture_and_analyze = lambda **_kwargs: ObservedEventScreen(EventScreenKind.RESULT_POPUP)
 
         outcome = observer.observe_outcome(EventAction.BASIC)
 
@@ -1285,7 +1303,7 @@ class SummerEventObserverTest(unittest.TestCase):
             position_m=100,
             items=ItemInventory(shield=1, leap=1, super_dash=1),
         )
-        observer.capture_and_analyze = lambda: ObservedEventScreen(
+        observer.capture_and_analyze = lambda **_kwargs: ObservedEventScreen(
             EventScreenKind.NORMAL,
             position_m=60,
             items=ItemInventory(shield=1, leap=0, super_dash=1),

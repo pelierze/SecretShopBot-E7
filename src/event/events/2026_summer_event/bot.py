@@ -39,6 +39,7 @@ class SummerEventBot:
         executor: EventExecutor,
         verification_attempts: int = 3,
         outcome_check_attempts: int = 30,
+        outcome_poll_interval_seconds: float = 0.2,
         probability_recorder=None,
     ):
         self.state = state
@@ -52,6 +53,9 @@ class SummerEventBot:
         if outcome_check_attempts <= 0:
             raise ValueError("Outcome check attempts must be positive")
         self.outcome_check_attempts = outcome_check_attempts
+        if outcome_poll_interval_seconds < 0:
+            raise ValueError("Outcome poll interval must not be negative")
+        self.outcome_poll_interval_seconds = outcome_poll_interval_seconds
         self.stop_requested = False
         self._state_initialized = False
         self.probability_recorder = probability_recorder
@@ -192,6 +196,7 @@ class SummerEventBot:
                     deactivate_on_failure=False,
                 )
             except EventOutcomePending:
+                time.sleep(self.outcome_poll_interval_seconds)
                 continue
             except EventRecognitionError as exc:
                 last_error = exc
@@ -212,6 +217,7 @@ class SummerEventBot:
                     deactivate_on_failure=False,
                 )
             except EventOutcomePending:
+                time.sleep(self.outcome_poll_interval_seconds)
                 continue
             except EventRecognitionError as exc:
                 last_error = exc
