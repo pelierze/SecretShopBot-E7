@@ -449,10 +449,10 @@ class SummerEventObserver:
     def _images_are_effectively_equal(first: np.ndarray, second: np.ndarray) -> bool:
         if first.shape != second.shape or first.size == 0:
             return False
-        # PNG capture is lossless, but a tiny tolerance avoids redundant OCR
-        # when the emulator changes only a few anti-aliased pixels.
-        difference = cv2.absdiff(first, second)
-        return float(np.mean(difference)) <= 0.25
+        # A changed M digit can occupy only a tiny fraction of this crop, so an
+        # average-difference threshold can incorrectly suppress every OCR poll.
+        # screencap PNG is lossless; skip OCR only for a byte-identical region.
+        return bool(np.array_equal(first, second))
 
     @staticmethod
     def _template_similarity(frame: np.ndarray, template: np.ndarray) -> float:

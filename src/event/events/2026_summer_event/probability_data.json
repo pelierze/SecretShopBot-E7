@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "event_id": "2026_summer_event",
-  "updated_at": "2026-08-03T00:00:00+09:00",
+  "updated_at": "2026-08-12T07:36:21+09:00",
   "tiles": {
     "0": {"success_probability": 1.0, "source": "provided"},
     "10": {"success_probability": 0.96, "source": "provided"},
@@ -19,7 +19,9 @@
     "140": {"success_probability": 0.50, "source": "provided"},
     "150": {"success_probability": 0.70, "source": "provided"},
     "160": {"success_probability": 0.64, "source": "provided"},
+    "170": {"success_probability": 0.50, "source": "confirmed_ocr", "updated_at": "2026-08-08T11:55:28+09:00", "note": "동일 화면 OCR 3회 일치"},
     "190": {"success_probability": 0.45, "source": "provided"},
+    "200": {"success_probability": 0.50, "source": "confirmed_ocr", "updated_at": "2026-08-08T11:55:52+09:00", "note": "동일 화면 OCR 3회 일치"},
     "210": {"success_probability": 0.61, "source": "provided"},
     "220": {"success_probability": 0.55, "source": "provided"},
     "250": {"success_probability": 0.63, "source": "provided"},

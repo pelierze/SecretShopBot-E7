@@ -275,7 +275,11 @@ class SummerEventConfigTest(unittest.TestCase):
 
         config, dataset = load_event_bundle(config_path)
 
-        self.assertEqual(len(dataset.tiles), 22)
+        self.assertEqual(len(dataset.tiles), 24)
+        self.assertEqual(dataset.probabilities[170], 0.50)
+        self.assertEqual(dataset.probabilities[200], 0.50)
+        self.assertEqual(dataset.tiles[170].source, "confirmed_ocr")
+        self.assertEqual(dataset.tiles[200].source, "confirmed_ocr")
         self.assertEqual(dataset.probabilities[0], 1.0)
         self.assertEqual(dataset.probabilities[100], 0.75)
         self.assertEqual(dataset.probabilities[190], 0.45)
@@ -1331,6 +1335,17 @@ class SummerEventObserverTest(unittest.TestCase):
 
         self.assertEqual(initial.position_m, 190)
         self.assertEqual(unchanged.kind, EventScreenKind.UNCHANGED)
+
+    def test_position_change_is_not_hidden_by_crop_average(self):
+        first = np.zeros((80, 120, 3), dtype=np.uint8)
+        second = first.copy()
+        # A digit stroke may affect only a handful of pixels. The previous
+        # average threshold treated this as unchanged.
+        second[40, 60] = (1, 1, 1)
+
+        self.assertFalse(
+            SummerEventObserver._images_are_effectively_equal(first, second)
+        )
 
     def test_optimized_outcome_still_reads_a_changed_position(self):
         event_root = Path(event_module.__file__).parent
