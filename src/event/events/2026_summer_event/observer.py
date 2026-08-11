@@ -75,10 +75,15 @@ class SummerEventObserver:
         self.screenshot_path = Path(screenshot_path)
         self.template_dir = Path(template_dir)
         self.screen_size = screen_size
+        self.optimize_screen_analysis = bool(optimize_screen_analysis)
         if ocr_engine is not None:
             self.ocr_engine = ocr_engine
         elif RapidOCR is not None:
-            self.ocr_engine = RapidOCR()
+            self.ocr_engine = (
+                RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
+                if self.optimize_screen_analysis
+                else RapidOCR()
+            )
         else:
             self.ocr_engine = None
         self.reward_template = self._read_image(self.template_dir / "reward_popup_title.png")
@@ -92,8 +97,9 @@ class SummerEventObserver:
         # Standard plans repeatedly inspect fixed popup positions. The 500M
         # mode keeps the legacy full-screen search for maximum recognition
         # tolerance.
-        self.optimize_screen_analysis = bool(optimize_screen_analysis)
         self._reference_position_crop: Optional[np.ndarray] = None
+        self._last_analyzed_position_crop: Optional[np.ndarray] = None
+        self._last_outcome_screen: Optional[ObservedEventScreen] = None
 
     def set_confirmed_probability(self, position_m: int, probability: float) -> None:
         self.confirmed_probabilities[int(position_m)] = float(probability)
@@ -152,6 +158,7 @@ class SummerEventObserver:
         return previous_state
 
     def observe_outcome(self, action: EventAction) -> MoveOutcome:
+        self._last_outcome_screen = None
         screen = self.capture_and_analyze(
             recognize_probability=False,
             skip_ocr_if_position_unchanged=self.optimize_screen_analysis,
@@ -175,6 +182,7 @@ class SummerEventObserver:
 
         before = self._before_action
         if screen.position_m > before.position_m:
+            self._last_outcome_screen = screen
             self._reset_lower_position_tracking()
             return MoveOutcome.SUCCESS
         if screen.position_m < before.position_m:
@@ -193,13 +201,40 @@ class SummerEventObserver:
                     before.position_m,
                     screen.position_m,
                 )
+                self._last_outcome_screen = screen
                 self._reset_lower_position_tracking()
                 return MoveOutcome.FAILURE
             raise EventOutcomePending("이동 애니메이션 중 현재 M 감소가 보여 재확인합니다.")
         if action is EventAction.SHIELD and screen.items.shield < before.items.shield:
+            self._last_outcome_screen = screen
             self._reset_lower_position_tracking()
             return MoveOutcome.FAILURE
         raise EventOutcomePending("현재 M과 스킬 스택의 확정 변화가 아직 없습니다.")
+
+    def reuse_last_outcome_state(self, state: EventState) -> bool:
+        """Promote a decisive standard-plan frame to the next action baseline."""
+        screen = self._last_outcome_screen
+        self._last_outcome_screen = None
+        if (
+            not self.optimize_screen_analysis
+            or screen is None
+            or screen.position_m is None
+            or screen.items is None
+            # Keep the fresh scan/OCR path where post-300M probability
+            # observations are collected.
+            or screen.position_m >= 300
+        ):
+            return False
+        state.position_m = screen.position_m
+        state.items = ItemInventory(**vars(screen.items))
+        self._before_action = EventState(
+            position_m=screen.position_m,
+            plan=state.plan,
+            items=ItemInventory(**vars(screen.items)),
+        )
+        if self._last_analyzed_position_crop is not None:
+            self._reference_position_crop = self._last_analyzed_position_crop.copy()
+        return True
 
     def _reset_lower_position_tracking(self) -> None:
         self._lower_position_key = None
@@ -274,6 +309,7 @@ class SummerEventObserver:
             )
         except EventRecognitionError:
             return ObservedEventScreen(EventScreenKind.UNKNOWN)
+        self._last_analyzed_position_crop = position_crop.copy()
         if recognize_probability:
             self._reference_position_crop = position_crop.copy()
         return ObservedEventScreen(

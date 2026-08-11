@@ -23,6 +23,7 @@ from src.event.ports import EventInputError, EventOutcomePending, EventRecogniti
 event_module = importlib.import_module("src.event.events.2026_summer_event")
 policy_module = importlib.import_module("src.event.events.2026_summer_event.policy")
 bot_module = importlib.import_module("src.event.events.2026_summer_event.bot")
+observer_module = importlib.import_module("src.event.events.2026_summer_event.observer")
 SummerEventConfig = event_module.SummerEventConfig
 SummerEventPolicy = event_module.SummerEventPolicy
 SummerEventRules = event_module.SummerEventRules
@@ -1243,6 +1244,35 @@ class SummerEventObserverTest(unittest.TestCase):
         observer.ocr_engine = lambda *_args, **_kwargs: result_with_confidence(0.93)
         self.assertTrue(observer.analyze_skill_selection(frame, EventAction.SHIELD))
 
+    def test_standard_plan_observer_limits_ocr_runtime_threads(self):
+        event_root = Path(event_module.__file__).parent
+        with patch.object(observer_module, "RapidOCR", return_value=object()) as rapid_ocr:
+            SummerEventObserver(
+                adb=RecordingTapDevice(),
+                layout=load_screen_layout(event_root / "screen_layout.json"),
+                screenshot_path=Path("unused.png"),
+                template_dir=Path("images") / "2026_summer_event",
+                optimize_screen_analysis=True,
+            )
+
+        rapid_ocr.assert_called_once_with(
+            intra_op_num_threads=2,
+            inter_op_num_threads=2,
+        )
+
+    def test_500m_observer_keeps_default_ocr_runtime_threads(self):
+        event_root = Path(event_module.__file__).parent
+        with patch.object(observer_module, "RapidOCR", return_value=object()) as rapid_ocr:
+            SummerEventObserver(
+                adb=RecordingTapDevice(),
+                layout=load_screen_layout(event_root / "screen_layout.json"),
+                screenshot_path=Path("unused.png"),
+                template_dir=Path("images") / "2026_summer_event",
+                optimize_screen_analysis=False,
+            )
+
+        rapid_ocr.assert_called_once_with()
+
     def test_confirmed_tile_skips_probability_ocr(self):
         event_root = Path(event_module.__file__).parent
         observer = SummerEventObserver(
@@ -1321,6 +1351,47 @@ class SummerEventObserverTest(unittest.TestCase):
 
         self.assertEqual(changed.kind, EventScreenKind.NORMAL)
         self.assertEqual(changed.position_m, 190)
+
+    def test_standard_plan_reuses_decisive_outcome_below_300m(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            optimize_screen_analysis=True,
+        )
+        observed_items = ItemInventory(shield=1, leap=1, super_dash=2)
+        observer._last_outcome_screen = ObservedEventScreen(
+            EventScreenKind.NORMAL,
+            position_m=190,
+            items=observed_items,
+        )
+        state = EventState(position_m=180, plan=EventPlan.TARGET_200M)
+
+        reused = observer.reuse_last_outcome_state(state)
+
+        self.assertTrue(reused)
+        self.assertEqual(state.position_m, 190)
+        self.assertEqual(state.items, observed_items)
+        self.assertEqual(observer._before_action.position_m, 190)
+
+    def test_standard_plan_does_not_reuse_outcome_at_or_after_300m(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            optimize_screen_analysis=True,
+        )
+        observer._last_outcome_screen = ObservedEventScreen(
+            EventScreenKind.NORMAL,
+            position_m=300,
+            items=ItemInventory(),
+        )
+
+        self.assertFalse(observer.reuse_last_outcome_state(EventState(position_m=290)))
 
     def test_recognizes_stylized_75_percent_from_real_screen(self):
         path = Path(r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_22.45.35.771.png")

@@ -174,13 +174,17 @@ class SummerEventBot:
                     "성공" if outcome is MoveOutcome.SUCCESS else "실패",
                 )
         self.state = self.rules.apply(self.state, action, outcome)
+        reuse_outcome_state = getattr(self.observer, "reuse_last_outcome_state", None)
+        reused_observation = bool(
+            reuse_outcome_state is not None and reuse_outcome_state(self.state)
+        )
         self._record_plan_success_if_reached()
         if outcome is MoveOutcome.SUCCESS:
             for reward_m in self.rules.crossed_rewards(old_position, self.state.position_m):
                 logger.info("🏆 핵심 보상 구간 통과: %sM", reward_m)
         # The next decision must be based on a fresh scan rather than the
         # state predicted by the rules engine.
-        self._state_initialized = False
+        self._state_initialized = reused_observation
         return self.state
 
     def _record_plan_success_if_reached(self) -> None:
