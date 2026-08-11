@@ -40,6 +40,7 @@ class SummerEventBot:
         verification_attempts: int = 3,
         outcome_check_attempts: int = 30,
         outcome_poll_interval_seconds: float = 0.2,
+        outcome_initial_delay_seconds: float = 0.0,
         probability_recorder=None,
     ):
         self.state = state
@@ -56,6 +57,9 @@ class SummerEventBot:
         if outcome_poll_interval_seconds < 0:
             raise ValueError("Outcome poll interval must not be negative")
         self.outcome_poll_interval_seconds = outcome_poll_interval_seconds
+        if outcome_initial_delay_seconds < 0:
+            raise ValueError("Outcome initial delay must not be negative")
+        self.outcome_initial_delay_seconds = outcome_initial_delay_seconds
         self.stop_requested = False
         self._state_initialized = False
         self.probability_recorder = probability_recorder
@@ -188,6 +192,8 @@ class SummerEventBot:
 
     def _observe_outcome(self, action: EventAction) -> MoveOutcome:
         last_error = None
+        if self.outcome_initial_delay_seconds:
+            time.sleep(self.outcome_initial_delay_seconds)
         for _ in range(self.outcome_check_attempts):
             try:
                 return self._verify(

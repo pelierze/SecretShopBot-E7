@@ -37,6 +37,7 @@ class EventScreenKind(str, Enum):
     NORMAL = "normal"
     REWARD_POPUP = "reward_popup"
     RESULT_POPUP = "result_popup"
+    UNCHANGED = "unchanged"
     UNKNOWN = "unknown"
 
 
@@ -51,6 +52,7 @@ class ObservedEventScreen:
 class SummerEventObserver:
     TEMPLATE_THRESHOLD = 0.82
     SKILL_SELECTION_THRESHOLD = 0.93
+    TEMPLATE_REGION_PADDING = 10
     SKILL_BUTTON_REGIONS = {
         EventAction.SHIELD: "shield_button",
         EventAction.LEAP: "leap_button",
@@ -66,6 +68,7 @@ class SummerEventObserver:
         screen_size: Tuple[int, int] = (1280, 720),
         ocr_engine=None,
         confirmed_probabilities=None,
+        optimize_screen_analysis: bool = False,
     ):
         self.adb = adb
         self.layout = layout
@@ -86,6 +89,11 @@ class SummerEventObserver:
         self.last_observed_success_probability: Optional[float] = None
         self.last_template_similarities = {"result": 0.0, "reward": 0.0}
         self.confirmed_probabilities = dict(confirmed_probabilities or {})
+        # Standard plans repeatedly inspect fixed popup positions. The 500M
+        # mode keeps the legacy full-screen search for maximum recognition
+        # tolerance.
+        self.optimize_screen_analysis = bool(optimize_screen_analysis)
+        self._reference_position_crop: Optional[np.ndarray] = None
 
     def set_confirmed_probability(self, position_m: int, probability: float) -> None:
         self.confirmed_probabilities[int(position_m)] = float(probability)
@@ -144,7 +152,12 @@ class SummerEventObserver:
         return previous_state
 
     def observe_outcome(self, action: EventAction) -> MoveOutcome:
-        screen = self.capture_and_analyze(recognize_probability=False)
+        screen = self.capture_and_analyze(
+            recognize_probability=False,
+            skip_ocr_if_position_unchanged=self.optimize_screen_analysis,
+        )
+        if screen.kind is EventScreenKind.UNCHANGED:
+            raise EventOutcomePending("현재 M 영역에 변화가 없어 OCR을 생략하고 다시 확인합니다.")
         if screen.kind is EventScreenKind.REWARD_POPUP:
             self._tap("close_reward_popup")
             raise EventOutcomePending("보상 팝업 처리 후 이동 결과를 기다리는 중입니다.")
@@ -192,25 +205,42 @@ class SummerEventObserver:
         self._lower_position_key = None
         self._lower_position_count = 0
 
-    def capture_and_analyze(self, recognize_probability: bool = True) -> ObservedEventScreen:
+    def capture_and_analyze(
+        self,
+        recognize_probability: bool = True,
+        skip_ocr_if_position_unchanged: bool = False,
+    ) -> ObservedEventScreen:
         self.screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.adb.screenshot(str(self.screenshot_path)):
             raise EventRecognitionError("ADB 스크린샷 캡처에 실패했습니다.")
         frame = self._read_image(self.screenshot_path)
-        return self.analyze_frame(frame, recognize_probability=recognize_probability)
+        return self.analyze_frame(
+            frame,
+            recognize_probability=recognize_probability,
+            skip_ocr_if_position_unchanged=skip_ocr_if_position_unchanged,
+        )
 
     def analyze_frame(
         self,
         frame: np.ndarray,
         recognize_probability: bool = True,
+        skip_ocr_if_position_unchanged: bool = False,
     ) -> ObservedEventScreen:
         if frame is None or frame.size == 0:
             return ObservedEventScreen(EventScreenKind.UNKNOWN)
         height, width = frame.shape[:2]
         if (width, height) != self.screen_size:
             self.screen_size = (width, height)
-        result_similarity = self._template_similarity(frame, self.result_template)
-        reward_similarity = self._template_similarity(frame, self.reward_template)
+        if self.optimize_screen_analysis:
+            result_similarity = self._template_similarity_in_region(
+                frame, self.result_template, "result_popup_title"
+            )
+            reward_similarity = self._template_similarity_in_region(
+                frame, self.reward_template, "reward_popup_title"
+            )
+        else:
+            result_similarity = self._template_similarity(frame, self.result_template)
+            reward_similarity = self._template_similarity(frame, self.reward_template)
         self.last_template_similarities = {
             "result": result_similarity,
             "reward": reward_similarity,
@@ -219,6 +249,13 @@ class SummerEventObserver:
             return ObservedEventScreen(EventScreenKind.RESULT_POPUP)
         if reward_similarity >= self.TEMPLATE_THRESHOLD:
             return ObservedEventScreen(EventScreenKind.REWARD_POPUP)
+        position_crop = self._crop(frame, "current_node")
+        if (
+            skip_ocr_if_position_unchanged
+            and self._reference_position_crop is not None
+            and self._images_are_effectively_equal(position_crop, self._reference_position_crop)
+        ):
+            return ObservedEventScreen(EventScreenKind.UNCHANGED)
         try:
             position = self._recognize_position(frame)
             if not recognize_probability:
@@ -237,6 +274,8 @@ class SummerEventObserver:
             )
         except EventRecognitionError:
             return ObservedEventScreen(EventScreenKind.UNKNOWN)
+        if recognize_probability:
+            self._reference_position_crop = position_crop.copy()
         return ObservedEventScreen(
             EventScreenKind.NORMAL,
             position_m=position,
@@ -353,6 +392,31 @@ class SummerEventObserver:
     def _crop(self, frame: np.ndarray, region_name: str) -> np.ndarray:
         x, y, width, height = self.layout.scale_box(region_name, self.screen_size)
         return frame[y:y + height, x:x + width]
+
+    def _template_similarity_in_region(
+        self,
+        frame: np.ndarray,
+        template: np.ndarray,
+        region_name: str,
+    ) -> float:
+        """Match a popup only around its configured title position."""
+        x, y, width, height = self.layout.scale_box(region_name, self.screen_size)
+        padding_x = max(1, round(self.TEMPLATE_REGION_PADDING * self.screen_size[0] / 1280))
+        padding_y = max(1, round(self.TEMPLATE_REGION_PADDING * self.screen_size[1] / 720))
+        left = max(0, x - padding_x)
+        top = max(0, y - padding_y)
+        right = min(frame.shape[1], x + width + padding_x)
+        bottom = min(frame.shape[0], y + height + padding_y)
+        return self._template_similarity(frame[top:bottom, left:right], template)
+
+    @staticmethod
+    def _images_are_effectively_equal(first: np.ndarray, second: np.ndarray) -> bool:
+        if first.shape != second.shape or first.size == 0:
+            return False
+        # PNG capture is lossless, but a tiny tolerance avoids redundant OCR
+        # when the emulator changes only a few anti-aliased pixels.
+        difference = cv2.absdiff(first, second)
+        return float(np.mean(difference)) <= 0.25
 
     @staticmethod
     def _template_similarity(frame: np.ndarray, template: np.ndarray) -> float:

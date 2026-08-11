@@ -1591,6 +1591,7 @@ class SessionView:
                 resource_root / "images" / "2026_summer_event",
                 screen_size=self.adb_controller.get_screen_size(),
                 confirmed_probabilities=confirmed_probabilities,
+                optimize_screen_analysis=plan is not EventPlan.TARGET_500M,
             )
             executor = event_module.SummerEventExecutor(
                 self.adb_controller,
@@ -1607,7 +1608,14 @@ class SessionView:
                 executor,
                 verification_attempts=config.verification_attempts,
                 outcome_check_attempts=config.outcome_check_attempts,
-                outcome_poll_interval_seconds=config.outcome_poll_interval_seconds,
+                outcome_poll_interval_seconds=(
+                    config.outcome_poll_interval_seconds
+                    if plan is EventPlan.TARGET_500M
+                    else max(config.outcome_poll_interval_seconds, 0.3)
+                ),
+                outcome_initial_delay_seconds=(
+                    0.0 if plan is EventPlan.TARGET_500M else 0.4
+                ),
                 probability_recorder=probability_recorder,
             )
             self.was_stopped_by_user = False

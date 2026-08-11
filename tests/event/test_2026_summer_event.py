@@ -1253,6 +1253,52 @@ class SummerEventObserverTest(unittest.TestCase):
         self.assertEqual(screen.position_m, 190)
         self.assertIsNone(screen.success_probability)
 
+    def test_optimized_outcome_skips_all_ocr_when_position_region_is_unchanged(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            optimize_screen_analysis=True,
+        )
+        frame = self._read(self.fixture_root / "normal_190m.png")
+        initial = observer.analyze_frame(frame)
+
+        with patch.object(
+            observer,
+            "_recognize_position",
+            side_effect=AssertionError("unchanged position must not run OCR"),
+        ):
+            unchanged = observer.analyze_frame(
+                frame.copy(),
+                recognize_probability=False,
+                skip_ocr_if_position_unchanged=True,
+            )
+
+        self.assertEqual(initial.position_m, 190)
+        self.assertEqual(unchanged.kind, EventScreenKind.UNCHANGED)
+
+    def test_optimized_outcome_still_reads_a_changed_position(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            optimize_screen_analysis=True,
+        )
+        observer.analyze_frame(self._read(self.fixture_root / "normal_0m.png"))
+
+        changed = observer.analyze_frame(
+            self._read(self.fixture_root / "normal_190m.png"),
+            recognize_probability=False,
+            skip_ocr_if_position_unchanged=True,
+        )
+
+        self.assertEqual(changed.kind, EventScreenKind.NORMAL)
+        self.assertEqual(changed.position_m, 190)
+
     def test_recognizes_stylized_75_percent_from_real_screen(self):
         path = Path(r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_22.45.35.771.png")
         if not path.exists():
@@ -1274,6 +1320,27 @@ class SummerEventObserverTest(unittest.TestCase):
         result = self.observer.analyze_frame(self._read(self.fixture_root / "result_failure.png"))
 
         self.assertEqual(result.kind, EventScreenKind.RESULT_POPUP)
+
+    def test_optimized_popup_search_recognizes_fixtures_using_small_regions(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            optimize_screen_analysis=True,
+        )
+
+        with patch.object(cv2, "matchTemplate", wraps=cv2.matchTemplate) as match_template:
+            reward = observer.analyze_frame(self._read(self.fixture_root / "reward_general.png"))
+            result = observer.analyze_frame(self._read(self.fixture_root / "result_failure.png"))
+
+        self.assertEqual(reward.kind, EventScreenKind.REWARD_POPUP)
+        self.assertEqual(result.kind, EventScreenKind.RESULT_POPUP)
+        self.assertTrue(match_template.call_args_list)
+        self.assertTrue(
+            all(call.args[0].shape[:2] != (720, 1280) for call in match_template.call_args_list)
+        )
 
     def test_failure_result_is_confirmed_before_reporting_failure(self):
         adb = RecordingTapDevice()
