@@ -28,6 +28,7 @@ wheels/
 # Logs
 logs/
 *.log
+docs/data/*.csv
 
 # IDE
 .codex

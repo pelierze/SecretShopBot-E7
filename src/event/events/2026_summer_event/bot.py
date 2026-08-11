@@ -29,6 +29,7 @@ PLAN_TARGETS = {
 
 class SummerEventBot:
     VERIFICATION_RETRY_DELAY_SECONDS = 0.25
+    REUSED_STATE_SETTLE_DELAY_SECONDS = 0.75
 
     def __init__(
         self,
@@ -185,6 +186,11 @@ class SummerEventBot:
         # The next decision must be based on a fresh scan rather than the
         # state predicted by the rules engine.
         self._state_initialized = reused_observation
+        if reused_observation:
+            # A position change becomes readable slightly before the run button
+            # accepts the next input. Reusing the frame removes the old scan
+            # delay, so restore a CPU-idle settling window here.
+            time.sleep(self.REUSED_STATE_SETTLE_DELAY_SECONDS)
         return self.state
 
     def _record_plan_success_if_reached(self) -> None:

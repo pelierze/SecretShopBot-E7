@@ -929,6 +929,39 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         self.assertEqual(bot.get_stats()["core_rewards_total"], 1)
         self.assertEqual(bot.get_stats()["rewards_100"], 1)
 
+    def test_reused_outcome_waits_for_next_input_to_become_ready(self):
+        class ReusingObserver:
+            def observe(self, state):
+                return state
+
+            def observe_outcome(self, action):
+                return MoveOutcome.SUCCESS
+
+            def reuse_last_outcome_state(self, state):
+                return True
+
+        class BasicPolicy:
+            def choose_action(self, state):
+                return EventAction.BASIC
+
+        class NoopExecutor:
+            def execute(self, action):
+                pass
+
+        bot = event_module.SummerEventBot(
+            state=EventState(),
+            policy=BasicPolicy(),
+            rules=SummerEventRules(),
+            observer=ReusingObserver(),
+            executor=NoopExecutor(),
+        )
+
+        with patch.object(bot_module.time, "sleep") as sleep:
+            bot.step()
+
+        sleep.assert_called_once_with(bot.REUSED_STATE_SETTLE_DELAY_SECONDS)
+        self.assertTrue(bot._state_initialized)
+
     def test_initial_scan_beyond_target_counts_plan_success_only_once(self):
         class ExistingProgressObserver:
             def observe(self, state):
