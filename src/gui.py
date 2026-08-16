@@ -440,14 +440,14 @@ class SessionView:
         self.total_refresh_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
 
         self.mystic_title_label = ttk.Label(stats_grid, text="신비의 메달:")
-        self.mystic_title_label.grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        self.mystic_title_label.grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
         self.mystic_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
-        self.mystic_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        self.mystic_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
 
         self.bookmark_title_label = ttk.Label(stats_grid, text="성약의 책갈피:")
-        self.bookmark_title_label.grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_title_label.grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
         self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
-        self.bookmark_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
 
         self.elapsed_time_title_label = ttk.Label(stats_grid, text="경과 시간:")
         self.elapsed_time_title_label.grid(row=1, column=6, sticky=tk.W, padx=5, pady=2)
@@ -901,8 +901,7 @@ class SessionView:
         return f"{target_range[0]}~{target_range[1]}{range_suffix}"
 
     def _format_reroll_option_label(self, option_name, use_percent):
-        target_range = self._get_reroll_target_range(option_name, use_percent)
-        return f"{option_name} ({self._format_reroll_range_text(target_range, use_percent)})"
+        return option_name
 
     def _extract_reroll_option_name(self, display_value):
         text = str(display_value or "").strip()
@@ -1592,11 +1591,14 @@ class SessionView:
                 resource_root / "images" / "2026_summer_event",
                 screen_size=self.adb_controller.get_screen_size(),
                 confirmed_probabilities=confirmed_probabilities,
+                optimize_screen_analysis=plan is not EventPlan.TARGET_500M,
             )
             executor = event_module.SummerEventExecutor(
                 self.adb_controller,
                 layout,
                 screen_size=self.adb_controller.get_screen_size(),
+                selection_verifier=observer,
+                selection_attempts=config.verification_attempts,
             )
             self.bot = event_module.SummerEventBot(
                 EventState(plan=plan),
@@ -1606,6 +1608,14 @@ class SessionView:
                 executor,
                 verification_attempts=config.verification_attempts,
                 outcome_check_attempts=config.outcome_check_attempts,
+                outcome_poll_interval_seconds=(
+                    config.outcome_poll_interval_seconds
+                    if plan is EventPlan.TARGET_500M
+                    else max(config.outcome_poll_interval_seconds, 0.3)
+                ),
+                outcome_initial_delay_seconds=(
+                    0.0 if plan is EventPlan.TARGET_500M else 0.4
+                ),
                 probability_recorder=probability_recorder,
             )
             self.was_stopped_by_user = False

@@ -105,10 +105,25 @@ class PlannedSummerEventPolicy:
             state.items.super_dash,
         )
         for target_plan in targets:
-            self._cache[target_plan] = self.planner.build_plan(
-                target_plan,
-                initial_state=state_key,
-            )
+            if state.plan is EventPlan.TARGET_500M:
+                # Preserve the existing 500M planning behavior.
+                self._cache[target_plan] = self.planner.build_plan(
+                    target_plan,
+                    initial_state=state_key,
+                )
+                continue
+
+            # Standard plans can fail and return to the canonical 0M inventory.
+            # Build that route first so a rollback never falls out of the cache.
+            cached_plan = self.planner.build_plan(target_plan)
+            if state.position_m < cached_plan.target_m and state_key not in cached_plan.actions:
+                # A session may also start from an unusual in-progress inventory.
+                # Merge that route without performing any planning during runtime.
+                current_plan = self.planner.build_plan(target_plan, initial_state=state_key)
+                cached_plan.actions.update(current_plan.actions)
+            self._cache[target_plan] = cached_plan
+        if state.plan is not EventPlan.TARGET_500M:
+            self._merge_target_transition_routes(targets)
         self._prepared = True
         observations = self.adaptive_model.total_observations if self.adaptive_model else 0
         logger.info(
@@ -116,6 +131,38 @@ class PlannedSummerEventPolicy:
             observations,
             ", ".join(plan.value for plan in targets),
         )
+
+    def _merge_target_transition_routes(self, targets) -> None:
+        """Precompute continuations produced by the preceding target policy."""
+        for source_target, next_target in zip(targets, targets[1:]):
+            source_plan = self._cache[source_target]
+            next_plan = self._cache[next_target]
+            terminal_positions = set()
+            for state_key, action in source_plan.actions.items():
+                success_state = self.planner._success_state(state_key, action)
+                if (
+                    success_state[0] >= source_plan.target_m
+                    and success_state[0] < next_plan.target_m
+                ):
+                    terminal_positions.add(success_state[0])
+
+            # The game can briefly show the new position before reward-item
+            # recharge stars are rendered. Prepare every valid inventory at
+            # these few transition positions so that transient observations do
+            # not fall back or trigger runtime planning.
+            max_stacks = self.config.item_max_stacks
+            for position_m in sorted(terminal_positions):
+                for shield in range(max_stacks["shield"] + 1):
+                    for leap in range(max_stacks["leap"] + 1):
+                        for super_dash in range(max_stacks["super_dash"] + 1):
+                            transition_state = (position_m, shield, leap, super_dash)
+                            if transition_state in next_plan.actions:
+                                continue
+                            continuation = self.planner.build_plan(
+                                next_target,
+                                initial_state=transition_state,
+                            )
+                            next_plan.actions.update(continuation.actions)
 
     def choose_action(self, state: EventState) -> EventAction:
         if not state.active or self.config.has_ended():

@@ -29,6 +29,7 @@ PLAN_TARGETS = {
 
 class SummerEventBot:
     VERIFICATION_RETRY_DELAY_SECONDS = 0.25
+    REUSED_STATE_SETTLE_DELAY_SECONDS = 0.75
 
     def __init__(
         self,
@@ -39,6 +40,8 @@ class SummerEventBot:
         executor: EventExecutor,
         verification_attempts: int = 3,
         outcome_check_attempts: int = 30,
+        outcome_poll_interval_seconds: float = 0.2,
+        outcome_initial_delay_seconds: float = 0.0,
         probability_recorder=None,
     ):
         self.state = state
@@ -52,6 +55,12 @@ class SummerEventBot:
         if outcome_check_attempts <= 0:
             raise ValueError("Outcome check attempts must be positive")
         self.outcome_check_attempts = outcome_check_attempts
+        if outcome_poll_interval_seconds < 0:
+            raise ValueError("Outcome poll interval must not be negative")
+        self.outcome_poll_interval_seconds = outcome_poll_interval_seconds
+        if outcome_initial_delay_seconds < 0:
+            raise ValueError("Outcome initial delay must not be negative")
+        self.outcome_initial_delay_seconds = outcome_initial_delay_seconds
         self.stop_requested = False
         self._state_initialized = False
         self.probability_recorder = probability_recorder
@@ -150,6 +159,12 @@ class SummerEventBot:
             )
         self.executor.execute(action)
         outcome = self._observe_outcome(action)
+        if action is EventAction.SUPER_DASH and outcome is MoveOutcome.FAILURE:
+            self.state.active = False
+            raise EventRecognitionError(
+                "슈퍼럭키 Cancel 상태 확인 후 실패 결과창이 감지되어 안전하게 중지했습니다. "
+                "입력 적용 또는 결과창 인식을 확인해주세요."
+            )
         observation_tile = self.rules.observation_tile(old_position, action)
         if self.probability_recorder is not None:
             if self.probability_recorder.record(old_position, observation_tile, action, outcome):
@@ -160,13 +175,28 @@ class SummerEventBot:
                     "성공" if outcome is MoveOutcome.SUCCESS else "실패",
                 )
         self.state = self.rules.apply(self.state, action, outcome)
+        crossed_reward_tiles = (
+            tuple(self.rules.crossed_rewards(old_position, self.state.position_m))
+            if outcome is MoveOutcome.SUCCESS
+            else ()
+        )
+        reuse_outcome_state = getattr(self.observer, "reuse_last_outcome_state", None)
+        reused_observation = bool(
+            not crossed_reward_tiles
+            and reuse_outcome_state is not None
+            and reuse_outcome_state(self.state)
+        )
         self._record_plan_success_if_reached()
-        if outcome is MoveOutcome.SUCCESS:
-            for reward_m in self.rules.crossed_rewards(old_position, self.state.position_m):
-                logger.info("🏆 핵심 보상 구간 통과: %sM", reward_m)
+        for reward_m in crossed_reward_tiles:
+            logger.info("🏆 핵심 보상 구간 통과: %sM", reward_m)
         # The next decision must be based on a fresh scan rather than the
         # state predicted by the rules engine.
-        self._state_initialized = False
+        self._state_initialized = reused_observation
+        if reused_observation:
+            # A position change becomes readable slightly before the run button
+            # accepts the next input. Reusing the frame removes the old scan
+            # delay, so restore a CPU-idle settling window here.
+            time.sleep(self.REUSED_STATE_SETTLE_DELAY_SECONDS)
         return self.state
 
     def _record_plan_success_if_reached(self) -> None:
@@ -178,6 +208,9 @@ class SummerEventBot:
 
     def _observe_outcome(self, action: EventAction) -> MoveOutcome:
         last_error = None
+        last_pending = None
+        if self.outcome_initial_delay_seconds:
+            time.sleep(self.outcome_initial_delay_seconds)
         for _ in range(self.outcome_check_attempts):
             try:
                 return self._verify(
@@ -185,15 +218,24 @@ class SummerEventBot:
                     "이동 결과 인식",
                     deactivate_on_failure=False,
                 )
-            except EventOutcomePending:
+            except EventOutcomePending as exc:
+                last_pending = exc
+                time.sleep(self.outcome_poll_interval_seconds)
                 continue
             except EventRecognitionError as exc:
                 last_error = exc
                 continue
         self.state.active = False
         detail = f" 마지막 오류: {last_error}" if last_error is not None else ""
+        pending_detail = f" 마지막 대기: {last_pending}" if last_pending is not None else ""
+        state_detail = (
+            f" 행동: {action.display_name}, 기준 상태: {self.state.position_m}M "
+            f"(보호 {self.state.items.shield}, 도움닫기 {self.state.items.leap}, "
+            f"슈퍼럭키 {self.state.items.super_dash})."
+        )
         raise EventRecognitionError(
-            f"이동 후 M/스택 변화 또는 결과창을 {self.outcome_check_attempts}회 확인하지 못해 안전하게 중지했습니다.{detail}"
+            f"이동 후 M/스택 변화 또는 결과창을 {self.outcome_check_attempts}회 확인하지 못해 "
+            f"안전하게 중지했습니다.{state_detail}{pending_detail}{detail}"
         )
 
     def _observe_state(self) -> EventState:
@@ -206,6 +248,7 @@ class SummerEventBot:
                     deactivate_on_failure=False,
                 )
             except EventOutcomePending:
+                time.sleep(self.outcome_poll_interval_seconds)
                 continue
             except EventRecognitionError as exc:
                 last_error = exc

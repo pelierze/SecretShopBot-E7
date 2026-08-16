@@ -7,7 +7,10 @@
     "result_popup_title": [520, 80, 240, 80],
     "shield_stacks": [850, 555, 115, 45],
     "leap_stacks": [990, 555, 115, 45],
-    "super_dash_stacks": [1130, 555, 115, 45]
+    "super_dash_stacks": [1130, 555, 115, 45],
+    "shield_button": [845, 585, 120, 125],
+    "leap_button": [985, 585, 120, 125],
+    "super_dash_button": [1125, 585, 120, 125]
   },
   "tap_points": {
     "basic": [640, 655],

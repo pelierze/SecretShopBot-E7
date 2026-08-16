@@ -37,6 +37,7 @@ class EventScreenKind(str, Enum):
     NORMAL = "normal"
     REWARD_POPUP = "reward_popup"
     RESULT_POPUP = "result_popup"
+    UNCHANGED = "unchanged"
     UNKNOWN = "unknown"
 
 
@@ -50,6 +51,13 @@ class ObservedEventScreen:
 
 class SummerEventObserver:
     TEMPLATE_THRESHOLD = 0.82
+    SKILL_SELECTION_THRESHOLD = 0.93
+    TEMPLATE_REGION_PADDING = 10
+    SKILL_BUTTON_REGIONS = {
+        EventAction.SHIELD: "shield_button",
+        EventAction.LEAP: "leap_button",
+        EventAction.SUPER_DASH: "super_dash_button",
+    }
 
     def __init__(
         self,
@@ -60,16 +68,22 @@ class SummerEventObserver:
         screen_size: Tuple[int, int] = (1280, 720),
         ocr_engine=None,
         confirmed_probabilities=None,
+        optimize_screen_analysis: bool = False,
     ):
         self.adb = adb
         self.layout = layout
         self.screenshot_path = Path(screenshot_path)
         self.template_dir = Path(template_dir)
         self.screen_size = screen_size
+        self.optimize_screen_analysis = bool(optimize_screen_analysis)
         if ocr_engine is not None:
             self.ocr_engine = ocr_engine
         elif RapidOCR is not None:
-            self.ocr_engine = RapidOCR()
+            self.ocr_engine = (
+                RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
+                if self.optimize_screen_analysis
+                else RapidOCR()
+            )
         else:
             self.ocr_engine = None
         self.reward_template = self._read_image(self.template_dir / "reward_popup_title.png")
@@ -80,9 +94,41 @@ class SummerEventObserver:
         self.last_observed_success_probability: Optional[float] = None
         self.last_template_similarities = {"result": 0.0, "reward": 0.0}
         self.confirmed_probabilities = dict(confirmed_probabilities or {})
+        # Standard plans repeatedly inspect fixed popup positions. The 500M
+        # mode keeps the legacy full-screen search for maximum recognition
+        # tolerance.
+        self._reference_position_crop: Optional[np.ndarray] = None
+        self._last_analyzed_position_crop: Optional[np.ndarray] = None
+        self._last_outcome_screen: Optional[ObservedEventScreen] = None
 
     def set_confirmed_probability(self, position_m: int, probability: float) -> None:
         self.confirmed_probabilities[int(position_m)] = float(probability)
+
+    def is_skill_selected(self, action: EventAction) -> bool:
+        """Capture the skill button and verify that it changed to Cancel."""
+        region_name = self.SKILL_BUTTON_REGIONS.get(action)
+        if region_name is None or self.ocr_engine is None:
+            return False
+        self.screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.adb.screenshot(str(self.screenshot_path)):
+            logger.warning("스킬 Cancel 상태 확인용 스크린샷 캡처에 실패했습니다.")
+            return False
+        frame = self._read_image(self.screenshot_path)
+        return self.analyze_skill_selection(frame, action)
+
+    def analyze_skill_selection(self, frame: np.ndarray, action: EventAction) -> bool:
+        region_name = self.SKILL_BUTTON_REGIONS.get(action)
+        if region_name is None or self.ocr_engine is None or frame is None or frame.size == 0:
+            return False
+        crop = self._crop(frame, region_name)
+        enlarged = cv2.resize(crop, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        result, _ = self.ocr_engine(enlarged, use_cls=False)
+        for item in [] if not result else result:
+            text = re.sub(r"[^a-z]", "", str(item[1]).lower())
+            confidence = float(item[2])
+            if "cancel" in text and confidence >= self.SKILL_SELECTION_THRESHOLD:
+                return True
+        return False
 
     def observe(self, previous_state: EventState) -> EventState:
         screen = self.capture_and_analyze()
@@ -112,7 +158,18 @@ class SummerEventObserver:
         return previous_state
 
     def observe_outcome(self, action: EventAction) -> MoveOutcome:
-        screen = self.capture_and_analyze()
+        self._last_outcome_screen = None
+        screen = self.capture_and_analyze(
+            recognize_probability=False,
+            # A shield failure stays on the same M and is observable only
+            # through the reduced shield stack. Never skip stack recognition
+            # for that action just because the position crop is unchanged.
+            skip_ocr_if_position_unchanged=(
+                self.optimize_screen_analysis and action is not EventAction.SHIELD
+            ),
+        )
+        if screen.kind is EventScreenKind.UNCHANGED:
+            raise EventOutcomePending("현재 M 영역에 변화가 없어 OCR을 생략하고 다시 확인합니다.")
         if screen.kind is EventScreenKind.REWARD_POPUP:
             self._tap("close_reward_popup")
             raise EventOutcomePending("보상 팝업 처리 후 이동 결과를 기다리는 중입니다.")
@@ -130,6 +187,7 @@ class SummerEventObserver:
 
         before = self._before_action
         if screen.position_m > before.position_m:
+            self._last_outcome_screen = screen
             self._reset_lower_position_tracking()
             return MoveOutcome.SUCCESS
         if screen.position_m < before.position_m:
@@ -148,33 +206,81 @@ class SummerEventObserver:
                     before.position_m,
                     screen.position_m,
                 )
+                self._last_outcome_screen = screen
                 self._reset_lower_position_tracking()
                 return MoveOutcome.FAILURE
             raise EventOutcomePending("이동 애니메이션 중 현재 M 감소가 보여 재확인합니다.")
         if action is EventAction.SHIELD and screen.items.shield < before.items.shield:
+            self._last_outcome_screen = screen
             self._reset_lower_position_tracking()
             return MoveOutcome.FAILURE
         raise EventOutcomePending("현재 M과 스킬 스택의 확정 변화가 아직 없습니다.")
+
+    def reuse_last_outcome_state(self, state: EventState) -> bool:
+        """Promote a decisive standard-plan frame to the next action baseline."""
+        screen = self._last_outcome_screen
+        self._last_outcome_screen = None
+        if (
+            not self.optimize_screen_analysis
+            or screen is None
+            or screen.position_m is None
+            or screen.items is None
+            # Keep the fresh scan/OCR path where post-300M probability
+            # observations are collected.
+            or screen.position_m >= 300
+        ):
+            return False
+        state.position_m = screen.position_m
+        state.items = ItemInventory(**vars(screen.items))
+        self._before_action = EventState(
+            position_m=screen.position_m,
+            plan=state.plan,
+            items=ItemInventory(**vars(screen.items)),
+        )
+        if self._last_analyzed_position_crop is not None:
+            self._reference_position_crop = self._last_analyzed_position_crop.copy()
+        return True
 
     def _reset_lower_position_tracking(self) -> None:
         self._lower_position_key = None
         self._lower_position_count = 0
 
-    def capture_and_analyze(self) -> ObservedEventScreen:
+    def capture_and_analyze(
+        self,
+        recognize_probability: bool = True,
+        skip_ocr_if_position_unchanged: bool = False,
+    ) -> ObservedEventScreen:
         self.screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.adb.screenshot(str(self.screenshot_path)):
             raise EventRecognitionError("ADB 스크린샷 캡처에 실패했습니다.")
         frame = self._read_image(self.screenshot_path)
-        return self.analyze_frame(frame)
+        return self.analyze_frame(
+            frame,
+            recognize_probability=recognize_probability,
+            skip_ocr_if_position_unchanged=skip_ocr_if_position_unchanged,
+        )
 
-    def analyze_frame(self, frame: np.ndarray) -> ObservedEventScreen:
+    def analyze_frame(
+        self,
+        frame: np.ndarray,
+        recognize_probability: bool = True,
+        skip_ocr_if_position_unchanged: bool = False,
+    ) -> ObservedEventScreen:
         if frame is None or frame.size == 0:
             return ObservedEventScreen(EventScreenKind.UNKNOWN)
         height, width = frame.shape[:2]
         if (width, height) != self.screen_size:
             self.screen_size = (width, height)
-        result_similarity = self._template_similarity(frame, self.result_template)
-        reward_similarity = self._template_similarity(frame, self.reward_template)
+        if self.optimize_screen_analysis:
+            result_similarity = self._template_similarity_in_region(
+                frame, self.result_template, "result_popup_title"
+            )
+            reward_similarity = self._template_similarity_in_region(
+                frame, self.reward_template, "reward_popup_title"
+            )
+        else:
+            result_similarity = self._template_similarity(frame, self.result_template)
+            reward_similarity = self._template_similarity(frame, self.reward_template)
         self.last_template_similarities = {
             "result": result_similarity,
             "reward": reward_similarity,
@@ -183,9 +289,18 @@ class SummerEventObserver:
             return ObservedEventScreen(EventScreenKind.RESULT_POPUP)
         if reward_similarity >= self.TEMPLATE_THRESHOLD:
             return ObservedEventScreen(EventScreenKind.REWARD_POPUP)
+        position_crop = self._crop(frame, "current_node")
+        if (
+            skip_ocr_if_position_unchanged
+            and self._reference_position_crop is not None
+            and self._images_are_effectively_equal(position_crop, self._reference_position_crop)
+        ):
+            return ObservedEventScreen(EventScreenKind.UNCHANGED)
         try:
             position = self._recognize_position(frame)
-            if position in self.confirmed_probabilities:
+            if not recognize_probability:
+                success_probability = None
+            elif position in self.confirmed_probabilities:
                 success_probability = self.confirmed_probabilities[position]
             else:
                 try:
@@ -199,6 +314,9 @@ class SummerEventObserver:
             )
         except EventRecognitionError:
             return ObservedEventScreen(EventScreenKind.UNKNOWN)
+        self._last_analyzed_position_crop = position_crop.copy()
+        if recognize_probability:
+            self._reference_position_crop = position_crop.copy()
         return ObservedEventScreen(
             EventScreenKind.NORMAL,
             position_m=position,
@@ -315,6 +433,31 @@ class SummerEventObserver:
     def _crop(self, frame: np.ndarray, region_name: str) -> np.ndarray:
         x, y, width, height = self.layout.scale_box(region_name, self.screen_size)
         return frame[y:y + height, x:x + width]
+
+    def _template_similarity_in_region(
+        self,
+        frame: np.ndarray,
+        template: np.ndarray,
+        region_name: str,
+    ) -> float:
+        """Match a popup only around its configured title position."""
+        x, y, width, height = self.layout.scale_box(region_name, self.screen_size)
+        padding_x = max(1, round(self.TEMPLATE_REGION_PADDING * self.screen_size[0] / 1280))
+        padding_y = max(1, round(self.TEMPLATE_REGION_PADDING * self.screen_size[1] / 720))
+        left = max(0, x - padding_x)
+        top = max(0, y - padding_y)
+        right = min(frame.shape[1], x + width + padding_x)
+        bottom = min(frame.shape[0], y + height + padding_y)
+        return self._template_similarity(frame[top:bottom, left:right], template)
+
+    @staticmethod
+    def _images_are_effectively_equal(first: np.ndarray, second: np.ndarray) -> bool:
+        if first.shape != second.shape or first.size == 0:
+            return False
+        # A changed M digit can occupy only a tiny fraction of this crop, so an
+        # average-difference threshold can incorrectly suppress every OCR poll.
+        # screencap PNG is lossless; skip OCR only for a byte-identical region.
+        return bool(np.array_equal(first, second))
 
     @staticmethod
     def _template_similarity(frame: np.ndarray, template: np.ndarray) -> float:
