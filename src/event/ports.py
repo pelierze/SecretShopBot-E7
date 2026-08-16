@@ -15,6 +15,10 @@ class EventOutcomePending(RuntimeError):
     """Raised while an action animation has not produced a decisive screen change yet."""
 
 
+class EventOutcomeUnchanged(EventOutcomePending):
+    """Raised when a normal screen is repeatedly unchanged after an input."""
+
+
 class EventInputError(RuntimeError):
     """Raised when an input command cannot be delivered safely."""
 
