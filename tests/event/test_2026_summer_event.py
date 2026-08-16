@@ -553,6 +553,30 @@ class SummerEventPlannerTest(unittest.TestCase):
         self.assertEqual(action, expected)
         warning.assert_not_called()
 
+    def test_runtime_policy_precomputes_actual_200m_to_300m_transition_state(self):
+        config_path = Path(event_module.__file__).parent / "event_config.json"
+        config, _ = load_event_bundle(config_path)
+        policy = PlannedSummerEventPolicy(config, SummerEventPlanner(config))
+        policy.prepare(
+            EventState(
+                position_m=170,
+                plan=EventPlan.TARGET_200M,
+                items=ItemInventory(shield=1, leap=0, super_dash=1),
+            )
+        )
+        transitioned = EventState(
+            position_m=210,
+            plan=EventPlan.TARGET_200M,
+            items=ItemInventory(shield=0, leap=0, super_dash=0),
+        )
+
+        with patch.object(policy_module.logger, "warning") as warning:
+            action = policy.choose_action(transitioned)
+
+        self.assertIn((210, 0, 0, 0), policy._cache[EventPlan.TARGET_300M].actions)
+        self.assertIs(action, policy._cache[EventPlan.TARGET_300M].actions[(210, 0, 0, 0)])
+        warning.assert_not_called()
+
     def test_runtime_policy_continues_after_selected_target_with_remaining_items(self):
         config_path = Path(event_module.__file__).parent / "event_config.json"
         config, _ = load_event_bundle(config_path)
@@ -962,6 +986,50 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         sleep.assert_called_once_with(bot.REUSED_STATE_SETTLE_DELAY_SECONDS)
         self.assertTrue(bot._state_initialized)
 
+    def test_crossing_reward_forces_fresh_scan_before_next_action(self):
+        class RewardCrossingObserver:
+            def __init__(self):
+                self.reuse_calls = 0
+
+            def observe(self, state):
+                return state
+
+            def observe_outcome(self, action):
+                return MoveOutcome.SUCCESS
+
+            def reuse_last_outcome_state(self, state):
+                self.reuse_calls += 1
+                return True
+
+        class SuperDashPolicy:
+            def choose_action(self, state):
+                return EventAction.SUPER_DASH
+
+        class NoopExecutor:
+            def execute(self, action):
+                pass
+
+        observer = RewardCrossingObserver()
+        bot = event_module.SummerEventBot(
+            state=EventState(
+                position_m=180,
+                plan=EventPlan.TARGET_200M,
+                items=ItemInventory(shield=0, leap=0, super_dash=1),
+            ),
+            policy=SuperDashPolicy(),
+            rules=SummerEventRules(),
+            observer=observer,
+            executor=NoopExecutor(),
+        )
+
+        with patch.object(bot_module.time, "sleep") as sleep:
+            bot.step()
+
+        self.assertEqual(bot.state.position_m, 210)
+        self.assertEqual(observer.reuse_calls, 0)
+        self.assertFalse(bot._state_initialized)
+        sleep.assert_not_called()
+
     def test_initial_scan_beyond_target_counts_plan_success_only_once(self):
         class ExistingProgressObserver:
             def observe(self, state):
@@ -1147,6 +1215,34 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         self.assertEqual(sleep.call_count, 2)
         sleep.assert_called_with(0.2)
         self.assertEqual(outcomes, [])
+
+    def test_outcome_timeout_reports_action_state_and_last_pending_reason(self):
+        class PendingObserver:
+            def observe_outcome(self, action):
+                raise EventOutcomePending("현재 M 영역에 변화가 없음")
+
+        bot = event_module.SummerEventBot(
+            state=EventState(
+                position_m=210,
+                items=ItemInventory(shield=0, leap=0, super_dash=0),
+            ),
+            policy=None,
+            rules=SummerEventRules(),
+            observer=PendingObserver(),
+            executor=None,
+            outcome_check_attempts=1,
+            outcome_poll_interval_seconds=0,
+        )
+
+        with patch.object(bot_module.time, "sleep"):
+            with self.assertRaises(EventRecognitionError) as raised:
+                bot._observe_outcome(EventAction.BASIC)
+
+        message = str(raised.exception)
+        self.assertIn("행동: 달리기", message)
+        self.assertIn("기준 상태: 210M", message)
+        self.assertIn("보호 0, 도움닫기 0, 슈퍼럭키 0", message)
+        self.assertIn("마지막 대기: 현재 M 영역에 변화가 없음", message)
 
     def test_recognition_failure_batch_is_retried_before_stopping(self):
         calls = 0
@@ -1440,6 +1536,61 @@ class SummerEventObserverTest(unittest.TestCase):
         )
 
         self.assertFalse(observer.reuse_last_outcome_state(EventState(position_m=290)))
+
+    def test_optimized_shield_failure_checks_stack_when_position_is_unchanged(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            optimize_screen_analysis=True,
+        )
+        observer._before_action = EventState(
+            position_m=220,
+            items=ItemInventory(shield=2, leap=1, super_dash=1),
+        )
+        observed = ObservedEventScreen(
+            EventScreenKind.NORMAL,
+            position_m=220,
+            items=ItemInventory(shield=1, leap=1, super_dash=1),
+        )
+
+        with patch.object(
+            observer,
+            "capture_and_analyze",
+            return_value=observed,
+        ) as capture:
+            outcome = observer.observe_outcome(EventAction.SHIELD)
+
+        self.assertIs(outcome, MoveOutcome.FAILURE)
+        capture.assert_called_once_with(
+            recognize_probability=False,
+            skip_ocr_if_position_unchanged=False,
+        )
+
+    def test_optimized_basic_outcome_keeps_unchanged_position_shortcut(self):
+        event_root = Path(event_module.__file__).parent
+        observer = SummerEventObserver(
+            adb=RecordingTapDevice(),
+            layout=load_screen_layout(event_root / "screen_layout.json"),
+            screenshot_path=Path("unused.png"),
+            template_dir=Path("images") / "2026_summer_event",
+            optimize_screen_analysis=True,
+        )
+
+        with patch.object(
+            observer,
+            "capture_and_analyze",
+            return_value=ObservedEventScreen(EventScreenKind.UNCHANGED),
+        ) as capture:
+            with self.assertRaises(EventOutcomePending):
+                observer.observe_outcome(EventAction.BASIC)
+
+        capture.assert_called_once_with(
+            recognize_probability=False,
+            skip_ocr_if_position_unchanged=True,
+        )
 
     def test_recognizes_stylized_75_percent_from_real_screen(self):
         path = Path(r"E:\OneDrive\SC\Fraps\Screenshot_2026.08.03_22.45.35.771.png")

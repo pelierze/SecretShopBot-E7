@@ -440,14 +440,14 @@ class SessionView:
         self.total_refresh_label.grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
 
         self.mystic_title_label = ttk.Label(stats_grid, text="신비의 메달:")
-        self.mystic_title_label.grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
+        self.mystic_title_label.grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
         self.mystic_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
-        self.mystic_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
+        self.mystic_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
 
         self.bookmark_title_label = ttk.Label(stats_grid, text="성약의 책갈피:")
-        self.bookmark_title_label.grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_title_label.grid(row=0, column=2, sticky=tk.W, padx=5, pady=2)
         self.bookmark_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
-        self.bookmark_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
+        self.bookmark_label.grid(row=0, column=3, sticky=tk.W, padx=5, pady=2)
 
         self.elapsed_time_title_label = ttk.Label(stats_grid, text="경과 시간:")
         self.elapsed_time_title_label.grid(row=1, column=6, sticky=tk.W, padx=5, pady=2)

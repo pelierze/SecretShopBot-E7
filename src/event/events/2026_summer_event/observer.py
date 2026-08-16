@@ -161,7 +161,12 @@ class SummerEventObserver:
         self._last_outcome_screen = None
         screen = self.capture_and_analyze(
             recognize_probability=False,
-            skip_ocr_if_position_unchanged=self.optimize_screen_analysis,
+            # A shield failure stays on the same M and is observable only
+            # through the reduced shield stack. Never skip stack recognition
+            # for that action just because the position crop is unchanged.
+            skip_ocr_if_position_unchanged=(
+                self.optimize_screen_analysis and action is not EventAction.SHIELD
+            ),
         )
         if screen.kind is EventScreenKind.UNCHANGED:
             raise EventOutcomePending("현재 M 영역에 변화가 없어 OCR을 생략하고 다시 확인합니다.")
