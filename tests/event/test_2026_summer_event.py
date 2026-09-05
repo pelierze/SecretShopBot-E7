@@ -17,7 +17,12 @@ from src.event import (
     MoveOutcome,
     load_event_module,
 )
-from src.event.ports import EventInputError, EventOutcomePending, EventRecognitionError
+from src.event.ports import (
+    EventInputError,
+    EventOutcomePending,
+    EventOutcomeUnchanged,
+    EventRecognitionError,
+)
 
 
 event_module = importlib.import_module("src.event.events.2026_summer_event")
@@ -953,8 +958,11 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         self.assertEqual(bot.get_stats()["core_rewards_total"], 1)
         self.assertEqual(bot.get_stats()["rewards_100"], 1)
 
-    def test_reused_outcome_waits_for_next_input_to_become_ready(self):
+    def test_every_outcome_forces_fresh_scan_before_next_action(self):
         class ReusingObserver:
+            def __init__(self):
+                self.reuse_calls = 0
+
             def observe(self, state):
                 return state
 
@@ -962,6 +970,7 @@ class SummerEventBotSafetyTest(unittest.TestCase):
                 return MoveOutcome.SUCCESS
 
             def reuse_last_outcome_state(self, state):
+                self.reuse_calls += 1
                 return True
 
         class BasicPolicy:
@@ -972,19 +981,21 @@ class SummerEventBotSafetyTest(unittest.TestCase):
             def execute(self, action):
                 pass
 
+        observer = ReusingObserver()
         bot = event_module.SummerEventBot(
             state=EventState(),
             policy=BasicPolicy(),
             rules=SummerEventRules(),
-            observer=ReusingObserver(),
+            observer=observer,
             executor=NoopExecutor(),
         )
 
         with patch.object(bot_module.time, "sleep") as sleep:
             bot.step()
 
-        sleep.assert_called_once_with(bot.REUSED_STATE_SETTLE_DELAY_SECONDS)
-        self.assertTrue(bot._state_initialized)
+        self.assertEqual(observer.reuse_calls, 0)
+        self.assertFalse(bot._state_initialized)
+        sleep.assert_not_called()
 
     def test_crossing_reward_forces_fresh_scan_before_next_action(self):
         class RewardCrossingObserver:
@@ -1215,6 +1226,80 @@ class SummerEventBotSafetyTest(unittest.TestCase):
         self.assertEqual(sleep.call_count, 2)
         sleep.assert_called_with(0.2)
         self.assertEqual(outcomes, [])
+
+    def test_basic_input_is_retried_once_after_repeated_unchanged_screen(self):
+        outcomes = [
+            EventOutcomeUnchanged("현재 M과 스택 변화 없음")
+            for _ in range(event_module.SummerEventBot.BASIC_RETRY_UNCHANGED_ATTEMPTS)
+        ] + [MoveOutcome.SUCCESS]
+
+        class PendingObserver:
+            def observe_outcome(self, action):
+                result = outcomes.pop(0)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+
+        class RecordingExecutor:
+            def __init__(self):
+                self.actions = []
+
+            def execute(self, action):
+                self.actions.append(action)
+
+        executor = RecordingExecutor()
+        bot = event_module.SummerEventBot(
+            state=EventState(position_m=220),
+            policy=None,
+            rules=SummerEventRules(),
+            observer=PendingObserver(),
+            executor=executor,
+            outcome_check_attempts=15,
+            outcome_poll_interval_seconds=0,
+        )
+
+        with patch.object(bot_module.time, "sleep"):
+            outcome = bot._observe_outcome(EventAction.BASIC)
+
+        self.assertIs(outcome, MoveOutcome.SUCCESS)
+        self.assertEqual(executor.actions, [EventAction.BASIC])
+
+    def test_non_basic_action_is_never_retried_from_unchanged_screen(self):
+        outcomes = [
+            EventOutcomeUnchanged("현재 M과 스택 변화 없음")
+            for _ in range(event_module.SummerEventBot.BASIC_RETRY_UNCHANGED_ATTEMPTS)
+        ] + [MoveOutcome.SUCCESS]
+
+        class PendingObserver:
+            def observe_outcome(self, action):
+                result = outcomes.pop(0)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+
+        class RecordingExecutor:
+            def __init__(self):
+                self.actions = []
+
+            def execute(self, action):
+                self.actions.append(action)
+
+        executor = RecordingExecutor()
+        bot = event_module.SummerEventBot(
+            state=EventState(position_m=220),
+            policy=None,
+            rules=SummerEventRules(),
+            observer=PendingObserver(),
+            executor=executor,
+            outcome_check_attempts=15,
+            outcome_poll_interval_seconds=0,
+        )
+
+        with patch.object(bot_module.time, "sleep"):
+            outcome = bot._observe_outcome(EventAction.SHIELD)
+
+        self.assertIs(outcome, MoveOutcome.SUCCESS)
+        self.assertEqual(executor.actions, [])
 
     def test_outcome_timeout_reports_action_state_and_last_pending_reason(self):
         class PendingObserver:

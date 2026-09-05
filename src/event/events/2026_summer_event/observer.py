@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 
 from ...models import EventAction, EventState, ItemInventory, MoveOutcome
-from ...ports import EventOutcomePending, EventRecognitionError
+from ...ports import EventOutcomePending, EventOutcomeUnchanged, EventRecognitionError
 from .screen_layout import SummerEventScreenLayout
 
 
@@ -169,7 +169,7 @@ class SummerEventObserver:
             ),
         )
         if screen.kind is EventScreenKind.UNCHANGED:
-            raise EventOutcomePending("현재 M 영역에 변화가 없어 OCR을 생략하고 다시 확인합니다.")
+            raise EventOutcomeUnchanged("현재 M 영역에 변화가 없어 OCR을 생략하고 다시 확인합니다.")
         if screen.kind is EventScreenKind.REWARD_POPUP:
             self._tap("close_reward_popup")
             raise EventOutcomePending("보상 팝업 처리 후 이동 결과를 기다리는 중입니다.")
@@ -214,7 +214,7 @@ class SummerEventObserver:
             self._last_outcome_screen = screen
             self._reset_lower_position_tracking()
             return MoveOutcome.FAILURE
-        raise EventOutcomePending("현재 M과 스킬 스택의 확정 변화가 아직 없습니다.")
+        raise EventOutcomeUnchanged("현재 M과 스킬 스택의 확정 변화가 아직 없습니다.")
 
     def reuse_last_outcome_state(self, state: EventState) -> bool:
         """Promote a decisive standard-plan frame to the next action baseline."""

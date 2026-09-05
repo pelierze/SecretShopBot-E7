@@ -6,7 +6,13 @@ import logging
 import time
 
 from ...models import EventAction, EventState, MoveOutcome
-from ...ports import EventExecutor, EventObserver, EventOutcomePending, EventRecognitionError
+from ...ports import (
+    EventExecutor,
+    EventObserver,
+    EventOutcomePending,
+    EventOutcomeUnchanged,
+    EventRecognitionError,
+)
 from .policy import SummerEventPolicy
 from .rules import SummerEventRules
 
@@ -29,7 +35,7 @@ PLAN_TARGETS = {
 
 class SummerEventBot:
     VERIFICATION_RETRY_DELAY_SECONDS = 0.25
-    REUSED_STATE_SETTLE_DELAY_SECONDS = 0.75
+    BASIC_RETRY_UNCHANGED_ATTEMPTS = 8
 
     def __init__(
         self,
@@ -157,6 +163,8 @@ class SummerEventBot:
                 old_position,
                 getattr(self.state.items, action.value),
             )
+        else:
+            logger.info("🏃 이벤트 일반 달리기 실행: 현재 %sM", old_position)
         self.executor.execute(action)
         outcome = self._observe_outcome(action)
         if action is EventAction.SUPER_DASH and outcome is MoveOutcome.FAILURE:
@@ -180,23 +188,12 @@ class SummerEventBot:
             if outcome is MoveOutcome.SUCCESS
             else ()
         )
-        reuse_outcome_state = getattr(self.observer, "reuse_last_outcome_state", None)
-        reused_observation = bool(
-            not crossed_reward_tiles
-            and reuse_outcome_state is not None
-            and reuse_outcome_state(self.state)
-        )
         self._record_plan_success_if_reached()
         for reward_m in crossed_reward_tiles:
             logger.info("🏆 핵심 보상 구간 통과: %sM", reward_m)
         # The next decision must be based on a fresh scan rather than the
         # state predicted by the rules engine.
-        self._state_initialized = reused_observation
-        if reused_observation:
-            # A position change becomes readable slightly before the run button
-            # accepts the next input. Reusing the frame removes the old scan
-            # delay, so restore a CPU-idle settling window here.
-            time.sleep(self.REUSED_STATE_SETTLE_DELAY_SECONDS)
+        self._state_initialized = False
         return self.state
 
     def _record_plan_success_if_reached(self) -> None:
@@ -209,6 +206,8 @@ class SummerEventBot:
     def _observe_outcome(self, action: EventAction) -> MoveOutcome:
         last_error = None
         last_pending = None
+        unchanged_attempts = 0
+        basic_retried = False
         if self.outcome_initial_delay_seconds:
             time.sleep(self.outcome_initial_delay_seconds)
         for _ in range(self.outcome_check_attempts):
@@ -220,6 +219,26 @@ class SummerEventBot:
                 )
             except EventOutcomePending as exc:
                 last_pending = exc
+                if isinstance(exc, EventOutcomeUnchanged):
+                    unchanged_attempts += 1
+                else:
+                    unchanged_attempts = 0
+                if (
+                    action is EventAction.BASIC
+                    and not basic_retried
+                    and unchanged_attempts >= self.BASIC_RETRY_UNCHANGED_ATTEMPTS
+                ):
+                    logger.warning(
+                        "일반 달리기 후 동일 화면이 %s회 지속되어 입력을 한 번만 재시도합니다: %sM",
+                        unchanged_attempts,
+                        self.state.position_m,
+                    )
+                    self.executor.execute(action)
+                    basic_retried = True
+                    unchanged_attempts = 0
+                    if self.outcome_initial_delay_seconds:
+                        time.sleep(self.outcome_initial_delay_seconds)
+                    continue
                 time.sleep(self.outcome_poll_interval_seconds)
                 continue
             except EventRecognitionError as exc:
