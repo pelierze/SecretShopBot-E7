@@ -6,7 +6,9 @@ import contextvars
 import copy
 import logging
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -38,7 +40,7 @@ if __package__ in (None, ""):
     from src.adb_controller import ADBController
     from src.equipment_reroll_bot import EquipmentRerollBot
     from src.event import EventPlan, EventState, load_event_module
-    from src.image_matcher import read_image
+    from src.image_matcher import read_image, matching_failure_guidance
     from src.json_macro_engine import JsonMacroEngine
     from src.penguin_bot import PenguinBot
     from src.release_checker import get_available_update
@@ -49,7 +51,7 @@ else:
     from .adb_controller import ADBController
     from .equipment_reroll_bot import EquipmentRerollBot
     from .event import EventPlan, EventState, load_event_module
-    from .image_matcher import read_image
+    from .image_matcher import read_image, matching_failure_guidance
     from .json_macro_engine import JsonMacroEngine
     from .penguin_bot import PenguinBot
     from .release_checker import get_available_update
@@ -2075,9 +2077,15 @@ class SessionView:
                 logger.info("📄 테스트 이미지: %s", Path(image_path).name)
                 logger.info("=" * 60)
 
-                screenshot_path = self.runtime_dir / "test_screenshot.png"
-                screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-                self.adb_controller.screenshot(str(screenshot_path))
+                self.runtime_dir.mkdir(parents=True, exist_ok=True)
+                diagnostic_dir = Path(tempfile.mkdtemp(
+                    prefix=time.strftime("image_test_%Y%m%d_%H%M%S_"),
+                    dir=str(self.runtime_dir),
+                ))
+                screenshot_path = diagnostic_dir / "screenshot.png"
+                if not self.adb_controller.screenshot(str(screenshot_path)):
+                    logger.error("❌ 스크린샷 캡처에 실패하여 이미지 매칭 테스트를 중단합니다.")
+                    return
                 logger.info("📸 스크린샷 저장: %s", screenshot_path)
 
                 screenshot = read_image(str(screenshot_path))
@@ -2085,13 +2093,20 @@ class SessionView:
                     logger.error("❌ 스크린샷을 로드할 수 없습니다.")
                     return
 
-                template = read_image(image_path)
+                template_path = diagnostic_dir / ("template" + Path(image_path).suffix)
+                shutil.copy2(image_path, template_path)
+                template = read_image(str(template_path))
                 if template is None:
                     logger.error("❌ 테스트 이미지를 로드할 수 없습니다: %s", image_path)
                     return
 
                 logger.info("✅ 스크린샷 크기: %s", screenshot.shape)
                 logger.info("✅ 템플릿 크기: %s", template.shape)
+                logger.info("📁 진단 파일 보관: %s (원본 화면 및 사용한 템플릿)", diagnostic_dir)
+                if (template.shape[0] > screenshot.shape[0]
+                        or template.shape[1] > screenshot.shape[1]):
+                    logger.error("❌ 템플릿이 스크린샷보다 큽니다. 해상도와 템플릿 크기를 확인하세요.")
+                    return
                 image_filename = Path(image_path).stem.lower()
                 current_threshold = 0.8
                 threshold_name = "기본"
@@ -2128,9 +2143,8 @@ class SessionView:
                     logger.info("✅ 현재 임계값(%s%%)으로 매칭 성공!", int(current_threshold * 100))
                     logger.info("📍 매칭 위치: %s", max_loc)
                 else:
-                    recommended = int(max_val * 0.95 * 100)
                     logger.warning("❌ 현재 임계값(%s%%)으로 매칭 실패", int(current_threshold * 100))
-                    logger.warning("💡 권장 임계값: %s%% (최대값의 95%%)", recommended)
+                    logger.warning("💡 %s", matching_failure_guidance(max_val))
                 logger.info("=" * 60)
             except Exception as e:
                 logger.error("테스트 중 오류 발생: %s", e, exc_info=True)

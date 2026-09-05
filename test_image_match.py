@@ -9,6 +9,7 @@ def test_image_matching():
     """이미지 매칭 테스트"""
     try:
         import cv2
+        from src.image_matcher import read_image, matching_failure_guidance
     except ModuleNotFoundError as exc:
         raise unittest.SkipTest("OpenCV가 설치되지 않아 이미지 매칭 테스트를 건너뜁니다.") from exc
 
@@ -30,8 +31,8 @@ def test_image_matching():
         return
     
     # 이미지 로드
-    screenshot = cv2.imread(str(screenshot_path))
-    template = cv2.imread(str(refresh_button_path))
+    screenshot = read_image(str(screenshot_path))
+    template = read_image(str(refresh_button_path))
     
     if screenshot is None:
         print(f"❌ 스크린샷을 로드할 수 없습니다: {screenshot_path}")
@@ -43,13 +44,16 @@ def test_image_matching():
     
     print(f"✅ 스크린샷 크기: {screenshot.shape}")
     print(f"✅ 템플릿 크기: {template.shape}")
+    if template.shape[0] > screenshot.shape[0] or template.shape[1] > screenshot.shape[1]:
+        print("❌ 템플릿이 스크린샷보다 큽니다. 해상도와 템플릿 크기를 확인하세요.")
+        return
     
     # 다양한 임계값으로 테스트
     thresholds = [0.99, 0.95, 0.92, 0.90, 0.85, 0.80, 0.75, 0.70]
     
+    result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
+    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
     for threshold in thresholds:
-        result = cv2.matchTemplate(screenshot, template, cv2.TM_CCOEFF_NORMED)
-        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
         
         if max_val >= threshold:
             print(f"✅ 임계값 {int(threshold*100)}%: 매칭 성공! (신뢰도: {max_val:.4f}, 위치: {max_loc})")
@@ -58,7 +62,8 @@ def test_image_matching():
     
     print("\n" + "="*60)
     print(f"최대 매칭 신뢰도: {max_val:.4f} ({int(max_val*100)}%)")
-    print(f"권장 임계값: {int(max_val*0.95*100)}% (최대값의 95%)")
+    if max_val < 0.95:
+        print(matching_failure_guidance(max_val))
     print("="*60)
 
 if __name__ == "__main__":
