@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from pathlib import Path
 import tempfile
 
@@ -40,6 +40,57 @@ class DummyMatcher:
 
 
 class SecretShopBotScrollTest(unittest.TestCase):
+    @patch("src.secret_shop_bot.time.sleep")
+    def test_natural_refresh_scans_every_fifteen_minutes_without_paid_refresh(self, sleep):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bot = SecretShopBot(DummyADB(), runtime_dir=temp_dir)
+            now = [0.0]
+            def advance(seconds):
+                now[0] += seconds
+                if now[0] >= 902:
+                    bot.set_user_action("stop")
+            sleep.side_effect = advance
+            scans = []
+            def scan(page_num):
+                scans.append((page_num, now[0]))
+                return {"mystic_medal": (1, 2, 3, 4)}
+            bot._scan_shop_page = scan
+            bot._purchase_item = Mock(return_value=True)
+            bot._refresh_shop = Mock()
+            bot._refresh_shop_with_recovery = Mock()
+            with patch("src.secret_shop_bot.time.monotonic", side_effect=lambda: now[0]):
+                stats = bot.run_natural_refresh(3)
+            self.assertEqual([page for page, _ in scans], [1, 2, 1, 2])
+            self.assertAlmostEqual(scans[2][1] - scans[0][1], 900)
+            self.assertEqual(bot._purchase_item.call_count, 4)
+            self.assertEqual(stats["completed_runs"], 2)
+            self.assertEqual(stats["successful_refreshes"], 0)
+            self.assertEqual(stats["total_refreshes"], 0)
+            bot._refresh_shop.assert_not_called()
+            bot._refresh_shop_with_recovery.assert_not_called()
+            self.assertEqual(len(bot.adb.calls), 4)
+
+    @patch("src.secret_shop_bot.time.sleep")
+    def test_natural_refresh_pause_waits_and_stop_interrupts(self, sleep):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bot = SecretShopBot(DummyADB(), runtime_dir=temp_dir)
+            bot.set_user_action("pause")
+            sleep.side_effect = lambda _: bot.set_user_action("stop")
+            stats = bot.run_natural_refresh(3)
+            self.assertEqual(stats["completed_runs"], 0)
+            self.assertEqual(bot.adb.calls, [])
+
+    @patch("src.secret_shop_bot.time.sleep", return_value=None)
+    def test_natural_refresh_stops_on_purchase_failure(self, sleep):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bot = SecretShopBot(DummyADB(), runtime_dir=temp_dir)
+            bot._wait_natural_refresh = Mock(return_value=True)
+            bot._scan_shop_page = Mock(return_value={"mystic_medal": (1, 2, 3, 4)})
+            bot._purchase_item = Mock(return_value=False)
+            stats = bot.run_natural_refresh(3)
+            self.assertEqual(stats["completed_runs"], 0)
+            bot._scan_shop_page.assert_called_once_with(page_num=1)
+
     def test_runtime_dir_uses_session_specific_screenshot_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bot = SecretShopBot(DummyADB(), runtime_dir=temp_dir, automation_settings={})

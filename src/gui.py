@@ -339,6 +339,15 @@ class SessionView:
         self.refresh_count_var.trace_add("write", self._sync_sky_stones_from_refresh_count)
         self.sky_stone_budget_var.trace_add("write", self._sync_refresh_count_from_sky_stones)
 
+        self.natural_refresh_var = tk.BooleanVar(value=False)
+        self.natural_refresh_checkbox = ttk.Checkbutton(
+            self.settings_frame,
+            text="자연 갱신만 구매 (하늘석 0개 / 15분 간격 / 중지까지)",
+            variable=self.natural_refresh_var,
+            command=self._update_natural_refresh_controls,
+        )
+        self.natural_refresh_checkbox.grid(row=3, column=0, columnspan=6, sticky=tk.W, padx=5, pady=5)
+
         self.buy_count_label = ttk.Label(self.settings_frame, text="구매 완료 검증 횟수:")
         self.buy_count_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
         self.buy_count_entry = ttk.Entry(self.settings_frame, width=10)
@@ -1180,6 +1189,8 @@ class SessionView:
 
     def _update_macro_dependent_controls(self):
         runner = self._get_selected_runner()
+        if getattr(self, "natural_refresh_var", None) is not None and self.natural_refresh_var.get():
+            runner = "secret_shop"
         if runner == "steps":
             self.buy_count_label.config(text=f"{self.buy_count_default_label_text} (steps 매크로 미사용)")
             self.buy_count_unit_label.config(text=self.buy_count_steps_unit_text)
@@ -1299,6 +1310,12 @@ class SessionView:
         profile = "mumu" if self.mumu_mode_var.get() else "default"
         self.adb_controller.set_input_profile(profile)
 
+    def _update_natural_refresh_controls(self):
+        state = tk.DISABLED if self.is_running or self.natural_refresh_var.get() else tk.NORMAL
+        self.refresh_count_entry.config(state=state)
+        self.sky_stone_budget_entry.config(state=state)
+        self._update_macro_dependent_controls()
+
     def _start_bot(self):
         with log_session(self.name):
             if self.is_running:
@@ -1310,8 +1327,9 @@ class SessionView:
             self.was_stopped_by_user = False
 
             try:
-                refresh_count = int(self.refresh_count_entry.get())
-                sky_stone_budget = int(self.sky_stone_budget_entry.get())
+                natural_refresh = self.natural_refresh_var.get()
+                refresh_count = 0 if natural_refresh else int(self.refresh_count_entry.get())
+                sky_stone_budget = 0 if natural_refresh else int(self.sky_stone_budget_entry.get())
                 buy_count = int(self.buy_count_entry.get())
                 thresholds = {
                     key: int(value) / 100.0
@@ -1326,9 +1344,11 @@ class SessionView:
                     "refresh_button": int(self.refresh_button_threshold.get()) / 100.0,
                 })
                 if (
-                    refresh_count <= 0
-                    or sky_stone_budget < self.SKY_STONES_PER_REFRESH
-                    or refresh_count != self._sky_stones_to_refresh_count(sky_stone_budget)
+                    (not natural_refresh and (
+                        refresh_count <= 0
+                        or sky_stone_budget < self.SKY_STONES_PER_REFRESH
+                        or refresh_count != self._sky_stones_to_refresh_count(sky_stone_budget)
+                    ))
                     or buy_count <= 0
                 ):
                     raise ValueError()
@@ -1348,7 +1368,7 @@ class SessionView:
             self.runtime_dir.mkdir(parents=True, exist_ok=True)
             automation_settings = self._build_shop_automation_settings()
 
-            if runner == "steps":
+            if runner == "steps" and not natural_refresh:
                 self.bot = JsonMacroEngine(
                     self.adb_controller,
                     macro_definition=selected_macro,
@@ -1377,7 +1397,7 @@ class SessionView:
                 "covenant_bookmark_bought": 0,
                 "friendship_point_bought": 0,
             })
-            self.bot_thread = threading.Thread(target=self._run_bot, args=(refresh_count, buy_count), daemon=True)
+            self.bot_thread = threading.Thread(target=self._run_bot, args=(refresh_count, buy_count, natural_refresh), daemon=True)
             self.bot_thread.start()
 
     def _start_reroll_bot(self):
@@ -1636,12 +1656,15 @@ class SessionView:
         self.selected_macro_id = macro.get("id", "secret_shop")
         return macro
 
-    def _run_bot(self, refresh_count, buy_count):
+    def _run_bot(self, refresh_count, buy_count, natural_refresh=False):
         with log_session(self.name):
             has_error = False
             try:
                 self.root.after(500, self._update_running_state)
-                final_stats = self.bot.run(refresh_count, buy_count)
+                if natural_refresh:
+                    final_stats = self.bot.run_natural_refresh(buy_count)
+                else:
+                    final_stats = self.bot.run(refresh_count, buy_count)
                 self.root.after(0, lambda: self._update_stats(final_stats))
                 self.log(self._format_stats_summary("✅ 자동화 완료", final_stats))
             except Exception as e:
@@ -1879,6 +1902,8 @@ class SessionView:
             self._update_macro_dependent_controls()
         self.debug_checkbox.config(state=state)
         self.friendship_point_checkbox.config(state=state)
+        self.natural_refresh_checkbox.config(state=state)
+        self._update_natural_refresh_controls()
         self.mumu_checkbox.config(state=state)
         self._set_reroll_settings_state(state)
         if not running:
