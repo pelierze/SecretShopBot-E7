@@ -39,6 +39,7 @@ class SecretShopBot:
     # 이미지 파일 경로 (상대 경로)
     ITEMS_DIR = "images/items"
     BUTTONS_DIR = "images/buttons"
+    NATURAL_REFRESH_INTERVAL = 15 * 60
     
     # 구매할 아이템 이미지 파일명
     MYSTIC_MEDAL = "mystic_medal.png"  # 신비의 메달
@@ -354,6 +355,45 @@ class SecretShopBot:
         )
         
         return self.stats
+
+    def run_natural_refresh(self, buy_count_per_item: int) -> Dict:
+        """자연 갱신 상품만 15분마다 확인합니다. 유료 갱신은 하지 않습니다."""
+        self.stats["start_time"] = time.time()
+        logger.info("자연 갱신 구매 시작 - 하늘석 사용 없음, 15분 간격, 중지할 때까지 실행")
+        while self._wait_natural_refresh(0):
+            cycle_started = time.monotonic()
+            self._scroll_up()
+            if not self._wait_natural_refresh(self._timing("after_scroll", 0.5)):
+                break
+            for page_num in (1, 2):
+                if not self._wait_natural_refresh(0):
+                    return self._finish_stats()
+                if page_num == 2:
+                    self._scroll_down()
+                    if not self._wait_natural_refresh(self._timing("after_scroll", 0.5)):
+                        return self._finish_stats()
+                for item_name, location in self._scan_shop_page(page_num=page_num).items():
+                    if not self._wait_natural_refresh(0):
+                        return self._finish_stats()
+                    if not self._purchase_item(item_name, location, buy_count_per_item):
+                        logger.error("구매 검증 실패 - 자연 갱신 구매를 중지합니다.")
+                        return self._finish_stats()
+            self.stats["completed_runs"] += 1
+            logger.info("자연 갱신 상품 확인 완료 (%s회) - 다음 확인까지 대기", self.stats["completed_runs"])
+            remaining = max(0, self.NATURAL_REFRESH_INTERVAL - (time.monotonic() - cycle_started))
+            if not self._wait_natural_refresh(remaining):
+                break
+        return self._finish_stats()
+
+    def _wait_natural_refresh(self, seconds: float) -> bool:
+        """대기 중에는 ADB를 호출하지 않고 일시정지/중지에 응답합니다."""
+        deadline = time.monotonic() + seconds
+        while self.user_action != "stop":
+            remaining = deadline - time.monotonic()
+            if not self.paused and remaining <= 0:
+                return True
+            time.sleep(0.1 if self.paused else min(0.1, remaining))
+        return False
 
     def _finish_stats(self) -> Dict:
         """종료 시각과 소요 시간을 기록하고 통계를 반환합니다."""

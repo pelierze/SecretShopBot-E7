@@ -5,6 +5,19 @@ from src.gui import SessionView
 
 
 class SessionViewFormattingTest(unittest.TestCase):
+    def test_natural_refresh_disables_paid_inputs_and_restores_them(self):
+        view = object.__new__(SessionView)
+        view.is_running = False
+        view.natural_refresh_var = Mock()
+        view.refresh_count_entry = Mock()
+        view.sky_stone_budget_entry = Mock()
+        view._update_macro_dependent_controls = Mock()
+        for enabled, expected_state in ((True, "disabled"), (False, "normal")):
+            view.natural_refresh_var.get.return_value = enabled
+            view._update_natural_refresh_controls()
+            view.refresh_count_entry.config.assert_called_with(state=expected_state)
+            view.sky_stone_budget_entry.config.assert_called_with(state=expected_state)
+
     def test_refresh_count_is_converted_to_sky_stones(self):
         self.assertEqual(SessionView._refresh_count_to_sky_stones(100), 300)
 

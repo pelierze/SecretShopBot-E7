@@ -14,6 +14,21 @@ os.environ['OPENCV_LOG_LEVEL'] = 'ERROR'
 logger = logging.getLogger(__name__)
 
 
+def matching_failure_guidance(score: float) -> str:
+    """A best match alone cannot establish that the requested item is present."""
+    if score < 0.70:
+        return (
+            "매칭 신뢰도가 낮아 임계값 하향을 권장하지 않습니다. "
+            "대상 아이템이 현재 화면에 완전히 보이는지, 팝업에 가려지지 않았는지 확인하세요. "
+            "화면 해상도와 DPI, 템플릿의 아이콘 크기·모양도 확인하세요."
+        )
+    return (
+        "최대 매칭 점수만으로 적정 임계값을 결정할 수 없습니다. "
+        "저장된 화면과 템플릿을 비교하고 대상 아이템이 없는 화면에서도 "
+        "오인식하지 않는지 확인한 후 임계값을 조정하세요."
+    )
+
+
 def read_image(path: str, flags: int = cv2.IMREAD_COLOR):
     """Read an image from paths that may contain non-ASCII characters."""
     try:
