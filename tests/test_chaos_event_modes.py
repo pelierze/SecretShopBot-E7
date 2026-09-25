@@ -57,6 +57,24 @@ class EventModesTest(unittest.TestCase):
         self.assertEqual(self.observer.known_event(frame),'abandoned_pack')
         self.assertEqual(self.observer.event_choice(frame),(648,556,362,131))
 
+    def test_registered_events_follow_safe_priority(self):
+        cases = [
+            ('event_prayer_stone_live.png', 'prayer_stone', (648, 556, 362, 131)),
+            ('event_ancient_mural_live.png', 'ancient_mural', (838, 556, 362, 131)),
+            ('event_broken_trap_live.png', 'broken_trap', (268, 556, 362, 131)),
+            ('event_broken_mask_live.png', 'broken_mask', (838, 556, 362, 131)),
+        ]
+        for file, expected_id, expected_choice in cases:
+            with self.subTest(file=file):
+                frame = self.screen(file)
+                self.assertEqual(self.observer.known_event(frame), expected_id)
+                self.assertEqual(self.observer.event_choice(frame), expected_choice)
+
+    def test_recruit_reward_classified_for_skip(self):
+        frame = self.screen('event_recruit_reward_live.png')
+        self.assertEqual(self.observer.classify(frame), 'recruit_reward')
+        self.assertIsNotNone(self.observer.find(frame, 'recruit_continue'))
+
     def test_dim_and_forbidden_candidates_excluded(self):
         frame = self.screen()
         cards = self.observer.event_cards(frame)

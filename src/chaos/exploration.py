@@ -277,7 +277,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
     def _event_transition(self, previous_signature=None):
         states = {'battle_setup','battle','map','story','story_confirm','rank_menu','event_result',
-                  'event_loot_popup','unknown_event_result','unknown_event','loot','unclaimed_reward'}
+                  'event_loot_popup','unknown_event_result','unknown_event','loot','unclaimed_reward','recruit_reward'}
         def changed(screen):
             state = self._classify(screen)
             if state == 'unknown_event' and self._event_signature(screen) == previous_signature:
@@ -366,6 +366,14 @@ class NodeProgressionBot(KnightRecruitmentBot):
             self._state('보상 확인 후 복귀', {'map','story','story_confirm'})
         if state not in ('event_result','unknown_event_result'): self.stats['nodes'] += 1
 
+    def _skip_recruit_reward(self):
+        self._guarded_tap('영웅 영입 건너뛰고 계속 탐사하기', 'recruit_reward', 'recruit_continue', exiting=True)
+        allowed = {'map','story','story_confirm','unclaimed_reward','event_result','unknown_event_result'}
+        state = self._state('영웅 영입 건너뛰기 후 확인', allowed)
+        if state == 'unclaimed_reward':
+            self._guarded_tap('추가 영웅 보상 없이 진행', state, 'story_confirm', exiting=True)
+            self._state('보상 확인 후 복귀', {'map','story','story_confirm'})
+
     def _select_node(self):
         def choose(screen):
             if self.observer.classify(screen) != 'map': return None
@@ -439,6 +447,8 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     self._state('전투 결과 확인', {'victory'})
                 elif state == 'victory':
                     self._victory()
+                elif state == 'recruit_reward':
+                    self._skip_recruit_reward()
                 else:
                     raise RuntimeError(f'{state}: 중간 화면에서 재개할 수 없습니다. 지도에서 시작해 주세요.')
             self._record('end')

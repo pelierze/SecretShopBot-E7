@@ -1206,6 +1206,210 @@
       ],
       "threshold": 0.93,
       "max_color_error": 0.055
+    },
+    "event_prayer_stone": {
+      "file": "images/chaos/node_progression/raw/event_prayer_stone_live.png",
+      "crop": [
+        435,
+        468,
+        412,
+        36
+      ],
+      "region": [
+        415,
+        455,
+        450,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_prayer_read": {
+      "file": "images/chaos/node_progression/raw/event_prayer_stone_live.png",
+      "crop": [
+        720,
+        584,
+        218,
+        34
+      ],
+      "region": [
+        700,
+        570,
+        258,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_ancient_mural": {
+      "file": "images/chaos/node_progression/raw/event_ancient_mural_live.png",
+      "crop": [
+        270,
+        458,
+        744,
+        34
+      ],
+      "region": [
+        250,
+        445,
+        784,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_mural_fuel": {
+      "file": "images/chaos/node_progression/raw/event_ancient_mural_live.png",
+      "crop": [
+        888,
+        586,
+        266,
+        30
+      ],
+      "region": [
+        868,
+        572,
+        300,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_broken_trap": {
+      "file": "images/chaos/node_progression/raw/event_broken_trap_live.png",
+      "crop": [
+        305,
+        460,
+        674,
+        32
+      ],
+      "region": [
+        285,
+        445,
+        714,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_trap_battle": {
+      "file": "images/chaos/node_progression/raw/event_broken_trap_live.png",
+      "crop": [
+        330,
+        584,
+        236,
+        34
+      ],
+      "region": [
+        310,
+        570,
+        276,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_broken_trap_result": {
+      "file": "images/chaos/node_progression/raw/event_broken_trap_result_live.png",
+      "crop": [
+        310,
+        454,
+        665,
+        32
+      ],
+      "region": [
+        290,
+        440,
+        705,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_broken_mask": {
+      "file": "images/chaos/node_progression/raw/event_broken_mask_live.png",
+      "crop": [
+        290,
+        468,
+        700,
+        36
+      ],
+      "region": [
+        270,
+        455,
+        740,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_mask_incense": {
+      "file": "images/chaos/node_progression/raw/event_broken_mask_live.png",
+      "crop": [
+        890,
+        584,
+        256,
+        34
+      ],
+      "region": [
+        870,
+        570,
+        296,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "event_broken_mask_result": {
+      "file": "images/chaos/node_progression/raw/event_broken_mask_result_live.png",
+      "crop": [
+        288,
+        448,
+        708,
+        34
+      ],
+      "region": [
+        268,
+        435,
+        748,
+        60
+      ],
+      "threshold": 0.93,
+      "max_color_error": 0.055
+    },
+    "recruit_reward_title": {
+      "file": "images/chaos/node_progression/raw/event_recruit_reward_live.png",
+      "crop": [
+        595,
+        458,
+        95,
+        40
+      ],
+      "region": [
+        575,
+        445,
+        135,
+        65
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.055
+    },
+    "recruit_continue": {
+      "file": "images/chaos/node_progression/raw/event_recruit_reward_live.png",
+      "crop": [
+        580,
+        632,
+        124,
+        34
+      ],
+      "region": [
+        550,
+        620,
+        184,
+        60
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.055
     }
   },
   "loot_cards": [
@@ -1374,6 +1578,140 @@
         ]
       ],
       "result_marker": "event_pack_result"
+    },
+    {
+      "id": "prayer_stone",
+      "state_marker": "event_prayer_stone",
+      "choices": [
+        {
+          "choice_marker": "event_prayer_read",
+          "effect": "experience",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "ancient_mural",
+      "state_marker": "event_ancient_mural",
+      "choices": [
+        {
+          "choice_marker": "event_mural_fuel",
+          "effect": "currency_reward",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "broken_trap",
+      "state_marker": "event_broken_trap",
+      "result_marker": "event_broken_trap_result",
+      "choices": [
+        {
+          "choice_marker": "event_trap_battle",
+          "effect": "battle_reward",
+          "bounds": [
+            268,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "broken_mask",
+      "state_marker": "event_broken_mask",
+      "result_marker": "event_broken_mask_result",
+      "choices": [
+        {
+          "choice_marker": "event_mask_incense",
+          "effect": "random_loot",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
     }
   ],
   "event_result_markers": [
@@ -1382,6 +1720,7 @@
   "event_effect_priority": [
     "rank_up",
     "experience",
+    "currency_reward",
     "battle_reward",
     "random_loot",
     "leave"
