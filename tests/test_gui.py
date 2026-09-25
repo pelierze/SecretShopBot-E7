@@ -4,6 +4,46 @@ from unittest.mock import Mock
 from src.gui import SessionView
 
 
+class ChaosSessionLifecycleTest(unittest.TestCase):
+    def test_stop_keeps_session_busy_until_worker_finishes(self):
+        view = object.__new__(SessionView)
+        view.name = "test"
+        view.current_mode = "chaos"
+        view.is_running = True
+        view.bot = Mock()
+        view.chaos_status_label = Mock()
+        view.chaos_stop_btn = Mock()
+        view.log = Mock()
+        view._stop_bot()
+        self.assertTrue(view.is_running)
+        self.assertTrue(view.was_stopped_by_user)
+        view.bot.set_user_action.assert_called_once_with("stop")
+
+    def test_failed_run_restores_controls_without_success_sound(self):
+        view = object.__new__(SessionView)
+        view.is_running = True
+        view._update_chaos_stats = Mock()
+        view._set_running_ui = Mock()
+        view._play_complete_sound = Mock()
+        view._play_stopped_sound = Mock()
+        result = {"status": "failed", "phase": "영입 확인", "reason": "시간 초과"}
+        view._finish_chaos_run(result)
+        self.assertFalse(view.is_running)
+        view._set_running_ui.assert_called_once_with(False)
+        view._update_chaos_stats.assert_called_once_with(result)
+        view._play_complete_sound.assert_not_called()
+        view._play_stopped_sound.assert_called_once()
+
+    def test_chaos_start_rejects_a_worker_that_has_not_exited(self):
+        view = object.__new__(SessionView)
+        view.name = "test"
+        view.is_running = False
+        view.bot_thread = Mock()
+        view.bot_thread.is_alive.return_value = True
+        view._start_chaos_bot()
+        self.assertFalse(view.is_running)
+
+
 class SessionViewFormattingTest(unittest.TestCase):
     def test_natural_refresh_disables_paid_inputs_and_restores_them(self):
         view = object.__new__(SessionView)

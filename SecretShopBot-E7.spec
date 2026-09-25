@@ -39,6 +39,9 @@ datas = collect_images() + collect_event_data() + [
     ('images/equipment_options/README.txt', 'images/equipment_options'),
     ('update_config.json', '.'),
     ('remote_script.json', '.'),
+    ('src/chaos/recruitment_layout.json', 'src/chaos'),
+    ('src/chaos/node_layout.json', 'src/chaos'),
+    ('assets/ocr', 'assets/ocr'),
 ] + collect_icons() + collect_data_files(
     'rapidocr_onnxruntime',
     includes=['config.yaml', 'models/*.onnx'],

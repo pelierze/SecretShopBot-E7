@@ -38,6 +38,8 @@ if __package__ in (None, ""):
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     from src.adb_controller import ADBController
+    from src.chaos.exploration import ExplorationBot
+    from src.chaos.observer import RecruitmentObserver
     from src.equipment_reroll_bot import EquipmentRerollBot
     from src.event import EventPlan, EventState, load_event_module
     from src.image_matcher import read_image, matching_failure_guidance
@@ -49,6 +51,8 @@ if __package__ in (None, ""):
     from src.version import APP_VERSION
 else:
     from .adb_controller import ADBController
+    from .chaos.exploration import ExplorationBot
+    from .chaos.observer import RecruitmentObserver
     from .equipment_reroll_bot import EquipmentRerollBot
     from .event import EventPlan, EventState, load_event_module
     from .image_matcher import read_image, matching_failure_guidance
@@ -306,10 +310,12 @@ class SessionView:
         self.reroll_tab = ttk.Frame(self.mode_notebook)
         self.penguin_tab = ttk.Frame(self.mode_notebook)
         self.event_tab = ttk.Frame(self.mode_notebook)
+        self.chaos_tab = ttk.Frame(self.mode_notebook)
         self.mode_notebook.add(self.shop_tab, text="비밀상점")
         self.mode_notebook.add(self.reroll_tab, text="장비 리롤")
         self.mode_notebook.add(self.penguin_tab, text="펭귄")
         self.mode_notebook.add(self.event_tab, text="이벤트")
+        self.mode_notebook.add(self.chaos_tab, text="자동 탐사")
 
         self.settings_frame = ttk.LabelFrame(self.shop_tab, text="매크로 설정", padding=10)
         self.settings_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -489,6 +495,7 @@ class SessionView:
         self._create_reroll_widgets()
         self._create_penguin_widgets()
         self._create_event_widgets()
+        self._create_chaos_widgets()
 
         self.log_frame = ttk.Frame(self.frame, style="Card.TFrame", padding=10)
         self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -529,6 +536,7 @@ class SessionView:
             self.reroll_start_btn,
             self.penguin_start_btn,
             self.event_start_btn,
+            self.chaos_start_btn,
         ]
         for button in accent_buttons:
             button.configure(style="Accent.TButton")
@@ -541,6 +549,7 @@ class SessionView:
             self.reroll_stop_btn,
             self.penguin_stop_btn,
             self.event_stop_btn,
+            self.chaos_stop_btn,
         ]
         for button in subtle_buttons:
             button.configure(style="Secondary.TButton")
@@ -807,6 +816,53 @@ class SessionView:
         ttk.Label(stats_grid, text="구매 완료:").grid(row=0, column=4, sticky=tk.W, padx=5, pady=2)
         self.penguin_purchase_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.penguin_purchase_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
+
+    def _create_chaos_widgets(self):
+        settings = ttk.LabelFrame(self.chaos_tab, text="영웅 영입", style="Card.TLabelframe", padding=12)
+        settings.pack(fill=tk.X, padx=10, pady=5)
+        catalog = RecruitmentObserver.load_config(get_resource_root())
+        elements = {"dark": "암속성", "light": "광속성", "forest": "자연속성", "fire": "화염속성", "ice": "냉기속성"}
+        self.chaos_hero_combos = {}
+        self.chaos_hero_choices = {}
+        for index, class_id in enumerate(catalog["class_order"]):
+            row, column = divmod(index, 2)
+            role = catalog["classes"][class_id]
+            choices = [(key, hero) for key, hero in catalog["heroes"].items() if hero["class"] == class_id]
+            self.chaos_hero_choices[class_id] = [key for key, hero in choices]
+            ttk.Label(settings, text=role["label"] + ":").grid(row=row, column=column * 2, sticky=tk.W, padx=5, pady=5)
+            combo = ttk.Combobox(settings, values=[hero["name"] + " · " + elements[hero["element"]] for key, hero in choices], state="readonly", width=26)
+            combo.current(self.chaos_hero_choices[class_id].index(role["default_hero"]))
+            combo.grid(row=row, column=column * 2 + 1, sticky=tk.W, padx=5, pady=5)
+            self.chaos_hero_combos[class_id] = combo
+        ttk.Label(
+            settings,
+            text="탐사 초기 화면 또는 노드 지도에서 시작하세요.\n"
+                 "영입 후 일반·정예·보스 전투, 휴식·보급·상점을 진행합니다.\n"
+                 "오공 우선 랭크업(5이면 제뉴아). 보급은 전리품, 상점은 구매 없이 퇴장.\n"
+                 "이벤트는 랭크업·전투 우선, 무작위 보상은 후순위. 패배 후 자동 재시작.\n"
+                 "현재 설정된 난이도를 사용합니다. 화면 해상도: 1280×720 / DPI 240",
+            justify=tk.LEFT,
+        ).grid(row=2, column=0, columnspan=4, sticky=tk.W, padx=5, pady=(4, 10))
+        event_settings = ttk.LabelFrame(self.chaos_tab, text="미등록 이벤트 처리", padding=10)
+        event_settings.pack(fill=tk.X,padx=10,pady=5)
+        self.chaos_event_mode = tk.StringVar(value="ocr")
+        self.chaos_save_unknown = tk.BooleanVar(value=False)
+        self.chaos_event_controls = [
+            ttk.Radiobutton(event_settings,text="문구 판단 (랭크업·전투 우선)",variable=self.chaos_event_mode,value="ocr"),
+            ttk.Radiobutton(event_settings,text="무작위 선택 (선택지 내용 미판독)",variable=self.chaos_event_mode,value="random"),
+            ttk.Checkbutton(event_settings,text="미확인 이벤트 저장(제보용)",variable=self.chaos_save_unknown),
+        ]
+        for control in self.chaos_event_controls:
+            control.pack(anchor=tk.W)
+        ttk.Label(event_settings,text="등록된 이벤트는 기존 규칙 우선. 저장은 기본 꺼짐이며 자동 전송하지 않습니다.").pack(anchor=tk.W)
+        controls = ttk.Frame(self.chaos_tab, style="CardInner.TFrame", padding=10)
+        controls.pack(fill=tk.X, padx=10, pady=5)
+        self.chaos_start_btn = ttk.Button(controls, text="자동 탐사 시작", command=self._start_chaos_bot, state=tk.DISABLED)
+        self.chaos_start_btn.pack(side=tk.LEFT, padx=5)
+        self.chaos_stop_btn = ttk.Button(controls, text="중지", command=self._stop_bot, state=tk.DISABLED)
+        self.chaos_stop_btn.pack(side=tk.LEFT, padx=5)
+        self.chaos_status_label = ttk.Label(controls, text="대기 중", wraplength=640)
+        self.chaos_status_label.pack(side=tk.LEFT, padx=15)
 
     def _create_event_widgets(self):
         self.event_settings_frame = ttk.LabelFrame(self.event_tab, text="2026 여름 이벤트 설정", padding=10)
@@ -1287,6 +1343,7 @@ class SessionView:
                     self.reroll_start_btn.config(state=tk.NORMAL)
                     self.penguin_start_btn.config(state=tk.NORMAL)
                     self.event_start_btn.config(state=tk.NORMAL)
+                    self.chaos_start_btn.config(state=tk.NORMAL)
                     self.test_btn.config(state=tk.NORMAL)
                     self.connect_btn.config(state=tk.DISABLED)
                     self.disconnect_btn.config(state=tk.NORMAL)
@@ -1526,6 +1583,63 @@ class SessionView:
             self.bot_thread = threading.Thread(target=self._run_penguin_bot, daemon=True)
             self.bot_thread.start()
 
+    def _start_chaos_bot(self):
+        with log_session(self.name):
+            if self.is_running or (self.bot_thread and self.bot_thread.is_alive()):
+                return
+            if not self.adb_controller:
+                messagebox.showerror("자동 탐사", "ADB 연결 후 시작해 주세요.")
+                return
+            try:
+                hero_ids = []
+                for class_id, combo in self.chaos_hero_combos.items():
+                    index = combo.current()
+                    if index < 0:
+                        raise ValueError("각 직업의 영웅을 선택해 주세요.")
+                    hero_ids.append(self.chaos_hero_choices[class_id][index])
+                self.bot = ExplorationBot(self.adb_controller, get_resource_root(), self.runtime_dir, hero_ids=hero_ids,
+                                          event_mode=self.chaos_event_mode.get(),save_unknown_events=self.chaos_save_unknown.get())
+            except Exception as exc:
+                messagebox.showerror("자동 탐사 준비 실패", str(exc))
+                return
+            self.was_stopped_by_user = False
+            self.is_running = True
+            self.current_mode = "chaos"
+            self.chaos_status_label.config(text="시작 화면 확인 중")
+            self._set_running_ui(True)
+            self.bot_thread = threading.Thread(target=self._run_chaos_bot, daemon=True)
+            self.bot_thread.start()
+
+    def _run_chaos_bot(self):
+        with log_session(self.name):
+            self.root.after(500, self._update_running_state)
+            try:
+                result = self.bot.run()
+            except Exception as exc:
+                logger.exception("자동 탐사 실행 오류")
+                result = {"status": "failed", "phase": "실행 오류", "reason": str(exc)}
+            if not self.app.is_closing:
+                self.root.after(0, lambda stats=result: self._finish_chaos_run(stats))
+            else:
+                self.is_running = False
+
+    def _update_chaos_stats(self, stats):
+        text = stats.get("phase", "준비")
+        if stats.get("failed_rounds"):
+            text = f"{stats.get('attempt', 1)}회차 (패배 {stats['failed_rounds']}회) · " + text
+        if stats.get("reason"):
+            text += " — " + stats["reason"]
+        self.chaos_status_label.config(text=text)
+
+    def _finish_chaos_run(self, stats):
+        self.is_running = False
+        self._update_chaos_stats(stats)
+        self._set_running_ui(False)
+        if stats.get("status") == "completed":
+            self._play_complete_sound()
+        else:
+            self._play_stopped_sound()
+
     def _start_event_bot(self):
         with log_session(self.name):
             if self.is_running:
@@ -1754,6 +1868,8 @@ class SessionView:
                 self._update_penguin_stats(stats)
             elif self.current_mode == "event":
                 self._update_event_stats(stats)
+            elif self.current_mode == "chaos":
+                self._update_chaos_stats(stats)
             else:
                 self._update_stats(stats)
 
@@ -1792,6 +1908,11 @@ class SessionView:
             self.was_stopped_by_user = True
             if self.bot:
                 self.bot.set_user_action("stop")
+            if self.current_mode == "chaos":
+                self.chaos_status_label.config(text="중지 처리 중…")
+                self.chaos_stop_btn.config(state=tk.DISABLED)
+                self.log("자동 탐사 중지 요청")
+                return
             self.is_running = False
             if self.bot:
                 stats = self.bot.get_stats()
@@ -1860,6 +1981,8 @@ class SessionView:
             self.penguin_stop_btn.config(state=tk.DISABLED)
             self.event_start_btn.config(state=tk.DISABLED)
             self.event_stop_btn.config(state=tk.DISABLED)
+            self.chaos_start_btn.config(state=tk.DISABLED)
+            self.chaos_stop_btn.config(state=tk.DISABLED)
             self.test_btn.config(state=tk.DISABLED)
             self.connect_btn.config(state=tk.NORMAL)
             self.disconnect_btn.config(state=tk.DISABLED)
@@ -1870,6 +1993,12 @@ class SessionView:
         self.reroll_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         self.penguin_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
         self.event_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
+        self.chaos_start_btn.config(state=tk.DISABLED if running else (tk.NORMAL if self.adb_controller else tk.DISABLED))
+        self.chaos_stop_btn.config(state=tk.NORMAL if running and self.current_mode == "chaos" else tk.DISABLED)
+        for combo in self.chaos_hero_combos.values():
+            combo.config(state=tk.DISABLED if running else "readonly")
+        for control in self.chaos_event_controls:
+            control.config(state=tk.DISABLED if running else tk.NORMAL)
         self.reroll_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.penguin_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)
         self.event_stop_btn.config(state=tk.NORMAL if running else tk.DISABLED)

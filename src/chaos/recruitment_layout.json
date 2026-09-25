@@ -1,0 +1,492 @@
+{
+  "reference_size": [
+    1280,
+    720
+  ],
+  "timeout_seconds": 30,
+  "poll_seconds": 0.3,
+  "stable_frames": 2,
+  "filter_dismiss_point": [
+    960,
+    590
+  ],
+  "popup_dismiss_point": [
+    640,
+    590
+  ],
+  "markers": {
+    "start": {
+      "file": "templates/themes/start_chaos_button.png",
+      "region": [
+        900,
+        600,
+        380,
+        120
+      ]
+    },
+    "unlock": {
+      "file": "templates/themes/new_supply_open.png"
+    },
+    "confirm_theme": {
+      "file": "templates/themes/select_theme_button.png",
+      "region": [
+        900,
+        600,
+        380,
+        120
+      ]
+    },
+    "knight": {
+      "file": "raw/Screenshot_2026.09.24_10.44.15.754.png",
+      "crop": [
+        180,
+        180,
+        80,
+        80
+      ],
+      "region": [
+        80,
+        120,
+        280,
+        180
+      ]
+    },
+    "recruit_card": {
+      "file": "raw/Screenshot_2026.09.24_10.44.15.754.png",
+      "crop": [
+        112,
+        490,
+        216,
+        48
+      ]
+    },
+    "knight_header": {
+      "file": "raw/knight_full.png",
+      "crop": [
+        66,
+        16,
+        122,
+        33
+      ],
+      "region": [
+        55,
+        8,
+        155,
+        50
+      ],
+      "max_color_error": 0.035
+    },
+    "filter": {
+      "file": "templates/controls/hero_filter.png",
+      "region": [
+        665,
+        0,
+        175,
+        65
+      ]
+    },
+    "filter_panel": {
+      "file": "raw/knight_filter_menu.png",
+      "crop": [
+        84,
+        84,
+        230,
+        27
+      ],
+      "region": [
+        65,
+        65,
+        275,
+        65
+      ]
+    },
+    "dark_1": {
+      "file": "templates/controls/dark_1.png",
+      "max_color_error": 0.06
+    },
+    "dark_2": {
+      "file": "templates/controls/dark_2.png",
+      "max_color_error": 0.06
+    },
+    "fire_2": {
+      "file": "templates/controls/fire_2.png",
+      "max_color_error": 0.06
+    },
+    "ice_2": {
+      "file": "templates/controls/ice_2.png",
+      "max_color_error": 0.06
+    },
+    "forest_2": {
+      "file": "templates/controls/forest_2.png",
+      "max_color_error": 0.06
+    },
+    "light_2": {
+      "file": "templates/controls/light_2.png",
+      "max_color_error": 0.06
+    },
+    "rose": {
+      "file": "templates/heroes/knight_Shadow_Rose.png",
+      "region": [
+        330,
+        70,
+        950,
+        535
+      ]
+    },
+    "rose_selected": {
+      "file": "raw/knight_hero_selected_menu.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        105,
+        72,
+        160,
+        45
+      ]
+    },
+    "recruit_active": {
+      "file": "raw/knight_hero_selected_menu.png",
+      "crop": [
+        946,
+        637,
+        273,
+        48
+      ],
+      "region": [
+        930,
+        615,
+        320,
+        90
+      ],
+      "max_color_error": 0.055
+    },
+    "completed": {
+      "file": "raw/knight_select_finish.png",
+      "crop": [
+        170,
+        430,
+        104,
+        25
+      ],
+      "region": [
+        150,
+        418,
+        150,
+        48
+      ]
+    },
+    "completed_rose": {
+      "file": "raw/knight_select_finish.png",
+      "crop": [
+        172,
+        468,
+        105,
+        27
+      ],
+      "region": [
+        145,
+        458,
+        160,
+        50
+      ]
+    },
+    "warrior": {
+      "file": "raw/Screenshot_2026.09.24_10.44.15.754.png",
+      "crop": [
+        460,
+        180,
+        80,
+        80
+      ],
+      "region": [
+        360,
+        120,
+        280,
+        180
+      ]
+    },
+    "warrior_header": {
+      "file": "raw/warrier_wukong_full.png",
+      "crop": [
+        66,
+        16,
+        145,
+        33
+      ],
+      "region": [
+        55,
+        8,
+        180,
+        50
+      ],
+      "max_color_error": 0.035
+    },
+    "wukong": {
+      "file": "templates/heroes/warrier_wukong.png",
+      "region": [
+        330,
+        70,
+        950,
+        535
+      ]
+    },
+    "wukong_selected": {
+      "file": "raw/warrier_wukong_full_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        105,
+        72,
+        160,
+        45
+      ]
+    },
+    "wukong_completed": {
+      "file": "raw/warrior_wukong_recruited_live.png",
+      "crop": [
+        445,
+        468,
+        115,
+        27
+      ],
+      "region": [
+        425,
+        458,
+        160,
+        50
+      ]
+    },
+    "soul_weaver": {
+      "file": "raw/Screenshot_2026.09.24_10.44.15.754.png",
+      "crop": [
+        740,
+        180,
+        80,
+        80
+      ],
+      "region": [
+        640,
+        120,
+        280,
+        180
+      ]
+    },
+    "soul_weaver_header": {
+      "file": "raw/soul_weaver_destina_full.png",
+      "crop": [
+        66,
+        16,
+        145,
+        33
+      ],
+      "region": [
+        55,
+        8,
+        180,
+        50
+      ],
+      "max_color_error": 0.035
+    },
+    "destina": {
+      "file": "templates/heroes/soul_Weaver_destina.png",
+      "region": [
+        330,
+        70,
+        950,
+        535
+      ]
+    },
+    "destina_selected": {
+      "file": "raw/soul_weaver_destina_full_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        105,
+        72,
+        160,
+        45
+      ]
+    },
+    "destina_completed": {
+      "file": "raw/soul_weaver_destina_recruited_live.png",
+      "crop": [
+        725,
+        468,
+        115,
+        27
+      ],
+      "region": [
+        705,
+        458,
+        160,
+        50
+      ]
+    },
+    "thief": {
+      "file": "raw/Screenshot_2026.09.24_10.44.15.754.png",
+      "crop": [
+        1020,
+        180,
+        80,
+        80
+      ],
+      "region": [
+        920,
+        120,
+        280,
+        180
+      ]
+    },
+    "thief_header": {
+      "file": "raw/thief_jenua_full.png",
+      "crop": [
+        66,
+        16,
+        145,
+        33
+      ],
+      "region": [
+        55,
+        8,
+        180,
+        50
+      ],
+      "max_color_error": 0.035
+    },
+    "jenua": {
+      "file": "templates/heroes/thief_Jenua.png",
+      "region": [
+        330,
+        70,
+        950,
+        535
+      ]
+    },
+    "jenua_selected": {
+      "file": "raw/thief_jenua_full_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        105,
+        72,
+        160,
+        45
+      ]
+    },
+    "jenua_completed": {
+      "file": "raw/thief_jenua_recruited_live.png",
+      "crop": [
+        1005,
+        468,
+        115,
+        27
+      ],
+      "region": [
+        985,
+        458,
+        160,
+        50
+      ]
+    },
+    "forest_1": {
+      "file": "templates/controls/forest_1.png",
+      "max_color_error": 0.06
+    },
+    "fire_1": {
+      "file": "templates/controls/fire_1.png",
+      "max_color_error": 0.06
+    }
+  },
+  "button_offset": [
+    -125,
+    252,
+    250,
+    90
+  ],
+  "class_order": [
+    "knight",
+    "warrior",
+    "soul_weaver",
+    "thief"
+  ],
+  "classes": {
+    "knight": {
+      "label": "기사",
+      "anchor": "knight",
+      "header": "knight_header",
+      "slot": 0,
+      "default_hero": "shadow_rose"
+    },
+    "warrior": {
+      "label": "전사",
+      "anchor": "warrior",
+      "header": "warrior_header",
+      "slot": 1,
+      "default_hero": "wukong"
+    },
+    "soul_weaver": {
+      "label": "정령사",
+      "anchor": "soul_weaver",
+      "header": "soul_weaver_header",
+      "slot": 2,
+      "default_hero": "destina"
+    },
+    "thief": {
+      "label": "도적",
+      "anchor": "thief",
+      "header": "thief_header",
+      "slot": 3,
+      "default_hero": "jenua"
+    }
+  },
+  "heroes": {
+    "shadow_rose": {
+      "name": "그림자 로제",
+      "class": "knight",
+      "element": "dark",
+      "portrait": "rose",
+      "selected": "rose_selected",
+      "completed_name": "completed_rose"
+    },
+    "wukong": {
+      "name": "불사형 오공",
+      "class": "warrior",
+      "element": "forest",
+      "portrait": "wukong",
+      "selected": "wukong_selected",
+      "completed_name": "wukong_completed"
+    },
+    "destina": {
+      "name": "데스티나",
+      "class": "soul_weaver",
+      "element": "forest",
+      "portrait": "destina",
+      "selected": "destina_selected",
+      "completed_name": "destina_completed"
+    },
+    "jenua": {
+      "name": "제뉴아",
+      "class": "thief",
+      "element": "fire",
+      "portrait": "jenua",
+      "selected": "jenua_selected",
+      "completed_name": "jenua_completed"
+    }
+  }
+}
