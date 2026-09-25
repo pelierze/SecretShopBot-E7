@@ -348,7 +348,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
     def _event_transition(self, previous_signature=None):
         states = {'battle_setup','battle','map','story','story_confirm','rank_menu','event_result',
-                  'event_loot_popup','unknown_event_result','unknown_event','loot','unclaimed_reward','recruit_reward'}
+                  'event_loot_popup','unknown_event_result','unknown_event','loot','unclaimed_reward','recruit_reward','levelup'}
         def changed(screen):
             state = self._classify(screen)
             if state in ('unknown_event', 'event'):
@@ -431,14 +431,15 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if self._classify(screen) == 'unknown_event_result':
             self._start_report(screen,{'mode':self.event_mode,'stage':'result'})
         self._report('dialogue',screen)
+        target_sig = self._event_signature(screen)
         self._tap(target[1:])
         def changed(screen):
             state = self._classify(screen)
             if state == 'map': return (state,)
             if state in ('event_result','unknown_event_result'):
                 page = ready(screen)
-                if page and page[0] != target[0]: return (state,)
-            if state in ('event','unknown_event','rank_menu','event_loot_popup','battle_setup'): return (state,)
+                if page and (page[0] != target[0] or self._event_signature(screen) != target_sig): return (state,)
+            if state in ('event','unknown_event','rank_menu','event_loot_popup','battle_setup','levelup','recruit_reward'): return (state,)
             return None
 
         advanced = False
@@ -482,12 +483,14 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if state not in ('event_result','unknown_event_result'): self.stats['nodes'] += 1
 
     def _skip_recruit_reward(self):
-        self._guarded_tap('영웅 영입 건너뛰고 계속 탐사하기', 'recruit_reward', 'recruit_continue', exiting=True)
+        btn = self._wait('영웅 영입 건너뛰기 버튼 확인', lambda s: self.observer.find(s, 'recruit_continue') if self.observer.classify(s) == 'recruit_reward' else None)
+        self._tap(btn)
         allowed = {'map','story','story_confirm','unclaimed_reward','event_result','unknown_event_result'}
-        state = self._state('영웅 영입 건너뛰기 후 확인', allowed)
+        state = self._state('영웅 영입 건너뛰기 후 확인', allowed, retry_tap=btn)
         if state == 'unclaimed_reward':
-            self._guarded_tap('추가 영웅 보상 없이 진행', state, 'story_confirm', exiting=True)
-            self._state('보상 확인 후 복귀', {'map','story','story_confirm'})
+            confirm_btn = self._wait('추가 영웅 보상 확인 버튼', lambda s: self.observer.find(s, 'story_confirm') if self.observer.classify(s) == 'unclaimed_reward' else None)
+            self._tap(confirm_btn)
+            self._state('보상 확인 후 복귀', {'map','story','story_confirm'}, retry_tap=confirm_btn)
 
     def _select_node(self):
         def choose(screen):
@@ -508,11 +511,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
         detail_states = {'battle':{'battle_detail'}, 'rest':{'rest_detail'}, 'supply':{'supply_detail'},
                          'elite':{'elite_detail'}, 'boss':{'boss_detail'}, 'shop':{'node_detail'}, 'event':{'event_detail'}}
         detail = self._state('노드 상세 대기', detail_states[kind])
-        self._guarded_tap('노드 진입', detail, 'enter_node')
+        enter_bounds = self._wait('노드 진입 버튼 확인', lambda s: self.observer.find(s, 'enter_node'))
+        self._tap(enter_bounds)
         target_state = {'battle':'battle_setup','elite':'battle_setup','boss':'battle_setup','rest':'rest','supply':'supply','shop':'shop','event':'event'}[kind]
         allowed = {target_state,'story','story_confirm'}
         if kind == 'event': allowed.update({'unknown_event','event_result','unknown_event_result'})
-        self._state('노드 내부 진입 확인', allowed)
+        self._state('노드 내부 진입 확인', allowed, retry_tap=enter_bounds)
         return True
 
     def run(self):
