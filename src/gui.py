@@ -2336,7 +2336,7 @@ class SecretShopGUI:
 
         self.support_button = ttk.Button(
             self.root_container,
-            text="개발자 후원 · Buy Me a Coffee",
+            text="제작자 후원 · Buy Me a Coffee",
             command=self._open_support_page,
             style="Support.TButton",
             cursor="hand2",
