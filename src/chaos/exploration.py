@@ -526,7 +526,14 @@ class NodeProgressionBot(KnightRecruitmentBot):
             label = {'elite':'정예 전투','shop':'상점','supply':'보급','event':'랜덤 이벤트','boss':'보스'}.get(kind, kind)
             self.stats.update(status='stopped', phase='지원 범위 끝', reason=f'{label} 노드 내부 규칙 미구현 — 진입 전 중지')
             return False
-        if choose(self._capture()) != target: raise RuntimeError('노드 후보 변경')
+        current = choose(self._capture())
+        if not current:
+            if self.stop_event.wait(0.2):
+                raise _Stopped()
+            current = choose(self._capture())
+        if (not current or current[0] != target[0]
+                or abs(current[1] - target[1]) > 10 or abs(current[2] - target[2]) > 10):
+            raise RuntimeError('노드 후보 변경')
         self.current_node_kind = kind
         logger.info('자동 탐사 선택 노드: %s', kind)
         self.event_context = kind == 'event'
