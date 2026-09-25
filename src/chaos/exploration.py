@@ -547,7 +547,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 elif state == 'shop_exit_confirm': self._shop_confirm()
                 elif state == 'rank_menu':
                     self._rankup()
-                    self._state('이벤트 랭크업 후 결과', {'event_result','unknown_event_result','map'})
+                    self._state('이벤트 랭크업 후 결과', {'event_result','unknown_event_result','map','levelup','event_loot_popup','event'})
                 elif state in ('event','unknown_event'):
                     self.event_context = True
                     self._event()
@@ -556,10 +556,13 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     self._event_result()
                 elif state == 'event_loot_popup':
                     self._guarded_tap('이벤트 전리품 결과 닫기', state, 'event_loot_close', exiting=True)
-                    self._state('이벤트 전리품 후 결과', {'event_result','unknown_event_result','map'})
+                    self._state('이벤트 전리품 후 결과', {'event_result','unknown_event_result','map','levelup'})
                 elif state == 'levelup':
-                    self._guarded_tap('레벨업 팝업 닫기', state, 'level_close')
-                    self._state('전투 결과 확인', {'victory'})
+                    close_btn = self._wait('레벨업 팝업 닫기 확인', lambda s: self.observer.find(s, 'level_close') if self.observer.classify(s) == 'levelup' else None)
+                    def closed(after, before):
+                        return (self.observer.classify(after) != 'levelup'), None
+                    self._tap_with_verify(close_btn, '레벨업 팝업 닫기', closed, max_retries=3)
+                    self._state('레벨업 닫기 후 복귀', {'victory', 'event_result', 'unknown_event_result', 'event', 'map', 'battle', 'levelup'})
                 elif state == 'victory':
                     self._victory()
                 elif state == 'recruit_reward':
