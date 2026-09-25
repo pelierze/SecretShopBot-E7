@@ -153,8 +153,8 @@
     },
     "rest_done": {
       "file": "images/chaos/node_progression/raw/rest_completed_live.png",
-      "threshold": 0.9,
-      "max_color_error": 0.055,
+      "threshold": 0.85,
+      "max_color_error": 0.12,
       "crop": [
         1170,
         172,
@@ -162,10 +162,10 @@
         42
       ],
       "region": [
-        1150,
-        150,
-        90,
-        90
+        1140,
+        140,
+        110,
+        100
       ]
     },
     "rank_title": {
@@ -576,13 +576,13 @@
         42
       ],
       "region": [
-        1150,
-        375,
-        80,
-        90
+        1140,
+        365,
+        100,
+        100
       ],
-      "threshold": 0.9,
-      "max_color_error": 0.06
+      "threshold": 0.85,
+      "max_color_error": 0.12
     },
     "loot_reroll": {
       "file": "images/chaos/node_progression/raw/loot_cards_live.png",

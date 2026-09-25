@@ -242,7 +242,10 @@ class NodeProgressionBot(KnightRecruitmentBot):
         result = self._capture()
         if self.observer.read_rank_digit(result[540:568,365:384]) != old_rank+1:
             raise RuntimeError('랭크업 후 숫자가 예상과 다릅니다. 결과 화면에서 중지합니다.')
-        self._guarded_tap('랭크업 결과 닫기', 'rank_result', 'rank_close')
+        close_btn = self._wait('랭크업 결과 닫기 확인', lambda s: self.observer.find(s, 'rank_close') if self.observer.classify(s) == 'rank_result' else None)
+        def closed(after, before):
+            return (self.observer.classify(after) != 'rank_result'), None
+        self._tap_with_verify(close_btn, '랭크업 결과 닫기', closed, max_retries=3)
 
     def _rest(self):
         screen = self._capture()
@@ -250,10 +253,9 @@ class NodeProgressionBot(KnightRecruitmentBot):
             self._guarded_tap('휴식: 랭크업 선택', 'rest', 'detail_rest')
             self._state('랭크업 영웅 목록 대기', {'rank_menu'})
             self._rankup()
-            self._wait('휴식 랭크업 완료 표시', lambda s: ('done',) if self.observer.classify(s)=='rest' and self.observer.find(s,'rest_done') else None)
             self._record('rankup_completed')
-        self._guarded_tap('휴식 떠나기', 'rest', 'leave')
-        self._state('휴식 후 지도 복귀', {'map'})
+        leave_btn = self._wait('휴식 떠나기 확인', lambda s: self.observer.find(s, 'leave') if self.observer.classify(s) == 'rest' else None)
+        self._state('휴식 후 지도 복귀', {'map'}, retry_tap=leave_btn)
         self.stats['nodes'] += 1
 
     def _loot(self):
@@ -293,9 +295,8 @@ class NodeProgressionBot(KnightRecruitmentBot):
             self._guarded_tap('보급: 전리품 획득', 'supply', 'supply_loot')
             self._state('보급 전리품 목록', {'loot'})
             self._loot()
-            self._wait('전리품 수령 완료 표시', lambda s: ('done',) if self.observer.classify(s)=='supply' and self.observer.find(s,'supply_done') else None)
-        self._guarded_tap('보급 떠나기', 'supply', 'leave', exiting=True)
-        self._state('보급 후 지도 복귀', {'map'})
+        leave_btn = self._wait('보급 떠나기 확인', lambda s: self.observer.find(s, 'leave') if self.observer.classify(s) == 'supply' else None)
+        self._state('보급 후 지도 복귀', {'map'}, retry_tap=leave_btn)
         self.stats['nodes'] += 1
 
     def _shop(self):

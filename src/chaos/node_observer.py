@@ -155,7 +155,7 @@ class NodeObserver:
         if self.find(screen,'shop_frame') and self.find(screen,'shop_exit'): return 'shop'
         if self.find(screen,'leave') and (self.find(screen,'supply_loot') or self.find(screen,'supply_done')): return 'supply'
         if self.find(screen, 'rank_title'): return 'rank_menu'
-        if self.find(screen, 'leave') and (self.find(screen, 'detail_rest') or self.find(screen, 'rest_done')): return 'rest'
+        if self.find(screen, 'leave'): return 'rest'
         if self.find(screen, 'battle_start'): return 'battle_setup'
         if self.find(screen, 'enter_node') and self.find(screen, 'detail_battle'): return 'battle_detail'
         if self.find(screen, 'enter_node') and self.find(screen, 'rest_detail'): return 'rest_detail'
