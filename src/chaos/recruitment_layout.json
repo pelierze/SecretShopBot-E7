@@ -411,6 +411,92 @@
     "fire_1": {
       "file": "templates/controls/fire_1.png",
       "max_color_error": 0.06
+    },
+    "light_1": {
+      "file": "templates/controls/light_1.png",
+      "max_color_error": 0.06
+    },
+    "savior_adin": {
+      "file": "templates/heroes/thief_Savior_Adin.png",
+      "region": [
+        330,
+        70,
+        950,
+        535
+      ]
+    },
+    "savior_adin_selected": {
+      "file": "raw/thief_Savior_Adin_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        105,
+        72,
+        160,
+        45
+      ]
+    },
+    "savior_adin_completed": {
+      "file": "raw/thief_Savior_Adin_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        985,
+        458,
+        160,
+        50
+      ],
+      "threshold": 0.75,
+      "max_color_error": 0.15
+    },
+    "rhianna_luciella": {
+      "file": "templates/heroes/thief_Rhianna and Luciella.png",
+      "region": [
+        330,
+        70,
+        950,
+        535
+      ]
+    },
+    "rhianna_luciella_selected": {
+      "file": "raw/thief_Rhianna and Luciella_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        105,
+        72,
+        160,
+        45
+      ]
+    },
+    "rhianna_luciella_completed": {
+      "file": "raw/thief_Rhianna and Luciella_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        985,
+        458,
+        160,
+        50
+      ],
+      "threshold": 0.75,
+      "max_color_error": 0.15
     }
   },
   "button_offset": [
@@ -487,6 +573,22 @@
       "portrait": "jenua",
       "selected": "jenua_selected",
       "completed_name": "jenua_completed"
+    },
+    "savior_adin": {
+      "name": "구원자 아딘",
+      "class": "thief",
+      "element": "light",
+      "portrait": "savior_adin",
+      "selected": "savior_adin_selected",
+      "completed_name": "savior_adin_completed"
+    },
+    "rhianna_luciella": {
+      "name": "리안나 루시엘라",
+      "class": "thief",
+      "element": "dark",
+      "portrait": "rhianna_luciella",
+      "selected": "rhianna_luciella_selected",
+      "completed_name": "rhianna_luciella_completed"
     }
   }
 }

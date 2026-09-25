@@ -52,6 +52,28 @@ class PartyObserverTest(unittest.TestCase):
             with self.subTest(ids=ids), self.assertRaises(ValueError):
                 RecruitmentObserver(ROOT, ids)
 
+    def test_thief_savior_adin_selection_and_matching(self):
+        obs = RecruitmentObserver(ROOT, ['shadow_rose', 'wukong', 'destina', 'savior_adin'])
+        thief = obs.heroes[3]
+        self.assertEqual(thief['id'], 'savior_adin')
+        self.assertEqual(thief['element'], 'light')
+        screen_full = self.screen('thief_light_full.png')
+        screen_sel = self.screen('thief_Savior_Adin_selected.png')
+        self.assertIsNotNone(obs.find(screen_full, thief['portrait']))
+        self.assertIsNotNone(obs.find(screen_sel, thief['portrait']))
+        self.assertIsNotNone(obs.find(screen_sel, thief['selected']))
+
+    def test_thief_rhianna_luciella_selection_and_matching(self):
+        obs = RecruitmentObserver(ROOT, ['shadow_rose', 'wukong', 'destina', 'rhianna_luciella'])
+        thief = obs.heroes[3]
+        self.assertEqual(thief['id'], 'rhianna_luciella')
+        self.assertEqual(thief['element'], 'dark')
+        screen_full = self.screen('thief_dark_full.png')
+        screen_sel = self.screen('thief_Rhianna and Luciella_selected.png')
+        self.assertIsNotNone(obs.find(screen_full, thief['portrait']))
+        self.assertIsNotNone(obs.find(screen_sel, thief['portrait']))
+        self.assertIsNotNone(obs.find(screen_sel, thief['selected']))
+
 
 class ReplayObserver:
     config = {'timeout_seconds': .06, 'poll_seconds': 0, 'stable_frames': 2,

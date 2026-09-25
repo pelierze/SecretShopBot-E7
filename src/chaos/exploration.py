@@ -21,6 +21,8 @@ HERO_NAMES = {
     'jenua': '제뉴아',
     'shadow_rose': '그림자 로제',
     'destina': '데스티나',
+    'savior_adin': '구원자 아딘',
+    'rhianna_luciella': '리안나 루시엘라',
 }
 
 
@@ -633,7 +635,13 @@ class ExplorationBot:
         self.active.set_user_action(action)
 
     def get_stats(self):
-        return dict(self.active.get_stats(),
+        stats = getattr(self.active, 'stats', {})
+        if hasattr(self.active, 'get_stats'):
+            res = self.active.get_stats()
+            if isinstance(res, dict):
+                stats = res
+        base = dict(stats) if isinstance(stats, dict) else {}
+        return dict(base,
                     cleared_rounds=self.cleared_rounds,
                     failed_rounds=self.failed_rounds,
                     target_clears=self.target_clears,
@@ -643,12 +651,20 @@ class ExplorationBot:
         try:
             while True:
                 result = self._run_stages()
-                status = result.get('status')
+                status = result.get('status') if isinstance(result, dict) else None
                 if status == 'round_failed':
                     self.failed_rounds += 1
                     if not self.repeat_on_failure:
-                        self.active.stats.update(status='stopped', reason='패배 결과 처리 후 중지')
-                        break
+                        if hasattr(self.active, 'stats') and isinstance(self.active.stats, dict):
+                            self.active.stats.update(status='stopped', reason='패배 결과 처리 후 중지')
+                        base = dict(result) if isinstance(result, dict) else self.get_stats()
+                        return dict(base,
+                                    status='stopped',
+                                    reason='패배 결과 처리 후 중지',
+                                    cleared_rounds=self.cleared_rounds,
+                                    failed_rounds=self.failed_rounds,
+                                    target_clears=self.target_clears,
+                                    attempt=self.attempt)
                     stop = self.nodes.stop_event
                     if stop.is_set(): raise _Stopped()
                     self.attempt += 1
@@ -664,8 +680,18 @@ class ExplorationBot:
                 if status in ('round_cleared', 'completed'):
                     self.cleared_rounds += 1
                     if self.cleared_rounds >= self.target_clears:
-                        self.active.stats.update(status='completed', reason=f'목표 완주 {self.target_clears}회 달성')
-                        return self.get_stats()
+                        if hasattr(self.active, 'stats') and isinstance(self.active.stats, dict):
+                            self.active.stats.update(status='completed', reason=f'목표 완주 {self.target_clears}회 달성')
+                        base = dict(result) if isinstance(result, dict) else self.get_stats()
+                        if 'status' not in base or base.get('status') == 'round_cleared':
+                            base['status'] = 'completed'
+                        if 'reason' not in base:
+                            base['reason'] = f'목표 완주 {self.target_clears}회 달성'
+                        return dict(base,
+                                    cleared_rounds=self.cleared_rounds,
+                                    failed_rounds=self.failed_rounds,
+                                    target_clears=self.target_clears,
+                                    attempt=self.attempt)
                     stop = self.nodes.stop_event
                     if stop.is_set(): raise _Stopped()
                     self.attempt += 1
@@ -678,14 +704,24 @@ class ExplorationBot:
                                 self.attempt, self.cleared_rounds, self.target_clears, self.failed_rounds)
                     continue
 
+                if isinstance(result, dict):
+                    return dict(result,
+                                cleared_rounds=self.cleared_rounds,
+                                failed_rounds=self.failed_rounds,
+                                target_clears=self.target_clears,
+                                attempt=self.attempt)
                 return self.get_stats()
         except _Stopped:
-            self.active.stats.update(status='stopped', reason='사용자 중지')
+            if hasattr(self.active, 'stats') and isinstance(self.active.stats, dict):
+                self.active.stats.update(status='stopped', reason='사용자 중지')
+            return dict(self.get_stats(), status='stopped', reason='사용자 중지')
         except Exception as exc:
-            self.active.stats.update(status='failed', reason=str(exc))
-            self.active._record('failed')
+            if hasattr(self.active, 'stats') and isinstance(self.active.stats, dict):
+                self.active.stats.update(status='failed', reason=str(exc))
+            if hasattr(self.active, '_record'):
+                self.active._record('failed')
             logger.exception('자동 탐사 단계 전환 실패')
-        return self.get_stats()
+            return dict(self.get_stats(), status='failed', reason=str(exc))
 
     def _run_stages(self):
         screen = self.nodes._capture()

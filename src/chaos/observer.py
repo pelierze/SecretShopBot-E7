@@ -89,7 +89,12 @@ class RecruitmentObserver:
     def hero_completed(self, screen, hero):
         slot = self.config["classes"][hero["class"]]["slot"]
         area = (150 + slot * 280, 418, 150, 48)
-        return bool(self.find(screen, "completed", area) and self.find(screen, hero["completed_name"]))
+        if not self.find(screen, "completed", area):
+            return False
+        completed_marker = hero.get("completed_name")
+        if completed_marker and self.find(screen, completed_marker):
+            return True
+        return self.class_button(screen, hero) is None
 
     def completed(self, screen):
         return all(self.hero_completed(screen, hero) for hero in self.heroes)
