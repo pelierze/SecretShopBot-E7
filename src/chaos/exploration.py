@@ -16,15 +16,24 @@ from .event_policy import KoreanEventReader, choose_read_choice
 
 logger = logging.getLogger(__name__)
 
+HERO_NAMES = {
+    'wukong': '오공',
+    'jenua': '제뉴아',
+    'shadow_rose': '그림자 로제',
+    'destina': '데스티나',
+}
+
 
 class NodeProgressionBot(KnightRecruitmentBot):
     def __init__(self, adb, root, runtime_dir, observer=None, max_nodes=None,
-                 event_mode='ocr', save_unknown_events=False, diagnostic_capture=False):
+                 event_mode='ocr', save_unknown_events=False, diagnostic_capture=False,
+                 rank_priority=None):
         super().__init__(adb, root, runtime_dir, observer or NodeObserver(root))
         if event_mode not in ('ocr','random'): raise ValueError('지원하지 않는 이벤트 처리 방식')
         self.event_mode = event_mode
         self.save_unknown_events = save_unknown_events
         self.diagnostic_capture = diagnostic_capture
+        self.rank_priority = list(rank_priority) if rank_priority else ['wukong', 'jenua']
         self.last_screen = None
         self.event_context = False
         self.event_reader = KoreanEventReader(root)
@@ -205,27 +214,33 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if self.observer.classify(screen) != 'rank_menu': return None
         if self.observer.forbidden(screen):
             raise RuntimeError('랭크업 화면에서 금지 항목 발견')
-        rank = self.observer.rank(screen, 'wukong')
-        if rank is None:
-            jenua_rank = None
-            try:
-                jenua_rank = self.observer.rank(screen, 'jenua')
-            except Exception:
-                pass
-            if jenua_rank is not None and jenua_rank < 5:
-                logger.info('오공 랭크 판독 불가 — 오공 5랭크(MAX)로 판단하여 제뉴아(%d랭크)로 전환합니다.', jenua_rank)
-                rank = 5
-            else:
-                raise RuntimeError('오공 랭크를 확실하게 읽지 못했습니다.')
-        target = 'wukong' if rank < 5 else 'jenua'
-        current = rank if target == 'wukong' else self.observer.rank(screen, target)
-        if current is None or current >= 5:
-            raise RuntimeError('제뉴아 랭크업 가능 여부를 확인하지 못했습니다.')
-        bounds = self.observer.find(screen, target)
-        return (target, current, *bounds) if bounds else None
+        for i, target in enumerate(self.rank_priority):
+            rank = self.observer.rank(screen, target)
+            if rank is None:
+                sub_rank = None
+                for next_target in self.rank_priority[i+1:]:
+                    try:
+                        r = self.observer.rank(screen, next_target)
+                        if r is not None and r < 5:
+                            sub_rank = r
+                            break
+                    except Exception:
+                        pass
+                if sub_rank is not None:
+                    target_name = HERO_NAMES.get(target, target)
+                    logger.info('%s 랭크 판독 불가 — %s 5랭크(MAX)로 판단하여 다음 우선순위 영웅으로 전환합니다.', target_name, target_name)
+                    rank = 5
+                else:
+                    raise RuntimeError(f'{HERO_NAMES.get(target, target)} 랭크를 확실하게 읽지 못했습니다.')
+            if rank < 5:
+                bounds = self.observer.find(screen, target)
+                return (target, rank, *bounds) if bounds else None
+
+        last_hero = self.rank_priority[-1] if self.rank_priority else '영웅'
+        raise RuntimeError(f'{HERO_NAMES.get(last_hero, last_hero)} 랭크업 가능 여부를 확인하지 못했습니다.')
 
     def _rankup(self):
-        target = self._wait('오공 우선 랭크 확인', self._rank_target)
+        target = self._wait('우선순위 랭크 확인', self._rank_target)
         if self._rank_target(self._capture()) != target:
             raise RuntimeError('랭크업 대상이 변경됐습니다.')
         hero, old_rank, *bounds = target
@@ -234,7 +249,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         def selected(screen):
             if self.observer.classify(screen) != 'rank_menu': return None
             if self.observer.forbidden(screen): raise RuntimeError('금지 항목 발견')
-            return self.observer.find(screen, 'rank_button') if self.observer.find(screen, hero+'_selected') else None
+            return self.observer.find(screen, 'rank_button') if (self.observer.find(screen, hero+'_selected') or self.observer.find(screen, hero)) else None
         button = self._wait('선택 영웅과 랭크업 버튼 확인', selected)
         if selected(self._capture()) != button: raise RuntimeError('랭크업 선택 상태 변경')
         self._tap(button)
@@ -585,10 +600,11 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
 class ExplorationBot:
     """GUI facade: one stop event and live stats across both stages."""
-    def __init__(self, adb, root, runtime_dir, hero_ids=None, max_nodes=None, repeat_on_failure=True,
+    def __init__(self, adb, root, runtime_dir, hero_ids=None, rank_priority=None, max_nodes=None, repeat_on_failure=True,
                  event_mode='ocr', save_unknown_events=False, diagnostic_capture=False):
-        self._args = (adb, root, runtime_dir, hero_ids, max_nodes)
-        self.node_options = dict(event_mode=event_mode,save_unknown_events=save_unknown_events,diagnostic_capture=diagnostic_capture)
+        self._args = (adb, root, runtime_dir, hero_ids, rank_priority, max_nodes)
+        self.node_options = dict(event_mode=event_mode, save_unknown_events=save_unknown_events,
+                                 diagnostic_capture=diagnostic_capture, rank_priority=rank_priority)
         self.repeat_on_failure = repeat_on_failure
         self.failed_rounds = 0
         self.attempt = 1
@@ -616,7 +632,7 @@ class ExplorationBot:
                 stop = self.nodes.stop_event
                 if stop.is_set(): raise _Stopped()
                 self.attempt += 1
-                adb, root, runtime_dir, hero_ids, max_nodes = self._args
+                adb, root, runtime_dir, hero_ids, rank_priority, max_nodes = self._args
                 self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids)
                 self.nodes = NodeProgressionBot(adb, root, runtime_dir, max_nodes=max_nodes, **self.node_options)
                 self.recruitment.stop_event = self.nodes.stop_event = stop

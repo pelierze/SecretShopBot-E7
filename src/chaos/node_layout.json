@@ -219,6 +219,40 @@
         510
       ]
     },
+    "shadow_rose": {
+      "file": "images/chaos/node_progression/raw/rest_rank_menu_live.png",
+      "threshold": 0.85,
+      "max_color_error": 0.1,
+      "crop": [
+        397,
+        203,
+        120,
+        27
+      ],
+      "region": [
+        345,
+        75,
+        300,
+        510
+      ]
+    },
+    "destina": {
+      "file": "images/chaos/hero_selection/raw/soul_weaver_destina_full_selected.png",
+      "crop": [
+        140,
+        82,
+        85,
+        25
+      ],
+      "region": [
+        345,
+        75,
+        300,
+        510
+      ],
+      "threshold": 0.78,
+      "max_color_error": 0.15
+    },
     "wukong_selected": {
       "file": "images/chaos/node_progression/raw/rest_wukong_selected_live.png",
       "threshold": 0.9,
@@ -501,6 +535,57 @@
     },
     "jenua_selected": {
       "file": "images/chaos/hero_selection/raw/thief_jenua_full_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        80,
+        75,
+        225,
+        40
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.07
+    },
+    "shadow_rose_selected": {
+      "file": "images/chaos/hero_selection/raw/knight_hero_selected_menu.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        80,
+        75,
+        225,
+        40
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.07
+    },
+    "rose_selected": {
+      "file": "images/chaos/hero_selection/raw/knight_hero_selected_menu.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        80,
+        75,
+        225,
+        40
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.07
+    },
+    "destina_selected": {
+      "file": "images/chaos/hero_selection/raw/soul_weaver_destina_full_selected.png",
       "crop": [
         125,
         82,

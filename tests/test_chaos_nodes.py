@@ -166,6 +166,30 @@ class NodeFlowTest(unittest.TestCase):
         self.observer.rank.side_effect=[5,5]
         with self.assertRaisesRegex(RuntimeError,'제뉴아'):self.bot._rank_target(None)
 
+    def test_dynamic_rank_priority_order(self):
+        self.observer.classify.return_value = 'rank_menu'
+        self.observer.forbidden.return_value = []
+        self.observer.find.return_value = (10, 20, 30, 40)
+        self.bot.rank_priority = ['jenua', 'shadow_rose']
+        self.observer.rank.side_effect = [3]
+        self.assertEqual(self.bot._rank_target(None), ('jenua', 3, 10, 20, 30, 40))
+
+    def test_rank_priority_skips_maxed_heroes(self):
+        self.observer.classify.return_value = 'rank_menu'
+        self.observer.forbidden.return_value = []
+        self.observer.find.return_value = (10, 20, 30, 40)
+        self.bot.rank_priority = ['wukong', 'jenua', 'shadow_rose']
+        self.observer.rank.side_effect = [5, 5, 2]
+        self.assertEqual(self.bot._rank_target(None), ('shadow_rose', 2, 10, 20, 30, 40))
+
+    def test_rank_priority_deduction_when_first_hero_is_none(self):
+        self.observer.classify.return_value = 'rank_menu'
+        self.observer.forbidden.return_value = []
+        self.observer.find.return_value = (10, 20, 30, 40)
+        self.bot.rank_priority = ['wukong', 'jenua']
+        self.observer.rank.side_effect = [None, 2, 2]
+        self.assertEqual(self.bot._rank_target(None), ('jenua', 2, 10, 20, 30, 40))
+
     def test_new_frame_change_prevents_click(self):
         self.bot._wait=Mock(return_value=(1,2,3,4));self.bot._capture=Mock(return_value=None)
         self.observer.classify.return_value='story_confirm';self.observer.forbidden.return_value=[]

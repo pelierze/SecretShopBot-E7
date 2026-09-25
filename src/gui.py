@@ -824,25 +824,40 @@ class SessionView:
         elements = {"dark": "암속성", "light": "광속성", "forest": "자연속성", "fire": "화염속성", "ice": "냉기속성"}
         self.chaos_hero_combos = {}
         self.chaos_hero_choices = {}
+        self.chaos_rank_priority_combos = {}
+        default_priorities = {
+            "warrior": "1순위",
+            "thief": "2순위",
+            "knight": "3순위",
+            "soul_weaver": "제외",
+        }
         for index, class_id in enumerate(catalog["class_order"]):
-            row, column = divmod(index, 2)
+            row, col_idx = divmod(index, 2)
+            base_col = col_idx * 4
             role = catalog["classes"][class_id]
             choices = [(key, hero) for key, hero in catalog["heroes"].items() if hero["class"] == class_id]
             self.chaos_hero_choices[class_id] = [key for key, hero in choices]
-            ttk.Label(settings, text=role["label"] + ":").grid(row=row, column=column * 2, sticky=tk.W, padx=5, pady=5)
-            combo = ttk.Combobox(settings, values=[hero["name"] + " · " + elements[hero["element"]] for key, hero in choices], state="readonly", width=26)
+            ttk.Label(settings, text=role["label"] + ":").grid(row=row, column=base_col, sticky=tk.W, padx=(10 if col_idx > 0 else 5, 2), pady=5)
+            combo = ttk.Combobox(settings, values=[hero["name"] + " · " + elements[hero["element"]] for key, hero in choices], state="readonly", width=18)
             combo.current(self.chaos_hero_choices[class_id].index(role["default_hero"]))
-            combo.grid(row=row, column=column * 2 + 1, sticky=tk.W, padx=5, pady=5)
+            combo.grid(row=row, column=base_col + 1, sticky=tk.W, padx=2, pady=5)
             self.chaos_hero_combos[class_id] = combo
+
+            ttk.Label(settings, text="랭크업:").grid(row=row, column=base_col + 2, sticky=tk.W, padx=(6, 2), pady=5)
+            p_combo = ttk.Combobox(settings, values=["1순위", "2순위", "3순위", "4순위", "제외"], state="readonly", width=6)
+            p_combo.set(default_priorities.get(class_id, "제외"))
+            p_combo.grid(row=row, column=base_col + 3, sticky=tk.W, padx=(2, 5), pady=5)
+            self.chaos_rank_priority_combos[class_id] = p_combo
+
         ttk.Label(
             settings,
             text="탐사 초기 화면 또는 노드 지도에서 시작하세요.\n"
                  "영입 후 일반·정예·보스 전투, 휴식·보급·상점을 진행합니다.\n"
-                 "오공 우선 랭크업(5이면 제뉴아). 보급은 전리품, 상점은 구매 없이 퇴장.\n"
+                 "영입칸에서 설정한 우선순위에 따라 랭크업. 보급은 전리품, 상점은 구매 없이 퇴장.\n"
                  "이벤트는 랭크업·전투 우선, 무작위 보상은 후순위. 패배 후 자동 재시작.\n"
                  "현재 설정된 난이도를 사용합니다. 화면 해상도: 1280×720 / DPI 240",
             justify=tk.LEFT,
-        ).grid(row=2, column=0, columnspan=4, sticky=tk.W, padx=5, pady=(4, 10))
+        ).grid(row=2, column=0, columnspan=8, sticky=tk.W, padx=5, pady=(4, 10))
         event_settings = ttk.LabelFrame(self.chaos_tab, text="미등록 이벤트 처리", padding=10)
         event_settings.pack(fill=tk.X,padx=10,pady=5)
         self.chaos_event_mode = tk.StringVar(value="ocr")
@@ -1592,12 +1607,24 @@ class SessionView:
                 return
             try:
                 hero_ids = []
+                priority_map = {"1순위": 1, "2순위": 2, "3순위": 3, "4순위": 4}
+                ranked_heroes = []
                 for class_id, combo in self.chaos_hero_combos.items():
                     index = combo.current()
                     if index < 0:
                         raise ValueError("각 직업의 영웅을 선택해 주세요.")
-                    hero_ids.append(self.chaos_hero_choices[class_id][index])
+                    hero_id = self.chaos_hero_choices[class_id][index]
+                    hero_ids.append(hero_id)
+                    p_combo = getattr(self, "chaos_rank_priority_combos", {}).get(class_id)
+                    p_val = p_combo.get() if p_combo else None
+                    if p_val in priority_map:
+                        ranked_heroes.append((priority_map[p_val], hero_id))
+                ranked_heroes.sort(key=lambda x: x[0])
+                rank_priority = [h[1] for h in ranked_heroes]
+                if not rank_priority:
+                    rank_priority = list(hero_ids)
                 self.bot = ExplorationBot(self.adb_controller, get_resource_root(), self.runtime_dir, hero_ids=hero_ids,
+                                          rank_priority=rank_priority,
                                           event_mode=self.chaos_event_mode.get(),save_unknown_events=self.chaos_save_unknown.get())
             except Exception as exc:
                 messagebox.showerror("자동 탐사 준비 실패", str(exc))
