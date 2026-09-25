@@ -876,8 +876,13 @@ class SessionView:
         self.chaos_start_btn.pack(side=tk.LEFT, padx=5)
         self.chaos_stop_btn = ttk.Button(controls, text="중지", command=self._stop_bot, state=tk.DISABLED)
         self.chaos_stop_btn.pack(side=tk.LEFT, padx=5)
-        self.chaos_status_label = ttk.Label(controls, text="대기 중", wraplength=640)
-        self.chaos_status_label.pack(side=tk.LEFT, padx=15)
+        ttk.Label(controls, text="목표 완주:").pack(side=tk.LEFT, padx=(15, 2))
+        self.chaos_target_clears_entry = ttk.Entry(controls, width=5)
+        self.chaos_target_clears_entry.insert(0, "1")
+        self.chaos_target_clears_entry.pack(side=tk.LEFT, padx=2)
+        ttk.Label(controls, text="회").pack(side=tk.LEFT, padx=(2, 10))
+        self.chaos_status_label = ttk.Label(controls, text="대기 중", wraplength=520)
+        self.chaos_status_label.pack(side=tk.LEFT, padx=5)
 
     def _create_event_widgets(self):
         self.event_settings_frame = ttk.LabelFrame(self.event_tab, text="2026 여름 이벤트 설정", padding=10)
@@ -1623,8 +1628,15 @@ class SessionView:
                 rank_priority = [h[1] for h in ranked_heroes]
                 if not rank_priority:
                     rank_priority = list(hero_ids)
+                try:
+                    target_clears = int(self.chaos_target_clears_entry.get().strip()) if hasattr(self, "chaos_target_clears_entry") else 1
+                    if target_clears <= 0:
+                        raise ValueError()
+                except Exception:
+                    messagebox.showerror("자동 탐사", "목표 완주 횟수는 1 이상의 정수여야 합니다.")
+                    return
                 self.bot = ExplorationBot(self.adb_controller, get_resource_root(), self.runtime_dir, hero_ids=hero_ids,
-                                          rank_priority=rank_priority,
+                                          rank_priority=rank_priority, target_clears=target_clears,
                                           event_mode=self.chaos_event_mode.get(),save_unknown_events=self.chaos_save_unknown.get())
             except Exception as exc:
                 messagebox.showerror("자동 탐사 준비 실패", str(exc))
@@ -1652,8 +1664,15 @@ class SessionView:
 
     def _update_chaos_stats(self, stats):
         text = stats.get("phase", "준비")
-        if stats.get("failed_rounds"):
-            text = f"{stats.get('attempt', 1)}회차 (패배 {stats['failed_rounds']}회) · " + text
+        attempt = stats.get("attempt", 1)
+        cleared = stats.get("cleared_rounds", 0)
+        target = stats.get("target_clears", 1)
+        failed = stats.get("failed_rounds", 0)
+        header = f"{attempt}회차 [완주 {cleared}/{target}회"
+        if failed:
+            header += f", 패배 {failed}회"
+        header += "] · "
+        text = header + text
         if stats.get("reason"):
             text += " — " + stats["reason"]
         self.chaos_status_label.config(text=text)

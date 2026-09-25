@@ -348,7 +348,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if self.stats.get('outcome') == 'defeat':
             self.stats.update(status='round_failed', reason='패배 결과 처리 및 초기 화면 복귀 완료')
         else:
-            self.stats.update(status='stopped', reason='탐사 결과 복귀 완료 — 이전 승패 미확인')
+            self.stats.update(status='round_cleared', reason='탐사 완료 및 초기 화면 복귀 완료')
 
     def _event(self):
         if not self.observer.known_event(self._capture()):
@@ -482,6 +482,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if state == 'map': self.stats['nodes'] += 1
 
     def _victory(self):
+        self.stats['outcome'] = 'victory'
         if self.observer.find(self._capture(), 'loot_reward'):
             self._guarded_tap('전투 보상 전리품 선택', 'victory', 'loot_reward')
             self._state('전투 보상 전리품 목록', {'loot'})
@@ -489,13 +490,18 @@ class NodeProgressionBot(KnightRecruitmentBot):
         # A hero reward is not part of the configured party; do not recruit it.
         skip_hero = bool(self.observer.find(self._capture(), 'reward_hero'))
         self._guarded_tap('계속 탐사하기', 'victory', 'continue', exiting=True)
-        allowed = {'map','story','story_confirm','event_result','unknown_event_result'}
+        allowed = {'map','story','story_confirm','event_result','unknown_event_result','expedition_summary','exploration_entry'}
         if skip_hero: allowed.add('unclaimed_reward')
         state = self._state('승리 후 다음 화면 확인', allowed)
         if state == 'unclaimed_reward':
             self._guarded_tap('추가 영웅 보상 없이 진행', state, 'story_confirm', exiting=True)
-            self._state('보상 확인 후 복귀', {'map','story','story_confirm'})
-        if state not in ('event_result','unknown_event_result'): self.stats['nodes'] += 1
+            state = self._state('보상 확인 후 복귀', {'map','story','story_confirm','expedition_summary','exploration_entry'})
+        if state == 'expedition_summary':
+            self._finish_results()
+        elif state == 'exploration_entry':
+            self.stats.update(status='round_cleared', reason='탐사 완료 및 초기 화면 복귀 완료')
+        elif state not in ('event_result','unknown_event_result'):
+            self.stats['nodes'] += 1
 
     def _skip_recruit_reward(self):
         btn = self._wait('영웅 영입 건너뛰기 버튼 확인', lambda s: self.observer.find(s, 'recruit_continue') if self.observer.classify(s) == 'recruit_reward' else None)
@@ -539,6 +545,8 @@ class NodeProgressionBot(KnightRecruitmentBot):
         try:
             while True:
                 self._check_stop()
+                if self.stats.get('status') in ('round_cleared', 'round_failed'):
+                    break
                 if self.max_nodes is not None and self.stats['nodes'] >= self.max_nodes:
                     self.stats.update(status='completed', reason='지정한 노드 검증 완료')
                     break
@@ -549,6 +557,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     continue
                 if state == 'expedition_summary':
                     self._finish_results()
+                    break
+                if state == 'exploration_entry':
+                    if self.stats.get('outcome') == 'defeat':
+                        self.stats.update(status='round_failed', reason='패배 결과 처리 및 초기 화면 복귀 완료')
+                    else:
+                        self.stats.update(status='round_cleared', reason='탐사 완료 및 초기 화면 복귀 완료')
                     break
                 if state == 'map':
                     self.event_context = False
@@ -601,11 +615,13 @@ class NodeProgressionBot(KnightRecruitmentBot):
 class ExplorationBot:
     """GUI facade: one stop event and live stats across both stages."""
     def __init__(self, adb, root, runtime_dir, hero_ids=None, rank_priority=None, max_nodes=None, repeat_on_failure=True,
-                 event_mode='ocr', save_unknown_events=False, diagnostic_capture=False):
+                 target_clears=1, event_mode='ocr', save_unknown_events=False, diagnostic_capture=False):
         self._args = (adb, root, runtime_dir, hero_ids, rank_priority, max_nodes)
         self.node_options = dict(event_mode=event_mode, save_unknown_events=save_unknown_events,
                                  diagnostic_capture=diagnostic_capture, rank_priority=rank_priority)
         self.repeat_on_failure = repeat_on_failure
+        self.target_clears = max(1, int(target_clears)) if target_clears is not None else 1
+        self.cleared_rounds = 0
         self.failed_rounds = 0
         self.attempt = 1
         self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids)
@@ -617,27 +633,52 @@ class ExplorationBot:
         self.active.set_user_action(action)
 
     def get_stats(self):
-        return dict(self.active.get_stats(), failed_rounds=self.failed_rounds, attempt=self.attempt)
+        return dict(self.active.get_stats(),
+                    cleared_rounds=self.cleared_rounds,
+                    failed_rounds=self.failed_rounds,
+                    target_clears=self.target_clears,
+                    attempt=self.attempt)
 
     def run(self):
         try:
             while True:
                 result = self._run_stages()
-                if result.get('status') != 'round_failed':
-                    return dict(result, failed_rounds=self.failed_rounds, attempt=self.attempt)
-                self.failed_rounds += 1
-                if not self.repeat_on_failure:
-                    self.active.stats.update(status='stopped', reason='패배 결과 처리 후 중지')
-                    break
-                stop = self.nodes.stop_event
-                if stop.is_set(): raise _Stopped()
-                self.attempt += 1
-                adb, root, runtime_dir, hero_ids, rank_priority, max_nodes = self._args
-                self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids)
-                self.nodes = NodeProgressionBot(adb, root, runtime_dir, max_nodes=max_nodes, **self.node_options)
-                self.recruitment.stop_event = self.nodes.stop_event = stop
-                self.active = self.recruitment
-                logger.info('탐사 패배 후 새 회차 시작: %s', self.attempt)
+                status = result.get('status')
+                if status == 'round_failed':
+                    self.failed_rounds += 1
+                    if not self.repeat_on_failure:
+                        self.active.stats.update(status='stopped', reason='패배 결과 처리 후 중지')
+                        break
+                    stop = self.nodes.stop_event
+                    if stop.is_set(): raise _Stopped()
+                    self.attempt += 1
+                    adb, root, runtime_dir, hero_ids, rank_priority, max_nodes = self._args
+                    self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids)
+                    self.nodes = NodeProgressionBot(adb, root, runtime_dir, max_nodes=max_nodes, **self.node_options)
+                    self.recruitment.stop_event = self.nodes.stop_event = stop
+                    self.active = self.recruitment
+                    logger.info('탐사 패배 후 재도전 시작: %d회차 (완주 %d/%d회, 패배 %d회)',
+                                self.attempt, self.cleared_rounds, self.target_clears, self.failed_rounds)
+                    continue
+
+                if status in ('round_cleared', 'completed'):
+                    self.cleared_rounds += 1
+                    if self.cleared_rounds >= self.target_clears:
+                        self.active.stats.update(status='completed', reason=f'목표 완주 {self.target_clears}회 달성')
+                        return self.get_stats()
+                    stop = self.nodes.stop_event
+                    if stop.is_set(): raise _Stopped()
+                    self.attempt += 1
+                    adb, root, runtime_dir, hero_ids, rank_priority, max_nodes = self._args
+                    self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids)
+                    self.nodes = NodeProgressionBot(adb, root, runtime_dir, max_nodes=max_nodes, **self.node_options)
+                    self.recruitment.stop_event = self.nodes.stop_event = stop
+                    self.active = self.recruitment
+                    logger.info('탐사 완주 후 다음 회차 시작: %d회차 (완주 %d/%d회, 패배 %d회)',
+                                self.attempt, self.cleared_rounds, self.target_clears, self.failed_rounds)
+                    continue
+
+                return self.get_stats()
         except _Stopped:
             self.active.stats.update(status='stopped', reason='사용자 중지')
         except Exception as exc:

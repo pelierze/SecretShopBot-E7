@@ -85,6 +85,46 @@ class ChaosSessionLifecycleTest(unittest.TestCase):
         mock_exploration_bot.assert_called_once()
         _, kwargs = mock_exploration_bot.call_args
         self.assertEqual(kwargs.get("rank_priority"), ["jenua", "wukong", "shadow_rose"])
+        self.assertEqual(kwargs.get("target_clears"), 1)
+
+    @patch("src.gui.ExplorationBot")
+    def test_chaos_start_passes_configured_target_clears(self, mock_exploration_bot):
+        view = object.__new__(SessionView)
+        view.name = "test"
+        view.is_running = False
+        view.bot_thread = None
+        view.adb_controller = Mock()
+        view.runtime_dir = "mock_runtime"
+        view.chaos_event_mode = Mock(get=Mock(return_value="ocr"))
+        view.chaos_save_unknown = Mock(get=Mock(return_value=False))
+        view.chaos_status_label = Mock()
+        view._set_running_ui = Mock()
+        view._run_chaos_bot = Mock()
+        view.root = Mock()
+        view.chaos_hero_choices = {"knight": ["shadow_rose"], "warrior": ["wukong"], "soul_weaver": ["destina"], "thief": ["jenua"]}
+        view.chaos_hero_combos = {k: Mock(current=Mock(return_value=0)) for k in view.chaos_hero_choices}
+        view.chaos_target_clears_entry = Mock(get=Mock(return_value="5"))
+        view._start_chaos_bot()
+        self.assertTrue(view.is_running)
+        mock_exploration_bot.assert_called_once()
+        _, kwargs = mock_exploration_bot.call_args
+        self.assertEqual(kwargs.get("target_clears"), 5)
+
+    @patch("tkinter.messagebox.showerror")
+    @patch("src.gui.ExplorationBot")
+    def test_chaos_start_rejects_invalid_target_clears(self, mock_exploration_bot, mock_showerror):
+        view = object.__new__(SessionView)
+        view.name = "test"
+        view.is_running = False
+        view.bot_thread = None
+        view.adb_controller = Mock()
+        view.chaos_hero_choices = {"knight": ["shadow_rose"]}
+        view.chaos_hero_combos = {"knight": Mock(current=Mock(return_value=0))}
+        view.chaos_target_clears_entry = Mock(get=Mock(return_value="abc"))
+        view._start_chaos_bot()
+        self.assertFalse(view.is_running)
+        mock_exploration_bot.assert_not_called()
+        mock_showerror.assert_called_once()
 
 
 class SessionViewFormattingTest(unittest.TestCase):

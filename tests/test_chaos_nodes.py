@@ -300,6 +300,39 @@ class NodeFlowTest(unittest.TestCase):
             self.assertIs(r2.stop_event,r1.stop_event)
             self.assertEqual(recruit.call_args.kwargs['hero_ids'],party)
 
+    def test_victory_closes_results_and_returns_round_cleared(self):
+        n=NodeObserver(ROOT);n.config['poll_seconds']=0
+        b=NodeProgressionBot(Mock(),ROOT,self.temp.name,observer=n)
+        b.stats['outcome'] = 'victory'
+        frames=[read_image(str(RAW/name)) for name in ['expedition_summary_live.png','entry_after_defeat_live.png']]
+        index=[0];taps=[]
+        b._capture=lambda:frames[index[0]]
+        def tap(bounds):taps.append(bounds);index[0]+=1
+        b._tap=tap
+        result=b.run()
+        self.assertEqual(result['status'],'round_cleared',result)
+        self.assertEqual(result['outcome'],'victory')
+        self.assertEqual(len(taps),1)
+
+    def test_repeat_until_target_clears_reached_with_failures(self):
+        b = ExplorationBot(Mock(), ROOT, self.temp.name, target_clears=5)
+        stages_results = [
+            {'status': 'round_cleared'},
+            {'status': 'round_cleared'},
+            {'status': 'round_cleared'},
+            {'status': 'round_failed'},
+            {'status': 'round_cleared'},
+            {'status': 'round_cleared'},
+        ]
+        b._run_stages = Mock(side_effect=stages_results)
+        result = b.run()
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(result['cleared_rounds'], 5)
+        self.assertEqual(result['failed_rounds'], 1)
+        self.assertEqual(result['attempt'], 6)
+        self.assertEqual(result['reason'], '목표 완주 5회 달성')
+        self.assertEqual(b._run_stages.call_count, 6)
+
     def test_stop_after_defeat_prevents_new_attempt(self):
         b=ExplorationBot(Mock(),ROOT,self.temp.name)
         def failed():
