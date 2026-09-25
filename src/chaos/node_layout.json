@@ -428,9 +428,9 @@
       "max_color_error": 0.08,
       "region": [
         0,
-        80,
+        60,
         1280,
-        520
+        560
       ]
     },
     "node_battle": {
@@ -439,9 +439,9 @@
       "max_color_error": 0.08,
       "region": [
         0,
-        80,
+        60,
         1280,
-        520
+        560
       ]
     },
     "node_elite": {
@@ -450,9 +450,9 @@
       "max_color_error": 0.08,
       "region": [
         0,
-        80,
+        60,
         1280,
-        520
+        560
       ]
     },
     "node_shop": {
@@ -461,9 +461,9 @@
       "max_color_error": 0.08,
       "region": [
         0,
-        80,
+        60,
         1280,
-        520
+        560
       ]
     },
     "node_supply": {
@@ -472,9 +472,9 @@
       "max_color_error": 0.08,
       "region": [
         0,
-        80,
+        60,
         1280,
-        520
+        560
       ]
     },
     "node_event": {
@@ -483,9 +483,9 @@
       "max_color_error": 0.08,
       "region": [
         0,
-        80,
+        60,
         1280,
-        520
+        560
       ]
     },
     "node_boss": {
@@ -494,9 +494,9 @@
       "max_color_error": 0.08,
       "region": [
         0,
-        80,
+        60,
         1280,
-        520
+        560
       ]
     },
     "jenua_selected": {
