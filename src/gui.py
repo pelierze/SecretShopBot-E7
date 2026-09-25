@@ -2331,19 +2331,19 @@ class SecretShopGUI:
         self.root_container = ttk.Frame(self.root, style="Root.TFrame", padding=(12, 12, 12, 12))
         self.root_container.pack(fill=tk.BOTH, expand=True)
 
-        self.header = ttk.Frame(self.root_container, style="Root.TFrame")
-        self.header.pack(side=tk.TOP, fill=tk.X, pady=(0, 8))
+        self.notebook = ttk.Notebook(self.root_container)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+
         self.support_button = ttk.Button(
-            self.header,
+            self.root_container,
             text="개발자 후원 · Buy Me a Coffee",
             command=self._open_support_page,
             style="Support.TButton",
             cursor="hand2",
         )
-        self.support_button.pack(side=tk.RIGHT)
-
-        self.notebook = ttk.Notebook(self.root_container)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+        self.support_button.place(relx=1.0, y=8, anchor="ne")
+        self.support_button.lift()
+        self.notebook.bind("<<NotebookTabChanged>>", lambda _event: self.support_button.lift(), add="+")
 
         self.sessions = [
             SessionView(self, 1, self.notebook),
