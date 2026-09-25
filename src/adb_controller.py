@@ -458,6 +458,15 @@ class ADBController:
             last_output = self._format_completed_output(result)
         return False, last_output
 
+    def capture_frame(self):
+        """Decode a frame in memory, without retaining a screenshot on disk."""
+        import cv2
+        import numpy as np
+        result = self._run_adb(["-s", self.device_id, "exec-out", "screencap", "-p"])
+        if result.returncode != 0 or not isinstance(result.stdout, bytes):
+            return None
+        return cv2.imdecode(np.frombuffer(result.stdout, dtype=np.uint8), cv2.IMREAD_COLOR)
+
     def screenshot(self, save_path: str) -> bool:
         """
         화면 캡처
