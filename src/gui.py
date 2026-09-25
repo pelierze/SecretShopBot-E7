@@ -2466,17 +2466,27 @@ class SecretShopGUI:
             foreground=[("disabled", "#a79888")],
             bordercolor=[("active", colors["accent_soft"])],
         )
+        support_bg = "#231f1c"
+        support_hover = "#3a332c"
         style.configure(
             "Support.TButton",
-            background=colors["bg"],
-            foreground=colors["muted"],
-            font=("맑은 고딕", 9),
+            background=support_bg,
+            foreground="#ffffff",
+            bordercolor=support_bg,
+            lightcolor=support_bg,
+            darkcolor=support_bg,
+            borderwidth=1,
+            focusthickness=0,
+            font=("맑은 고딕", 9, "bold"),
             padding=(10, 4),
         )
         style.map(
             "Support.TButton",
-            background=[("active", colors["accent_soft"])],
-            foreground=[("active", colors["accent"])],
+            background=[("active", support_hover), ("disabled", colors["surface_alt"])],
+            foreground=[("disabled", "#a79888"), ("active", "#ffffff")],
+            bordercolor=[("active", support_hover), ("disabled", colors["line"])],
+            lightcolor=[("active", support_hover)],
+            darkcolor=[("active", support_hover)],
         )
         style.configure(
             "Accent.TButton",
