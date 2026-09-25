@@ -61,6 +61,7 @@ else:
 
 logger = logging.getLogger(__name__)
 LOG_SESSION = contextvars.ContextVar("log_session", default="App")
+SUPPORT_URL = "https://buymeacoffee.com/pelierze"
 
 
 def get_resource_root() -> Path:
@@ -2201,6 +2202,17 @@ class SecretShopGUI:
         self.root_container = ttk.Frame(self.root, style="Root.TFrame", padding=(12, 12, 12, 12))
         self.root_container.pack(fill=tk.BOTH, expand=True)
 
+        self.header = ttk.Frame(self.root_container, style="Root.TFrame")
+        self.header.pack(side=tk.TOP, fill=tk.X, pady=(0, 8))
+        self.support_button = ttk.Button(
+            self.header,
+            text="개발자 후원 · Buy Me a Coffee",
+            command=self._open_support_page,
+            style="Support.TButton",
+            cursor="hand2",
+        )
+        self.support_button.pack(side=tk.RIGHT)
+
         self.notebook = ttk.Notebook(self.root_container)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
@@ -2324,6 +2336,18 @@ class SecretShopGUI:
             background=[("active", colors["surface"]), ("disabled", colors["surface_alt"])],
             foreground=[("disabled", "#a79888")],
             bordercolor=[("active", colors["accent_soft"])],
+        )
+        style.configure(
+            "Support.TButton",
+            background=colors["bg"],
+            foreground=colors["muted"],
+            font=("맑은 고딕", 9),
+            padding=(10, 4),
+        )
+        style.map(
+            "Support.TButton",
+            background=[("active", colors["accent_soft"])],
+            foreground=[("active", colors["accent"])],
         )
         style.configure(
             "Accent.TButton",
@@ -2469,6 +2493,18 @@ class SecretShopGUI:
             )
             if should_open:
                 self._open_release_page()
+
+    def _open_support_page(self):
+        try:
+            if webbrowser.open(SUPPORT_URL):
+                return
+        except Exception as exc:
+            logger.warning("후원 페이지를 열지 못했습니다: %s", exc)
+        messagebox.showerror(
+            "후원 페이지 열기 실패",
+            f"기본 브라우저를 열지 못했습니다.\n아래 주소를 브라우저에 입력해 주세요.\n\n{SUPPORT_URL}",
+            parent=self.root,
+        )
 
     def _open_release_page(self):
         if not self.release_info or not self.release_info.url:
