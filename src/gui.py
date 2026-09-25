@@ -2466,8 +2466,8 @@ class SecretShopGUI:
             foreground=[("disabled", "#a79888")],
             bordercolor=[("active", colors["accent_soft"])],
         )
-        support_bg = "#231f1c"
-        support_hover = "#3a332c"
+        support_bg = "#45382d"
+        support_hover = "#59493b"
         style.configure(
             "Support.TButton",
             background=support_bg,
