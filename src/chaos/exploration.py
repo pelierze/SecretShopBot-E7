@@ -254,7 +254,15 @@ class NodeProgressionBot(KnightRecruitmentBot):
             self._state('랭크업 영웅 목록 대기', {'rank_menu'})
             self._rankup()
             self._record('rankup_completed')
-        leave_btn = self._wait('휴식 떠나기 확인', lambda s: self.observer.find(s, 'leave') if self.observer.classify(s) == 'rest' else None)
+            def rankup_disabled(s):
+                if self.observer.classify(s) != 'rest':
+                    return None
+                if self.observer.find(s, 'rest_done') or not self.observer.find(s, 'detail_rest'):
+                    return self.observer.find(s, 'leave')
+                return None
+            leave_btn = self._wait('휴식 랭크업 비활성화(완료표시) 및 떠나기 확인', rankup_disabled)
+        else:
+            leave_btn = self._wait('휴식 떠나기 확인', lambda s: self.observer.find(s, 'leave') if self.observer.classify(s) == 'rest' else None)
         self._state('휴식 후 지도 복귀', {'map'}, retry_tap=leave_btn)
         self.stats['nodes'] += 1
 
