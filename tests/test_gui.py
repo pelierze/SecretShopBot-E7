@@ -1,7 +1,10 @@
 import unittest
 from unittest.mock import Mock
 
-from src.gui import SessionView
+import tkinter as tk
+from tkinter import ttk
+
+from src.gui import SecretShopGUI, SessionView
 
 
 class ChaosSessionLifecycleTest(unittest.TestCase):
@@ -162,6 +165,40 @@ class SessionViewFormattingTest(unittest.TestCase):
         view = object.__new__(SessionView)
 
         self.assertEqual(SessionView._extract_reroll_option_name(view, "방어력 (4~8%)"), "방어력")
+
+
+class CheckboxIndicatorStyleTest(unittest.TestCase):
+    def test_checkbox_custom_indicator_images_and_layout(self):
+        root = tk.Tk()
+        try:
+            app = object.__new__(SecretShopGUI)
+            app.root = root
+            app.window_icon_image = None
+            colors = {
+                "bg": "#efe7dc",
+                "surface": "#fbf6ee",
+                "surface_alt": "#f6efe6",
+                "ink": "#2f261f",
+                "muted": "#776554",
+                "line": "#d8c7b3",
+                "accent": "#7a5c3e",
+                "accent_hover": "#8c6b4a",
+                "accent_soft": "#e8dbc8",
+                "success": "#4f6f52",
+                "warning": "#b77932",
+            }
+            indicators = app._create_checkbox_indicators(colors)
+            self.assertIn("off", indicators)
+            self.assertIn("on", indicators)
+            self.assertIn("off_active", indicators)
+            self.assertIn("on_active", indicators)
+
+            app._apply_modern_style()
+            style = ttk.Style(root)
+            layout = style.layout("TCheckbutton")
+            self.assertIn("SquareCheck.indicator", str(layout))
+        finally:
+            root.destroy()
 
 
 if __name__ == "__main__":

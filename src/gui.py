@@ -1,4 +1,4 @@
-﻿"""
+"""
 GUI 인터페이스
 tkinter를 사용한 사용자 인터페이스
 """
@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 # 사운드 출력을 위한 패키지 (윈도우 전용)
 try:
@@ -2543,7 +2543,62 @@ class SecretShopGUI:
             foreground=[("disabled", "#a79888")],
         )
 
+        # Checkbutton 커스텀 인디케이터 (체크 시 clam 기본 'X' 대신 꽉찬 검정 네모 적용)
+        self._checkbox_images = self._create_checkbox_indicators(colors)
+        try:
+            style.element_create(
+                "SquareCheck.indicator",
+                "image",
+                self._checkbox_images["off"],
+                ("disabled selected", self._checkbox_images["on_disabled"]),
+                ("disabled", self._checkbox_images["off_disabled"]),
+                ("active selected", self._checkbox_images["on_active"]),
+                ("active !selected", self._checkbox_images["off_active"]),
+                ("selected", self._checkbox_images["on"]),
+                padding=(0, 0, 5, 0),
+            )
+            style.layout(
+                "TCheckbutton",
+                [
+                    (
+                        "Checkbutton.padding",
+                        {
+                            "sticky": "nswe",
+                            "children": [
+                                ("SquareCheck.indicator", {"side": "left", "sticky": ""}),
+                                (
+                                    "Checkbutton.focus",
+                                    {
+                                        "side": "left",
+                                        "sticky": "w",
+                                        "children": [("Checkbutton.label", {"sticky": "nswe"})],
+                                    },
+                                ),
+                            ],
+                        },
+                    )
+                ],
+            )
+        except Exception as exc:
+            logger.warning("체크박스 인디케이터 스타일 적용 실패: %s", exc)
+
         style.configure("TCheckbutton", background=colors["surface"], foreground=colors["ink"])
+
+    def _create_checkbox_indicators(self, colors):
+        def _make_square(fill_color, outline_color, size=13):
+            im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            d = ImageDraw.Draw(im)
+            d.rectangle([0, 0, size - 1, size - 1], fill=fill_color, outline=outline_color, width=1)
+            return ImageTk.PhotoImage(im)
+
+        return {
+            "off": _make_square(colors.get("surface", "#ffffff"), colors.get("muted", "#776554")),
+            "on": _make_square("#1a1a1a", "#1a1a1a"),
+            "off_active": _make_square("#fdfbf7", colors.get("ink", "#2f261f")),
+            "on_active": _make_square("#000000", "#000000"),
+            "off_disabled": _make_square(colors.get("surface_alt", "#f6efe6"), colors.get("line", "#c4b5a5")),
+            "on_disabled": _make_square(colors.get("muted", "#8c7b6c"), colors.get("muted", "#8c7b6c")),
+        }
 
     def _setup_logging(self):
         root_logger = logging.getLogger()
