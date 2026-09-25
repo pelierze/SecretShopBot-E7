@@ -187,8 +187,8 @@
     },
     "wukong": {
       "file": "images/chaos/node_progression/raw/rest_rank_menu_live.png",
-      "threshold": 0.9,
-      "max_color_error": 0.055,
+      "threshold": 0.85,
+      "max_color_error": 0.1,
       "crop": [
         397,
         413,
@@ -204,8 +204,8 @@
     },
     "jenua": {
       "file": "images/chaos/node_progression/raw/rest_rank_menu_live.png",
-      "threshold": 0.9,
-      "max_color_error": 0.055,
+      "threshold": 0.85,
+      "max_color_error": 0.1,
       "crop": [
         397,
         308,

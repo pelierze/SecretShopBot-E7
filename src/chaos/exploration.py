@@ -75,6 +75,28 @@ class NodeProgressionBot(KnightRecruitmentBot):
         text = ((hsv[:,:,1]<110)&(hsv[:,:,2]>170)).astype(np.uint8)
         return hashlib.sha256(cv2.resize(text,(282,58),interpolation=cv2.INTER_AREA).tobytes()).hexdigest()
 
+    def _tap_with_verify(self, bounds, phase, predicate, max_retries=3, wait_seconds=1.2):
+        for attempt in range(1, max_retries + 1):
+            before = self._capture()
+            self._tap(bounds)
+            deadline = time.monotonic() + wait_seconds
+            after = None
+            while time.monotonic() < deadline:
+                after = self._capture()
+                ok, res = predicate(after, before)
+                if ok:
+                    return res
+                if self.stop_event.wait(0.25):
+                    raise _Stopped()
+            if after is None:
+                after = self._capture()
+            diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(after, np.ndarray) and isinstance(before, np.ndarray) else 0.0
+            logger.warning(
+                '자동 탐사 [%s]: 입력 신호 후 진행 확인 안 됨 (시도 %d/%d, 화면 변화도: %.2f) — 재입력 시도',
+                phase, attempt, max_retries, diff
+            )
+        return None
+
     def _classify(self, screen):
         state = self.observer.classify(screen)
         if state is not None: return state
@@ -83,8 +105,28 @@ class NodeProgressionBot(KnightRecruitmentBot):
             if self.observer.find(screen,'event_advance'): return 'unknown_event_result'
         return None
 
-    def _state(self, phase, allowed):
-        return self._wait(phase, lambda s: (kind,) if (kind := self._classify(s)) in allowed else None)[0]
+    def _state(self, phase, allowed, retry_tap=None, max_retries=3):
+        def check(s):
+            kind = self._classify(s)
+            return (kind,) if kind in allowed else None
+
+        if retry_tap is not None:
+            for attempt in range(1, max_retries + 1):
+                before = self._capture()
+                deadline = time.monotonic() + 1.2
+                while time.monotonic() < deadline:
+                    after = self._capture()
+                    val = check(after)
+                    if val is not None:
+                        return val[0]
+                    if self.stop_event.wait(0.2):
+                        raise _Stopped()
+                diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
+                logger.warning('자동 탐사 [%s]: 입력 후 다음 화면 미진행 (시도 %d/%d, 화면 변화도: %.2f) — 재입력 시도',
+                               phase, attempt, max_retries, diff)
+                self._tap(retry_tap)
+
+        return self._wait(phase, check)[0]
 
     def _guarded_tap(self, phase, state, marker, *, exiting=False):
         def ready(screen):
@@ -165,7 +207,16 @@ class NodeProgressionBot(KnightRecruitmentBot):
             raise RuntimeError('랭크업 화면에서 금지 항목 발견')
         rank = self.observer.rank(screen, 'wukong')
         if rank is None:
-            raise RuntimeError('오공 랭크를 확실하게 읽지 못했습니다.')
+            jenua_rank = None
+            try:
+                jenua_rank = self.observer.rank(screen, 'jenua')
+            except Exception:
+                pass
+            if jenua_rank is not None and jenua_rank < 5:
+                logger.info('오공 랭크 판독 불가 — 오공 5랭크(MAX)로 판단하여 제뉴아(%d랭크)로 전환합니다.', jenua_rank)
+                rank = 5
+            else:
+                raise RuntimeError('오공 랭크를 확실하게 읽지 못했습니다.')
         target = 'wukong' if rank < 5 else 'jenua'
         current = rank if target == 'wukong' else self.observer.rank(screen, target)
         if current is None or current >= 5:
@@ -216,6 +267,16 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if choice(screen) != target: raise RuntimeError('전리품 후보가 변경됐습니다.')
         if self.observer.selected_loot(screen) != target:
             self._tap(target)
+            for attempt in range(1, 4):
+                fresh = self._capture()
+                if self.observer.selected_loot(fresh) == target:
+                    break
+                if attempt < 3:
+                    diff = float(np.mean(np.abs(fresh.astype(float) - screen.astype(float)))) if isinstance(fresh, np.ndarray) and isinstance(screen, np.ndarray) else 0.0
+                    logger.warning('자동 탐사 [전리품 카드 선택]: 카드 선택 미반영 (시도 %d/3, 화면 변화도: %.2f) — 재선택 시도', attempt, diff)
+                    self._tap(target)
+                    if self.stop_event.wait(0.3):
+                        raise _Stopped()
         def confirmed(screen):
             if self.observer.classify(screen) != 'loot': return None
             allowed = self.observer.loot_choices(screen)
@@ -225,7 +286,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         button = self._wait('허용 전리품 선택 상태 확인', confirmed)
         if confirmed(self._capture()) != button: raise RuntimeError('전리품 확정 직전 화면 변경')
         self._tap(button)
-        self._state('전리품 수령 후 복귀', {'supply','victory','map','event_result','unknown_event_result'})
+        self._state('전리품 수령 후 복귀', {'supply','victory','map','event_result','unknown_event_result'}, retry_tap=button)
 
     def _supply(self):
         if not self.observer.find(self._capture(), 'supply_done'):
@@ -271,6 +332,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         target = self._wait('허용 이벤트 우선순위 확인', self.observer.event_choice)
         if self.observer.event_choice(self._capture()) != target:
             raise RuntimeError('이벤트 선택 직전 화면 변경')
+        self._last_event_choice_bounds = target
         self._tap(target)
         state = self._event_transition()
         if state == 'map': self.stats['nodes'] += 1
@@ -280,9 +342,30 @@ class NodeProgressionBot(KnightRecruitmentBot):
                   'event_loot_popup','unknown_event_result','unknown_event','loot','unclaimed_reward','recruit_reward'}
         def changed(screen):
             state = self._classify(screen)
-            if state == 'unknown_event' and self._event_signature(screen) == previous_signature:
-                return None
+            if state in ('unknown_event', 'event'):
+                if previous_signature is not None and self._event_signature(screen) == previous_signature:
+                    return None
             return (state,) if state in states else None
+
+        retry_bounds = getattr(self, '_last_event_choice_bounds', None)
+        if retry_bounds is not None:
+            for attempt in range(1, 4):
+                before = self._capture()
+                deadline = time.monotonic() + 1.2
+                while time.monotonic() < deadline:
+                    after = self._capture()
+                    val = changed(after)
+                    if val is not None:
+                        state = val[0]
+                        self._report('result', self._capture(), {'state': state})
+                        return state
+                    if self.stop_event.wait(0.2):
+                        raise _Stopped()
+                diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
+                logger.warning('자동 탐사 [이벤트 선택]: 입력 신호 후 진행/변화 없음 (시도 %d/3, 화면 변화도: %.2f) — 재입력 시도',
+                               attempt, diff)
+                self._tap(retry_bounds)
+
         state = self._wait('이벤트 선택 결과 확인', changed)[0]
         self._report('result',self._capture(),{'state':state})
         return state
@@ -319,6 +402,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
             if ready(fresh) != (cards,signature) or target not in self.observer.available_event_cards(fresh,cards):
                 raise RuntimeError('이벤트 재확인 중 화면 변경')
         self._report('selected',fresh,{'mode':self.event_mode,'target':target,'ocr':rows})
+        self._last_event_choice_bounds = target
         self._tap(target)
         state = self._event_transition(signature)
         if state == 'map': self.stats['nodes'] += 1
@@ -347,7 +431,29 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 if page and page[0] != target[0]: return (state,)
             if state in ('event','unknown_event','rank_menu','event_loot_popup','battle_setup'): return (state,)
             return None
-        state = self._wait('이벤트 결과 다음 화면', changed)[0]
+
+        advanced = False
+        for attempt in range(1, 4):
+            before = self._capture()
+            deadline = time.monotonic() + 1.2
+            while time.monotonic() < deadline:
+                after = self._capture()
+                val = changed(after)
+                if val is not None:
+                    state = val[0]
+                    advanced = True
+                    break
+                if self.stop_event.wait(0.2):
+                    raise _Stopped()
+            if advanced:
+                break
+            diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
+            logger.warning('자동 탐사 [이벤트 결과 닫기]: 입력 신호 후 다음 화면 미진행 (시도 %d/3, 화면 변화도: %.2f) — 재입력 시도',
+                           attempt, diff)
+            self._tap(target[1:])
+
+        if not advanced:
+            state = self._wait('이벤트 결과 다음 화면', changed)[0]
         if state == 'map': self.stats['nodes'] += 1
 
     def _victory(self):

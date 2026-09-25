@@ -228,17 +228,33 @@ class NodeObserver:
     def rank(self, screen, name):
         bounds = self.find(screen, name)
         if not bounds: return None
-        x,y,_,_ = bounds
-        return self.read_rank_digit(screen[y+35:y+61, x-16:x+1])
+        x, y, _, _ = bounds
+        digit = self.read_rank_digit(screen[y+35:y+61, max(0, x-16):x+1])
+        if digit is not None:
+            return digit
+        digit_wide = self.read_rank_digit(screen[y+35:y+61, max(0, x-30):x+6], allow_max=True)
+        if digit_wide is not None:
+            return digit_wide
+        return None
 
-    def read_rank_digit(self, sample):
+    def read_rank_digit(self, sample, allow_max=True):
         if self.ocr is None:
             from rapidocr_onnxruntime import RapidOCR
             self.ocr = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
         rows, _ = self.ocr(cv2.resize(sample, None, fx=4, fy=4), use_det=False, use_cls=False)
         if not rows or len(rows) != 1: return None
         text, confidence = rows[0]
-        return int(text) if text in ('1','2','3','4','5') and confidence >= .95 else None
+        cleaned = text.strip()
+        upper = cleaned.upper()
+        if allow_max and (any(tok in upper for tok in ('MAX', 'MA', 'MX', '최대')) or 'MAX' in upper):
+            return 5
+        if confidence >= .65:
+            for ch in cleaned:
+                if ch in ('1', '2', '3', '4', '5'):
+                    return int(ch)
+                if ch in ('S', 's'):
+                    return 5
+        return None
 
     @staticmethod
     def progress_signature(screen):
