@@ -344,6 +344,46 @@ class NodeFlowTest(unittest.TestCase):
         self.assertEqual(result['attempt'],1)
         b._run_stages.assert_called_once()
 
+    def test_supply_acquires_loot_and_leaves_to_map(self):
+        n = NodeObserver(ROOT); n.config['poll_seconds'] = 0
+        b = NodeProgressionBot(Mock(), ROOT, self.temp.name, observer=n)
+        dummy = np.zeros((720, 1280, 3), dtype=np.uint8)
+        b._capture = Mock(return_value=dummy)
+        b._tap = Mock()
+        b._loot = Mock()
+        b._classify = Mock(side_effect=['supply', 'loot', 'supply', 'map'])
+        b._wait = Mock(side_effect=[
+            ('btn', 930, 400, 160, 31),
+            (930, 620, 320, 80),
+            ('map',)
+        ])
+        b._supply()
+        self.assertEqual(b.stats['nodes'], 1)
+        b._loot.assert_called_once()
+        b._tap.assert_any_call((930, 400, 160, 31))
+        b._tap.assert_any_call((930, 620, 320, 80))
+
+    def test_supply_unclaimed_loot_popup_confirmed_and_returns_to_map(self):
+        n = NodeObserver(ROOT); n.config['poll_seconds'] = 0
+        b = NodeProgressionBot(Mock(), ROOT, self.temp.name, observer=n)
+        b._capture = Mock(return_value=None)
+        b._tap = Mock()
+        b._tap_with_verify = Mock()
+        b._loot = Mock()
+        b._wait = Mock(side_effect=[
+            ('already_done',),
+            (930, 620, 320, 80),
+            ('unclaimed_reward',),
+            (700, 425, 110, 75)
+        ])
+        b._state = Mock(return_value='map')
+        b._supply()
+        self.assertEqual(b.stats['nodes'], 1)
+        b._loot.assert_not_called()
+        b._tap.assert_any_call((930, 620, 320, 80))
+        b._tap_with_verify.assert_called_once()
+        self.assertEqual(b._tap_with_verify.call_args[0][0], (700, 425, 110, 75))
+
     def test_event_battle_victory_and_result_return_count_one_node(self):
         n=NodeObserver(ROOT);n.config['poll_seconds']=0
         b=NodeProgressionBot(Mock(),ROOT,self.temp.name,observer=n,max_nodes=1)

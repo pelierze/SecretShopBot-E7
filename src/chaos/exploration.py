@@ -316,12 +316,58 @@ class NodeProgressionBot(KnightRecruitmentBot):
         self._state('전리품 수령 후 복귀', {'supply','victory','map','event_result','unknown_event_result'}, retry_tap=button)
 
     def _supply(self):
-        if not self.observer.find(self._capture(), 'supply_done'):
-            self._guarded_tap('보급: 전리품 획득', 'supply', 'supply_loot')
-            self._state('보급 전리품 목록', {'loot'})
-            self._loot()
-        leave_btn = self._wait('보급 떠나기 확인', lambda s: self.observer.find(s, 'leave') if self.observer.classify(s) == 'supply' else None)
-        self._state('보급 후 지도 복귀', {'map'}, retry_tap=leave_btn)
+        screen = self._capture()
+        loot_btn = self.observer.find(screen, 'supply_loot') if screen is not None else None
+        done_marker = self.observer.find(screen, 'supply_done') if screen is not None else None
+
+        if not done_marker or loot_btn:
+            def find_loot_btn(s):
+                if self.observer.find(s, 'supply_done'):
+                    return ('already_done',)
+                btn = self.observer.find(s, 'supply_loot')
+                return ('btn', *btn) if btn else None
+
+            res = self._wait('보급: 전리품 획득 버튼 확인', find_loot_btn)
+            if res[0] == 'btn':
+                target_loot_btn = res[1:]
+                self._tap(target_loot_btn)
+                loot_entered = False
+                for attempt in range(1, 4):
+                    fresh = self._capture()
+                    if self._classify(fresh) == 'loot':
+                        loot_entered = True
+                        break
+                    if attempt < 3:
+                        if self.stop_event.wait(0.5):
+                            raise _Stopped()
+                        self._tap(target_loot_btn)
+                if loot_entered or self._classify(self._capture()) == 'loot':
+                    self._loot()
+                else:
+                    state = self._state('보급 전리품 목록 진입 대기', {'loot', 'supply'})
+                    if state == 'loot':
+                        self._loot()
+
+        leave_btn = self._wait('보급 떠나기 확인', lambda s: self.observer.find(s, 'leave') if self._classify(s) == 'supply' or self.observer.find(s, 'leave') else None)
+        self._tap(leave_btn)
+
+        def after_leave(s):
+            state = self._classify(s)
+            if state in ('map', 'unclaimed_reward', 'story_confirm'):
+                return (state,)
+            if self.observer.find(s, 'unclaimed_dialog') or self.observer.find(s, 'story_confirm'):
+                return ('unclaimed_reward',)
+            return None
+
+        state = self._wait('보급 떠나기 후 결과(지도 또는 미획득 팝업) 확인', after_leave)[0]
+        if state in ('unclaimed_reward', 'story_confirm'):
+            logger.info('보급 노드: 미획득 전리품 팝업 감지 — 확인 버튼 클릭하여 퇴장 진행')
+            confirm_btn = self._wait('미획득 전리품 팝업 확인 버튼', lambda s: self.observer.find(s, 'story_confirm'))
+            def popup_closed(after, before):
+                return (self._classify(after) == 'map' or not self.observer.find(after, 'story_confirm')), None
+            self._tap_with_verify(confirm_btn, '미획득 전리품 팝업 확인', popup_closed, max_retries=3)
+            self._state('팝업 확인 후 지도 복귀', {'map'})
+
         self.stats['nodes'] += 1
 
     def _shop(self):
@@ -546,6 +592,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         target_state = {'battle':'battle_setup','elite':'battle_setup','boss':'battle_setup','rest':'rest','supply':'supply','shop':'shop','event':'event'}[kind]
         allowed = {target_state,'story','story_confirm'}
         if kind == 'event': allowed.update({'unknown_event','event_result','unknown_event_result'})
+        if kind == 'supply': allowed.update({'unclaimed_reward'})
         self._state('노드 내부 진입 확인', allowed, retry_tap=enter_bounds)
         return True
 
@@ -609,6 +656,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     self._victory()
                 elif state == 'recruit_reward':
                     self._skip_recruit_reward()
+                elif state in ('unclaimed_reward', 'story_confirm'):
+                    confirm_btn = self._wait('미획득 보상 확인 버튼', lambda s: self.observer.find(s, 'story_confirm') if self._classify(s) in ('unclaimed_reward', 'story_confirm') or self.observer.find(s, 'story_confirm') else None)
+                    def closed(after, before):
+                        return (self.observer.find(after, 'story_confirm') is None), None
+                    self._tap_with_verify(confirm_btn, '미획득 보상 확인', closed, max_retries=3)
+                    self._state('보상 확인 후 복귀', {'map','story','story_confirm','expedition_summary','exploration_entry'})
                 else:
                     raise RuntimeError(f'{state}: 중간 화면에서 재개할 수 없습니다. 지도에서 시작해 주세요.')
             self._record('end')

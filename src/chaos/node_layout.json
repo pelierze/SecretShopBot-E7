@@ -785,8 +785,8 @@
         270,
         75
       ],
-      "threshold": 0.9,
-      "max_color_error": 0.06
+      "threshold": 0.85,
+      "max_color_error": 0.10
     },
     "supply_done": {
       "file": "images/chaos/raw/Screenshot_2026.09.24_09.29.50.037.png",

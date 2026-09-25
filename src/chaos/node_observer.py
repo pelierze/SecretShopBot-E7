@@ -145,6 +145,7 @@ class NodeObserver:
         if self.find(screen, 'unclaimed_dialog'): return 'unclaimed_reward'
         if self.find(screen, 'recruit_reward_title') and self.find(screen, 'recruit_continue'): return 'recruit_reward'
         if self.find(screen, 'story_dialog'): return 'story_confirm'
+        if self.find(screen, 'story_confirm'): return 'unclaimed_reward'
         if self.find(screen, 'levelup') and self.find(screen, 'level_close'): return 'levelup'
         if self.find(screen, 'rank_close'): return 'rank_result'
         if self.find(screen, 'event_loot_close'): return 'event_loot_popup'
