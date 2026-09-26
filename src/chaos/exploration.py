@@ -109,6 +109,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         return None
 
     def _classify(self, screen):
+        if screen is None: return None
         state = self.observer.classify(screen)
         if state is not None: return state
         if self.event_context:
@@ -133,9 +134,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     if self.stop_event.wait(0.2):
                         raise _Stopped()
                 diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
+                target_tap = retry_tap(after) if callable(retry_tap) else retry_tap
+                if target_tap is None:
+                    break
                 logger.warning('자동 탐사 [%s]: 입력 후 다음 화면 미진행 (시도 %d/%d, 화면 변화도: %.2f) — 재입력 시도',
                                phase, attempt, max_retries, diff)
-                self._tap(retry_tap)
+                self._tap(target_tap)
 
         return self._wait(phase, check)[0]
 
@@ -317,6 +321,13 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
     def _supply(self):
         screen = self._capture()
+        if screen is not None and (self._classify(screen) in ('unclaimed_reward', 'story_confirm') or self.observer.find(screen, 'story_confirm')):
+            logger.info('보급 노드: 진입 시 미획득 알림 팝업 감지 — 취소 버튼으로 닫고 전리품 획득 시도')
+            self._tap((532, 460))
+            if self.stop_event.wait(0.5):
+                raise _Stopped()
+            screen = self._capture()
+
         loot_btn = self.observer.find(screen, 'supply_loot') if screen is not None else None
         done_marker = self.observer.find(screen, 'supply_done') if screen is not None else None
 
@@ -593,7 +604,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         allowed = {target_state,'story','story_confirm'}
         if kind == 'event': allowed.update({'unknown_event','event_result','unknown_event_result'})
         if kind == 'supply': allowed.update({'unclaimed_reward'})
-        self._state('노드 내부 진입 확인', allowed, retry_tap=enter_bounds)
+        self._state('노드 내부 진입 확인', allowed, retry_tap=lambda s: self.observer.find(s, 'enter_node'))
         return True
 
     def run(self):

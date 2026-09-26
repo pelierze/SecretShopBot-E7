@@ -384,6 +384,36 @@ class NodeFlowTest(unittest.TestCase):
         b._tap_with_verify.assert_called_once()
         self.assertEqual(b._tap_with_verify.call_args[0][0], (700, 425, 110, 75))
 
+    def test_supply_cancels_existing_unclaimed_popup_to_acquire_loot(self):
+        n = NodeObserver(ROOT); n.config['poll_seconds'] = 0
+        b = NodeProgressionBot(Mock(), ROOT, self.temp.name, observer=n)
+        dummy = np.zeros((720, 1280, 3), dtype=np.uint8)
+        b._capture = Mock(return_value=dummy)
+        b._tap = Mock()
+        b._loot = Mock()
+        b._classify = Mock(side_effect=['unclaimed_reward', 'supply', 'loot', 'supply', 'map'])
+        b._wait = Mock(side_effect=[
+            ('btn', 930, 400, 160, 31),
+            (930, 620, 320, 80),
+            ('map',)
+        ])
+        b._supply()
+        self.assertEqual(b.stats['nodes'], 1)
+        b._tap.assert_any_call((532, 460))
+        b._loot.assert_called_once()
+
+    def test_state_callable_retry_tap_does_not_blind_click_when_button_disappears(self):
+        n = NodeObserver(ROOT); n.config['poll_seconds'] = 0
+        b = NodeProgressionBot(Mock(), ROOT, self.temp.name, observer=n)
+        dummy = np.zeros((720, 1280, 3), dtype=np.uint8)
+        b._capture = Mock(return_value=dummy)
+        b._tap = Mock()
+        b.observer.classify = Mock(side_effect=[None, None, 'supply'])
+        retry_fn = Mock(return_value=None)
+        state = b._state('test', {'supply'}, retry_tap=retry_fn)
+        self.assertEqual(state, 'supply')
+        b._tap.assert_not_called()
+
     def test_event_battle_victory_and_result_return_count_one_node(self):
         n=NodeObserver(ROOT);n.config['poll_seconds']=0
         b=NodeProgressionBot(Mock(),ROOT,self.temp.name,observer=n,max_nodes=1)
