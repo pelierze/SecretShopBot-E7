@@ -2101,6 +2101,482 @@
       ],
       "threshold": 0.9,
       "max_color_error": 0.05
+    },
+    "event_old_woman": {
+      "file": "images/chaos/node_progression/raw/event_old_woman_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_old_woman_loot": {
+      "file": "images/chaos/node_progression/raw/event_old_woman_live.png",
+      "crop": [
+        120,
+        588,
+        180,
+        27
+      ],
+      "region": [
+        110,
+        578,
+        200,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_golden_altar": {
+      "file": "images/chaos/node_progression/raw/event_golden_altar_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_golden_altar_rank": {
+      "file": "images/chaos/node_progression/raw/event_golden_altar_live.png",
+      "crop": [
+        540,
+        588,
+        120,
+        27
+      ],
+      "region": [
+        530,
+        578,
+        140,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_golden_altar_flee": {
+      "file": "images/chaos/node_progression/raw/event_golden_altar_live.png",
+      "crop": [
+        880,
+        588,
+        180,
+        27
+      ],
+      "region": [
+        870,
+        578,
+        200,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_mimic": {
+      "file": "images/chaos/node_progression/raw/event_mimic_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_mimic_leave": {
+      "file": "images/chaos/node_progression/raw/event_mimic_live.png",
+      "crop": [
+        720,
+        588,
+        150,
+        27
+      ],
+      "region": [
+        710,
+        578,
+        170,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_temple_ruins": {
+      "file": "images/chaos/node_progression/raw/event_temple_ruins_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_temple_ruins_recruit": {
+      "file": "images/chaos/node_progression/raw/event_temple_ruins_live.png",
+      "crop": [
+        680,
+        588,
+        200,
+        27
+      ],
+      "region": [
+        670,
+        578,
+        220,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_gatekeeper_sword": {
+      "file": "images/chaos/node_progression/raw/event_gatekeeper_sword_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_gatekeeper_sword_battle": {
+      "file": "images/chaos/node_progression/raw/event_gatekeeper_sword_live.png",
+      "crop": [
+        140,
+        588,
+        160,
+        27
+      ],
+      "region": [
+        130,
+        578,
+        180,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_door_crevice": {
+      "file": "images/chaos/node_progression/raw/event_door_crevice_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_door_crevice_fuel": {
+      "file": "images/chaos/node_progression/raw/event_door_crevice_live.png",
+      "crop": [
+        300,
+        588,
+        200,
+        27
+      ],
+      "region": [
+        290,
+        578,
+        220,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_armory_enemy": {
+      "file": "images/chaos/node_progression/raw/event_armory_enemy_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_armory_enemy_battle": {
+      "file": "images/chaos/node_progression/raw/event_armory_enemy_live.png",
+      "crop": [
+        130,
+        588,
+        180,
+        27
+      ],
+      "region": [
+        120,
+        578,
+        200,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_armory_enemy_leave": {
+      "file": "images/chaos/node_progression/raw/event_armory_enemy_live.png",
+      "crop": [
+        900,
+        588,
+        150,
+        27
+      ],
+      "region": [
+        890,
+        578,
+        170,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_deep_pond": {
+      "file": "images/chaos/node_progression/raw/event_deep_pond_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_deep_pond_loot": {
+      "file": "images/chaos/node_progression/raw/event_deep_pond_live.png",
+      "crop": [
+        320,
+        588,
+        180,
+        27
+      ],
+      "region": [
+        310,
+        578,
+        200,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_library_book": {
+      "file": "images/chaos/node_progression/raw/event_library_book_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_library_book_loot": {
+      "file": "images/chaos/node_progression/raw/event_library_book_live.png",
+      "crop": [
+        280,
+        588,
+        220,
+        27
+      ],
+      "region": [
+        270,
+        578,
+        240,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_ritual_altar": {
+      "file": "images/chaos/node_progression/raw/event_ritual_altar_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_ritual_altar_leave": {
+      "file": "images/chaos/node_progression/raw/event_ritual_altar_live.png",
+      "crop": [
+        710,
+        588,
+        160,
+        27
+      ],
+      "region": [
+        700,
+        578,
+        180,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_prison_search": {
+      "file": "images/chaos/node_progression/raw/event_prison_search_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_prison_search_fuel": {
+      "file": "images/chaos/node_progression/raw/event_prison_search_live.png",
+      "crop": [
+        480,
+        588,
+        220,
+        27
+      ],
+      "region": [
+        470,
+        578,
+        240,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_prison_search_battle": {
+      "file": "images/chaos/node_progression/raw/event_prison_search_live.png",
+      "crop": [
+        110,
+        588,
+        200,
+        27
+      ],
+      "region": [
+        100,
+        578,
+        220,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_prison_search_heal": {
+      "file": "images/chaos/node_progression/raw/event_prison_search_live.png",
+      "crop": [
+        860,
+        588,
+        220,
+        27
+      ],
+      "region": [
+        850,
+        578,
+        240,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
+    },
+    "event_spirit_dance": {
+      "file": "images/chaos/node_progression/raw/event_spirit_dance_live.png",
+      "crop": [
+        250,
+        485,
+        240,
+        26
+      ],
+      "region": [
+        240,
+        475,
+        260,
+        46
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_spirit_dance_heal": {
+      "file": "images/chaos/node_progression/raw/event_spirit_dance_live.png",
+      "crop": [
+        280,
+        588,
+        220,
+        27
+      ],
+      "region": [
+        270,
+        578,
+        240,
+        47
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.08
     }
   },
   "loot_cards": [
@@ -2738,6 +3214,436 @@
           "effect": "experience",
           "bounds": [
             648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "old_woman",
+      "state_marker": "event_old_woman",
+      "choices": [
+        {
+          "choice_marker": "event_old_woman_loot",
+          "effect": "random_loot",
+          "bounds": [
+            78,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "golden_altar",
+      "state_marker": "event_golden_altar",
+      "choices": [
+        {
+          "choice_marker": "event_golden_altar_rank",
+          "effect": "rank_up",
+          "bounds": [
+            458,
+            556,
+            362,
+            131
+          ]
+        },
+        {
+          "choice_marker": "event_golden_altar_flee",
+          "effect": "currency_reward",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "mimic",
+      "state_marker": "event_mimic",
+      "choices": [
+        {
+          "choice_marker": "event_mimic_leave",
+          "effect": "leave",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "temple_ruins",
+      "state_marker": "event_temple_ruins",
+      "choices": [
+        {
+          "choice_marker": "event_temple_ruins_recruit",
+          "effect": "hero_recruit",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "gatekeeper_sword",
+      "state_marker": "event_gatekeeper_sword",
+      "choices": [
+        {
+          "choice_marker": "event_gatekeeper_sword_battle",
+          "effect": "battle_reward",
+          "bounds": [
+            78,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "door_crevice",
+      "state_marker": "event_door_crevice",
+      "choices": [
+        {
+          "choice_marker": "event_door_crevice_fuel",
+          "effect": "currency_reward",
+          "bounds": [
+            268,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "armory_enemy",
+      "state_marker": "event_armory_enemy",
+      "choices": [
+        {
+          "choice_marker": "event_armory_enemy_battle",
+          "effect": "battle_reward",
+          "bounds": [
+            78,
+            556,
+            362,
+            131
+          ]
+        },
+        {
+          "choice_marker": "event_armory_enemy_leave",
+          "effect": "leave",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "deep_pond",
+      "state_marker": "event_deep_pond",
+      "choices": [
+        {
+          "choice_marker": "event_deep_pond_loot",
+          "effect": "random_loot",
+          "bounds": [
+            268,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "library_book",
+      "state_marker": "event_library_book",
+      "choices": [
+        {
+          "choice_marker": "event_library_book_loot",
+          "effect": "random_loot",
+          "bounds": [
+            268,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "ritual_altar",
+      "state_marker": "event_ritual_altar",
+      "choices": [
+        {
+          "choice_marker": "event_ritual_altar_leave",
+          "effect": "leave",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "prison_search",
+      "state_marker": "event_prison_search",
+      "choices": [
+        {
+          "choice_marker": "event_prison_search_fuel",
+          "effect": "currency_reward",
+          "bounds": [
+            458,
+            556,
+            362,
+            131
+          ]
+        },
+        {
+          "choice_marker": "event_prison_search_battle",
+          "effect": "battle_reward",
+          "bounds": [
+            78,
+            556,
+            362,
+            131
+          ]
+        },
+        {
+          "choice_marker": "event_prison_search_heal",
+          "effect": "heal",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "spirit_dance",
+      "state_marker": "event_spirit_dance",
+      "choices": [
+        {
+          "choice_marker": "event_spirit_dance_heal",
+          "effect": "heal",
+          "bounds": [
+            268,
             556,
             362,
             131
