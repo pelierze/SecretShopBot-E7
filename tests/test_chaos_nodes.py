@@ -118,8 +118,16 @@ class NodeImagesTest(unittest.TestCase):
         s=self.screen('rest_rank_menu_live.png')
         self.assertEqual(self.observer.rank(s,'wukong'),1)
         self.assertEqual(self.observer.rank(s,'jenua'),1)
+        self.assertEqual(self.observer.rank(s,'shadow_rose'),1)
+        self.assertEqual(self.observer.rank(s,'destina'),1)
         self.assertIsNotNone(self.observer.find(self.screen('rest_wukong_selected_live.png'),'wukong_selected'))
         self.assertEqual(self.observer.read_rank_digit(self.screen('rest_wukong_rankup_live.png')[540:568,365:384]),2)
+
+        s2=self.screen('rest_rank_menu_live2.png')
+        self.assertEqual(self.observer.rank(s2,'shadow_rose'),1)
+        self.assertEqual(self.observer.rank(s2,'rhianna_luciella'),1)
+        self.assertEqual(self.observer.rank(s2,'lisette'),1)
+        self.assertEqual(self.observer.rank(s2,'wukong'),5)
 
     def test_supply_loot_and_shop_screens(self):
         for file,state in [('supply_menu_live.png','supply'),('supply_detail_live.png','supply_detail'),

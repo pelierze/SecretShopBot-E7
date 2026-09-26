@@ -188,7 +188,7 @@
     "wukong": {
       "file": "images/chaos/node_progression/raw/rest_rank_menu_live.png",
       "threshold": 0.85,
-      "max_color_error": 0.1,
+      "max_color_error": 0.15,
       "crop": [
         397,
         413,
@@ -205,7 +205,7 @@
     "jenua": {
       "file": "images/chaos/node_progression/raw/rest_rank_menu_live.png",
       "threshold": 0.85,
-      "max_color_error": 0.1,
+      "max_color_error": 0.15,
       "crop": [
         397,
         308,
@@ -222,10 +222,27 @@
     "shadow_rose": {
       "file": "images/chaos/node_progression/raw/rest_rank_menu_live.png",
       "threshold": 0.85,
-      "max_color_error": 0.1,
+      "max_color_error": 0.15,
       "crop": [
         397,
-        203,
+        98,
+        120,
+        27
+      ],
+      "region": [
+        345,
+        75,
+        300,
+        510
+      ]
+    },
+    "rose": {
+      "file": "images/chaos/node_progression/raw/rest_rank_menu_live.png",
+      "threshold": 0.85,
+      "max_color_error": 0.15,
+      "crop": [
+        397,
+        98,
         120,
         27
       ],
@@ -237,21 +254,21 @@
       ]
     },
     "destina": {
-      "file": "images/chaos/hero_selection/raw/soul_weaver_destina_full_selected.png",
+      "file": "images/chaos/node_progression/raw/rest_rank_menu_live.png",
+      "threshold": 0.85,
+      "max_color_error": 0.15,
       "crop": [
-        140,
-        82,
-        85,
-        25
+        397,
+        203,
+        90,
+        27
       ],
       "region": [
         345,
         75,
         300,
         510
-      ],
-      "threshold": 0.78,
-      "max_color_error": 0.15
+      ]
     },
     "savior_adin": {
       "file": "images/chaos/hero_selection/raw/thief_Savior_Adin_selected.png",
@@ -288,38 +305,55 @@
       "max_color_error": 0.15
     },
     "rhianna_luciella": {
-      "file": "images/chaos/hero_selection/raw/thief_Rhianna and Luciella_selected.png",
+      "file": "images/chaos/node_progression/raw/rest_rank_menu_live2.png",
+      "threshold": 0.85,
+      "max_color_error": 0.15,
       "crop": [
+        397,
+        203,
         140,
-        82,
-        85,
-        25
+        27
       ],
       "region": [
         345,
         75,
         300,
         510
-      ],
-      "threshold": 0.78,
-      "max_color_error": 0.15
+      ]
     },
     "rhianna": {
-      "file": "images/chaos/hero_selection/raw/thief_Rhianna and Luciella_selected.png",
+      "file": "images/chaos/node_progression/raw/rest_rank_menu_live2.png",
+      "threshold": 0.85,
+      "max_color_error": 0.15,
       "crop": [
+        397,
+        203,
         140,
-        82,
-        85,
-        25
+        27
       ],
       "region": [
         345,
         75,
         300,
         510
+      ]
+    },
+    "lisette": {
+      "file": "images/chaos/node_progression/raw/rest_rank_menu_live2.png",
+      "threshold": 0.85,
+      "max_color_error": 0.15,
+      "crop": [
+        397,
+        308,
+        64,
+        27
       ],
-      "threshold": 0.78,
-      "max_color_error": 0.15
+      "region": [
+        345,
+        75,
+        300,
+        510
+      ]
     },
     "wukong_selected": {
       "file": "images/chaos/node_progression/raw/rest_wukong_selected_live.png",
@@ -717,9 +751,9 @@
     "rhianna_luciella_selected": {
       "file": "images/chaos/hero_selection/raw/thief_Rhianna and Luciella_selected.png",
       "crop": [
-        125,
+        120,
         82,
-        117,
+        128,
         25
       ],
       "region": [
@@ -728,11 +762,28 @@
         225,
         40
       ],
-      "threshold": 0.9,
-      "max_color_error": 0.07
+      "threshold": 0.85,
+      "max_color_error": 0.1
     },
     "rhianna_selected": {
       "file": "images/chaos/hero_selection/raw/thief_Rhianna and Luciella_selected.png",
+      "crop": [
+        120,
+        82,
+        128,
+        25
+      ],
+      "region": [
+        80,
+        75,
+        225,
+        40
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.1
+    },
+    "lisette_selected": {
+      "file": "images/chaos/hero_selection/raw/soul_weaver_Lisette_selected.png",
       "crop": [
         125,
         82,
@@ -745,8 +796,8 @@
         225,
         40
       ],
-      "threshold": 0.9,
-      "max_color_error": 0.07
+      "threshold": 0.85,
+      "max_color_error": 0.1
     },
     "rest_detail": {
       "file": "images/chaos/node_progression/raw/rest_detail_live.png",
