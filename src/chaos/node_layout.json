@@ -518,10 +518,21 @@
       "threshold": 0.9,
       "max_color_error": 0.055,
       "region": [
-        700,
-        425,
-        110,
-        75
+        680,
+        420,
+        150,
+        120
+      ]
+    },
+    "story_cancel": {
+      "file": "images/chaos/node_progression/templates/story/cancel_button.png",
+      "threshold": 0.9,
+      "max_color_error": 0.055,
+      "region": [
+        470,
+        420,
+        150,
+        120
       ]
     },
     "node_rest": {
@@ -1988,6 +1999,57 @@
       ],
       "threshold": 0.9,
       "max_color_error": 0.06
+    },
+    "event_wall_torch": {
+      "file": "images/chaos/node_progression/raw/event_wall_torch_live.png",
+      "crop": [
+        350,
+        475,
+        250,
+        26
+      ],
+      "region": [
+        340,
+        470,
+        270,
+        36
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_wall_torch_exp": {
+      "file": "images/chaos/node_progression/raw/event_wall_torch_live.png",
+      "crop": [
+        735,
+        588,
+        190,
+        27
+      ],
+      "region": [
+        725,
+        580,
+        210,
+        40
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
+    },
+    "event_wall_torch_result": {
+      "file": "images/chaos/node_progression/raw/event_wall_torch_result_live.png",
+      "crop": [
+        350,
+        480,
+        250,
+        26
+      ],
+      "region": [
+        340,
+        470,
+        270,
+        40
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.05
     }
   },
   "loot_cards": [
@@ -2614,10 +2676,42 @@
           131
         ]
       ]
+    },
+    {
+      "id": "wall_torch",
+      "state_marker": "event_wall_torch",
+      "result_marker": "event_wall_torch_result",
+      "choices": [
+        {
+          "choice_marker": "event_wall_torch_exp",
+          "effect": "experience",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
     }
   ],
   "event_result_markers": [
-    "event_mushroom_end"
+    "event_mushroom_end",
+    "event_wall_torch_result"
   ],
   "event_effect_priority": [
     "rank_up",

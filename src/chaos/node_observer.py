@@ -188,7 +188,7 @@ class NodeObserver:
         return None
 
     def event_result_marker(self, screen):
-        names = self.config.get('event_result_markers', []) + [e['result_marker'] for e in self.config.get('events', []) if e.get('result_marker')]
+        names = list(dict.fromkeys(self.config.get('event_result_markers', []) + [e['result_marker'] for e in self.config.get('events', []) if e.get('result_marker')]))
         found = [name for name in names if self.find(screen, name)]
         return found[0] if len(found) == 1 else None
 

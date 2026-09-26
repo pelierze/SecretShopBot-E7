@@ -195,6 +195,56 @@ class EventModesTest(unittest.TestCase):
             self.assertEqual(current[0],2)
             self.assertEqual(bot.stats['nodes'],1)
 
+    def test_unknown_event_warning_popup_cancelled_and_chooses_alternative(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            observer = NodeObserver(ROOT)
+            observer.config['poll_seconds'] = 0
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, observer, event_mode='random')
+            bot.event_context = True
+            card1 = (268, 556, 362, 131)
+            card2 = (648, 556, 362, 131)
+            bot._capture = Mock()
+            bot._tap = Mock()
+            bot._tap_with_verify = Mock()
+            observer.event_cards = Mock(return_value=[card1, card2])
+            observer.available_event_cards = Mock(return_value=[card1, card2])
+            bot._event_signature = Mock(return_value='sig_test')
+            observer.find = Mock(side_effect=lambda s, name: (511, 479, 46, 31) if name == 'story_cancel' else ((725, 479, 46, 31) if name == 'story_confirm' else None))
+
+            bot._event_transition = Mock(return_value='unknown_event_result')
+            res = bot._handle_event_confirm(failed_target=card1, available_cards=[card1, card2])
+            self.assertEqual(res, 'unknown_event_result')
+            bot._tap_with_verify.assert_called_once()
+            self.assertEqual(bot._tap_with_verify.call_args[0][0], (511, 479, 46, 31))
+            bot._tap.assert_called_once_with(card2)
+
+    def test_unknown_event_confirm_popup_confirmed_when_no_alternative(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            observer = NodeObserver(ROOT)
+            observer.config['poll_seconds'] = 0
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, observer, event_mode='random')
+            bot.event_context = True
+            card1 = (268, 556, 362, 131)
+            bot._capture = Mock()
+            bot._tap_with_verify = Mock()
+            bot._state = Mock(return_value='map')
+            observer.find = Mock(side_effect=lambda s, name: (725, 479, 46, 31) if name == 'story_confirm' else None)
+
+            res = bot._handle_event_confirm(failed_target=card1, available_cards=[card1])
+            self.assertEqual(res, 'map')
+            bot._tap_with_verify.assert_called_once()
+            self.assertEqual(bot._tap_with_verify.call_args[0][0], (725, 479, 46, 31))
+
+    def test_wall_torch_known_event_chooses_exp_card(self):
+        observer = NodeObserver(ROOT)
+        torch_screen = read_image(str(ROOT / 'images/chaos/node_progression/raw/event_wall_torch_live.png'))
+        self.assertEqual(observer.known_event(torch_screen), 'wall_torch')
+        self.assertEqual(observer.event_choice(torch_screen), (648, 556, 362, 131))
+
+        res_screen = read_image(str(ROOT / 'images/chaos/node_progression/raw/event_wall_torch_result_live.png'))
+        self.assertEqual(observer.event_result_marker(res_screen), 'event_wall_torch_result')
+        self.assertEqual(observer.classify(res_screen), 'event_result')
+
 
 if __name__ == '__main__':
     unittest.main()
