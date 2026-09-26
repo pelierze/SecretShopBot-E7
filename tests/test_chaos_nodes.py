@@ -129,6 +129,13 @@ class NodeImagesTest(unittest.TestCase):
         self.assertEqual(self.observer.rank(s2,'lisette'),1)
         self.assertEqual(self.observer.rank(s2,'wukong'),5)
 
+        # Test arbitrary unknown hero auto-mapped by class without per-hero templates
+        self.observer.hero_to_class['future_new_thief'] = 'thief'
+        self.assertEqual(self.observer.rank(s2, 'future_new_thief'), 1)
+        bounds = self.observer.find(s2, 'future_new_thief')
+        self.assertIsNotNone(bounds)
+        self.assertEqual(len(bounds), 4)
+
     def test_supply_loot_and_shop_screens(self):
         for file,state in [('supply_menu_live.png','supply'),('supply_detail_live.png','supply_detail'),
                            ('elite_detail_live.png','elite_detail'),('boss_detail_live.png','boss_detail'),

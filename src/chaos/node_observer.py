@@ -33,6 +33,37 @@ class NodeObserver:
         if not self.blocked:
             raise ValueError('금지 이미지 목록이 비어 있습니다.')
         self.ocr = ocr
+        self.class_templates = {}
+        class_dir = root / 'images/chaos/node_progression/templates/classes'
+        if class_dir.is_dir():
+            for path in sorted(class_dir.glob('class_*.png')):
+                source = read_image(str(path))
+                if source is not None:
+                    c_name = path.stem.replace('class_', '')
+                    self.class_templates[c_name] = source
+
+        self.hero_to_class = {}
+        rec_layout_path = root / 'src/chaos/recruitment_layout.json'
+        if rec_layout_path.is_file():
+            try:
+                rec_data = json.loads(rec_layout_path.read_text(encoding='utf-8'))
+                for h_id, h_info in rec_data.get('heroes', {}).items():
+                    if 'class' in h_info:
+                        self.hero_to_class[h_id] = h_info['class']
+            except Exception:
+                pass
+        self.hero_to_class.update({
+            'rhianna': 'thief',
+            'rhianna_luciella': 'thief',
+            'rose': 'knight',
+            'shadow_rose': 'knight',
+            'adin': 'thief',
+            'savior_adin': 'thief',
+            'wukong': 'warrior',
+            'destina': 'soul_weaver',
+            'lisette': 'soul_weaver',
+            'jenua': 'thief',
+        })
 
     def validate_screen(self, screen):
         if screen is None or screen.shape[:2] != (720, 1280):
@@ -61,9 +92,56 @@ class NodeObserver:
         d = self.config['markers'][name]
         return self.matches(screen, self.templates[name], region or d.get('region', [0,0,1280,720]), d['threshold'], d['max_color_error'])
 
+    def scan_rank_menu_heroes(self, screen):
+        results = {}
+        if not self.class_templates:
+            return results
+        row_y_starts = [75, 180, 285, 390]
+        for row_idx, y_start in enumerate(row_y_starts):
+            search_area = screen[y_start:y_start+80, 350:410]
+            best_class = None
+            best_score = 0
+            best_loc = None
+            for c_name, c_tmpl in self.class_templates.items():
+                res = cv2.matchTemplate(search_area, c_tmpl, cv2.TM_CCOEFF_NORMED)
+                _, max_v, _, (mx, my) = cv2.minMaxLoc(res)
+                if max_v > best_score:
+                    best_score = max_v
+                    best_class = c_name
+                    best_loc = (350 + mx, y_start + my)
+
+            if best_class and best_score >= 0.80:
+                cx, cy = best_loc
+                y_digit_start = cy + 35
+                y_digit_end = cy + 61
+                x_digit_start = max(0, cx + 13)
+                x_digit_end = cx + 30
+
+                digit = self.read_rank_digit(screen[y_digit_start:y_digit_end, x_digit_start:x_digit_end])
+                if digit is None:
+                    digit = self.read_rank_digit(screen[y_digit_start:y_digit_end, max(0, cx - 1):cx + 35], allow_max=True)
+
+                results[best_class] = {
+                    'row': row_idx,
+                    'class': best_class,
+                    'score': best_score,
+                    'rank': digit,
+                    'bounds': (397, cy, 140, 27)
+                }
+        return results
+
     def find(self, screen, name, region=None):
-        matches = self.all(screen, name, region)
-        return matches[0] if len(matches) == 1 else None
+        if name in self.config['markers']:
+            matches = self.all(screen, name, region)
+            if len(matches) == 1:
+                return matches[0]
+        if 'rank_title' in self.config['markers'] and bool(self.all(screen, 'rank_title')):
+            target_class = self.hero_to_class.get(name, name)
+            if target_class in self.class_templates:
+                scan = self.scan_rank_menu_heroes(screen)
+                if target_class in scan:
+                    return scan[target_class]['bounds']
+        return None
 
     def forbidden(self, screen):
         found = []
@@ -260,6 +338,13 @@ class NodeObserver:
         return available
 
     def rank(self, screen, name):
+        if 'rank_title' in self.config['markers'] and bool(self.all(screen, 'rank_title')):
+            target_class = self.hero_to_class.get(name, name)
+            if target_class in self.class_templates:
+                scan = self.scan_rank_menu_heroes(screen)
+                if target_class in scan and scan[target_class]['rank'] is not None:
+                    return scan[target_class]['rank']
+
         bounds = self.find(screen, name)
         if not bounds: return None
         x, y, _, _ = bounds

@@ -25,6 +25,15 @@ HERO_NAMES = {
     'rhianna_luciella': '리안나 루시엘라',
     'lisette': '리제트',
 }
+try:
+    _rec_layout = Path(__file__).resolve().parent / 'recruitment_layout.json'
+    if _rec_layout.is_file():
+        _rec_data = json.loads(_rec_layout.read_text(encoding='utf-8'))
+        for _hid, _hinfo in _rec_data.get('heroes', {}).items():
+            if 'name' in _hinfo:
+                HERO_NAMES.setdefault(_hid, _hinfo['name'])
+except Exception:
+    pass
 
 
 class NodeProgressionBot(KnightRecruitmentBot):
