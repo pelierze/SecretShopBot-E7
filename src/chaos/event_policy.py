@@ -15,15 +15,15 @@ def interpret_effect(title, effect):
     cost_match = re.search(r'차원의파편(\d+)소모', effect)
     cost = int(cost_match[1]) if cost_match else 0
     remaining = re.sub(r'차원의파편\d+소모', '', effect)
-    if re.fullmatch(r'(?:선택한)?영웅(?:의)?랭크(?:\d+)?단계상승', remaining):
+    if re.fullmatch(r'(?:(?:\d+%확률로)?(?:선택한|무작위)?영웅(?:의)?(?:1명)?랭크(?:\d+)?단계상승)', remaining):
         return ('rank_up', 0, cost)
     if re.fullmatch(r'전투후(?:차원의파편\d+획득|무작위전리품\d+개획득)', remaining):
         return ('battle_reward', 1, cost)
-    if re.fullmatch(r'(?:경험치)?\d+(?:획득)?', remaining) and re.search(r'기도|수습|유해', title):
+    if re.fullmatch(r'(?:경험치)?\d+(?:획득)?', remaining) and re.search(r'기도|수습|유해|씨앗|풀', title):
         return ('experience', 2, cost)
     if re.fullmatch(r'차원의파편\d+획득', remaining) or (re.fullmatch(r'\d+', remaining) and re.search(r'연료|보충', title)):
         return ('currency_reward', 2, cost)
-    if not remaining and re.search(r'우회한다|떠난다|지나친다|돌아간다|나간다', title):
+    if not remaining and re.search(r'우회한다|떠난다|지나친다|돌아간다|나간다|멈춘다|돌아선다|쉰다', title):
         return ('leave', 3, cost)
     if re.fullmatch(r'(?:전투후)?(?:\d+%확률로)?무작위전리품\d+개획득', remaining) or re.fullmatch(r'차원주사위\d+개획득', remaining):
         return ('random_loot', 4, cost)

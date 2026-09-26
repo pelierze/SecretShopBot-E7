@@ -392,7 +392,7 @@
     "levelup": {
       "file": "images/chaos/node_progression/raw/battle/victory_levelup_live.png",
       "threshold": 0.85,
-      "max_color_error": 0.10,
+      "max_color_error": 0.1,
       "crop": [
         605,
         128,
@@ -409,7 +409,7 @@
     "level_close": {
       "file": "images/chaos/node_progression/raw/battle/victory_levelup_live.png",
       "threshold": 0.85,
-      "max_color_error": 0.10,
+      "max_color_error": 0.1,
       "crop": [
         582,
         624,
@@ -786,7 +786,7 @@
         75
       ],
       "threshold": 0.85,
-      "max_color_error": 0.10
+      "max_color_error": 0.1
     },
     "supply_done": {
       "file": "images/chaos/raw/Screenshot_2026.09.24_09.29.50.037.png",
@@ -1631,6 +1631,210 @@
       ],
       "threshold": 0.9,
       "max_color_error": 0.055
+    },
+    "event_blue_flower": {
+      "file": "images/chaos/node_progression/raw/event_blue_flower_live.png",
+      "crop": [
+        312,
+        467,
+        655,
+        39
+      ],
+      "region": [
+        290,
+        450,
+        700,
+        70
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_flower_rank": {
+      "file": "images/chaos/node_progression/raw/event_blue_flower_live.png",
+      "crop": [
+        143,
+        592,
+        229,
+        18
+      ],
+      "region": [
+        120,
+        575,
+        270,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_firefly_garden": {
+      "file": "images/chaos/node_progression/raw/event_firefly_garden_live.png",
+      "crop": [
+        304,
+        478,
+        663,
+        18
+      ],
+      "region": [
+        280,
+        460,
+        710,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_firefly_rank": {
+      "file": "images/chaos/node_progression/raw/event_firefly_garden_live.png",
+      "crop": [
+        146,
+        592,
+        224,
+        18
+      ],
+      "region": [
+        120,
+        575,
+        270,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_observatory": {
+      "file": "images/chaos/node_progression/raw/event_observatory_live.png",
+      "crop": [
+        314,
+        467,
+        662,
+        40
+      ],
+      "region": [
+        290,
+        450,
+        710,
+        70
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_observatory_leave": {
+      "file": "images/chaos/node_progression/raw/event_observatory_live.png",
+      "crop": [
+        731,
+        592,
+        193,
+        18
+      ],
+      "region": [
+        700,
+        575,
+        250,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_cliff_mark": {
+      "file": "images/chaos/node_progression/raw/event_cliff_mark_live.png",
+      "crop": [
+        300,
+        467,
+        680,
+        40
+      ],
+      "region": [
+        280,
+        450,
+        720,
+        70
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_cliff_leave": {
+      "file": "images/chaos/node_progression/raw/event_cliff_mark_live.png",
+      "crop": [
+        713,
+        592,
+        229,
+        18
+      ],
+      "region": [
+        690,
+        575,
+        270,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_blue_flame": {
+      "file": "images/chaos/node_progression/raw/event_blue_flame_live.png",
+      "crop": [
+        300,
+        468,
+        680,
+        38
+      ],
+      "region": [
+        280,
+        450,
+        720,
+        70
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_flame_loot": {
+      "file": "images/chaos/node_progression/raw/event_blue_flame_live.png",
+      "crop": [
+        361,
+        592,
+        174,
+        18
+      ],
+      "region": [
+        330,
+        575,
+        230,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_mask_followup": {
+      "file": "images/chaos/node_progression/raw/event_mask_followup_live.png",
+      "crop": [
+        300,
+        457,
+        680,
+        60
+      ],
+      "region": [
+        280,
+        440,
+        720,
+        90
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_mask_stop": {
+      "file": "images/chaos/node_progression/raw/event_mask_followup_live.png",
+      "crop": [
+        772,
+        592,
+        111,
+        18
+      ],
+      "region": [
+        740,
+        575,
+        170,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
     }
   },
   "loot_cards": [
@@ -1928,6 +2132,198 @@
         ],
         [
           838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "blue_flower",
+      "state_marker": "event_blue_flower",
+      "choices": [
+        {
+          "choice_marker": "event_flower_rank",
+          "effect": "rank_up",
+          "bounds": [
+            78,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "firefly_garden",
+      "state_marker": "event_firefly_garden",
+      "choices": [
+        {
+          "choice_marker": "event_firefly_rank",
+          "effect": "rank_up",
+          "bounds": [
+            78,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "observatory",
+      "state_marker": "event_observatory",
+      "choices": [
+        {
+          "choice_marker": "event_observatory_leave",
+          "effect": "leave",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "cliff_mark",
+      "state_marker": "event_cliff_mark",
+      "choices": [
+        {
+          "choice_marker": "event_cliff_leave",
+          "effect": "leave",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "blue_flame",
+      "state_marker": "event_blue_flame",
+      "choices": [
+        {
+          "choice_marker": "event_flame_loot",
+          "effect": "random_loot",
+          "bounds": [
+            268,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "broken_mask_followup",
+      "state_marker": "event_mask_followup",
+      "choices": [
+        {
+          "choice_marker": "event_mask_stop",
+          "effect": "leave",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
           556,
           362,
           131
