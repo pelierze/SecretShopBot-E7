@@ -1295,8 +1295,8 @@
         170,
         45
       ],
-      "threshold": 0.9,
-      "max_color_error": 0.15
+      "threshold": 0.85,
+      "max_color_error": 0.18
     },
     "exploration_entry": {
       "file": "images/chaos/hero_selection/templates/themes/start_chaos_button.png",

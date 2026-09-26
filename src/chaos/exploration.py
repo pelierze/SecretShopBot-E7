@@ -152,8 +152,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
             return self.observer.find(screen, marker)
         bounds = self._wait(phase, ready)
         # Do not click coordinates from a prior frame if screen changes meanwhile.
-        if ready(self._capture()) != bounds:
-            raise RuntimeError('클릭 직전 화면이 변경되어 중지했습니다.')
+        current_bounds = ready(self._capture())
+        if current_bounds != bounds:
+            if not exiting:
+                raise RuntimeError('클릭 직전 화면이 변경되어 중지했습니다.')
+            if current_bounds is not None:
+                bounds = current_bounds
         self._tap(bounds)
 
     def _story(self, state):
@@ -403,7 +407,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
     def _finish_results(self):
         self._record('expedition_summary')
         self._guarded_tap('탐사 정산 닫기', 'expedition_summary', 'summary_close', exiting=True)
-        self._state('탐사 초기 화면 복귀', {'exploration_entry'})
+        self._state('탐사 초기 화면 복귀', {'exploration_entry'}, retry_tap=lambda s: self.observer.find(s, 'summary_close'))
         if self.stats.get('outcome') == 'defeat':
             self.stats.update(status='round_failed', reason='패배 결과 처리 및 초기 화면 복귀 완료')
         else:
