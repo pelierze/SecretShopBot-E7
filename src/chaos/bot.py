@@ -17,6 +17,15 @@ class _Stopped(Exception):
     pass
 
 
+class PartyCostExceededError(RuntimeError):
+    """Raised when hero recruitment fails due to exceeding party cost."""
+    def __init__(self, hero_name, class_id=None, fallback_hero=None):
+        self.hero_name = hero_name
+        self.class_id = class_id
+        self.fallback_hero = fallback_hero
+        super().__init__(f"파티 코스트 초과: '{hero_name}' 영입 불가 (스킬트리를 확인하거나 다른 영웅을 선택해 주세요)")
+
+
 class KnightRecruitmentBot:
     def __init__(self, adb_controller, resource_root, runtime_dir, observer=None):
         self.adb = adb_controller
@@ -195,6 +204,10 @@ class KnightRecruitmentBot:
             self._record("completed")
         except _Stopped:
             self.stats.update(status="stopped", reason="사용자 중지")
+        except PartyCostExceededError as exc:
+            self.stats.update(status="failed", phase="파티 코스트 초과", reason=str(exc))
+            self._record("cost_exceeded")
+            logger.error("영웅 영입 실패: %s", exc)
         except Exception as exc:
             self.stats.update(status="failed", reason=str(exc))
             self._record("failed")
@@ -206,12 +219,13 @@ class KnightRecruitmentBot:
 class PartyRecruitmentBot(KnightRecruitmentBot):
     """Use one verified recruitment sequence for each configured class."""
 
-    def __init__(self, adb_controller, resource_root, runtime_dir, hero_ids=None, observer=None):
+    def __init__(self, adb_controller, resource_root, runtime_dir, hero_ids=None, observer=None, auto_fallback=True):
         observer = observer or RecruitmentObserver(resource_root, hero_ids)
         super().__init__(adb_controller, resource_root, runtime_dir, observer)
         self.active_hero = observer.heroes[0]
         self.completion_phase = "영웅 4명 영입 완료"
         self.completion_reason = "탐사 입장 전 중지"
+        self.auto_fallback = auto_fallback
         if len(observer.heroes) != 4:
             raise ValueError("기사·전사·정령사·도적을 각각 한 명씩 선택해 주세요.")
         self.stats["recruited"] = 0
@@ -261,10 +275,105 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
             return self.observer.find(screen, "recruit_active")
         return None
 
+    def _return_to_cards(self):
+        """Safely dismiss hero detail / list back to the class cards screen."""
+        back_point = self.observer.config.get("back_button_point", [42, 35])
+        for _ in range(6):
+            screen = self._capture()
+            if self._class_button(screen) is not None:
+                return True
+            self._tap((*back_point, 0, 0))
+            if self.stop_event.wait(self.observer.config.get("poll_seconds", 0.3)):
+                raise _Stopped()
+        return self._class_button(self._capture()) is not None
+
+    def _wait_recruit_action(self):
+        """Wait for active recruit button or detect cost overflow."""
+        self.stats["phase"] = f"{self.hero_name} 선택 및 영입 버튼 확인"
+        logger.info("자동 탐사: %s", self.stats["phase"])
+        timeout = self.observer.config.get("timeout_seconds", 30)
+        poll = self.observer.config.get("poll_seconds", 0.3)
+        deadline = time.monotonic() + timeout
+        disabled_count = 0
+        max_disabled_checks = 3
+
+        while time.monotonic() < deadline:
+            screen = self._capture()
+            self._check_stop()
+
+            recruit_btn = self._recruit(screen)
+            if recruit_btn:
+                return ("active", recruit_btn)
+
+            if self._target_portrait(screen) and self.observer.find(screen, self.active_hero["selected"]):
+                disabled_count += 1
+                if disabled_count >= max_disabled_checks:
+                    logger.warning("영웅 '%s' 선택 확인되었으나 영입 버튼 비활성화 (파티 코스트 초과 감지)", self.hero_name)
+                    return ("cost_exceeded", None)
+            else:
+                disabled_count = 0
+
+            if self.stop_event.wait(poll):
+                raise _Stopped()
+
+        raise RuntimeError(f"{self.hero_name} 선택 및 영입 버튼 확인: 대기 시간 초과.")
+
+    def _handle_cost_exceeded(self):
+        """Handle party cost overflow: fallback to alternative hero or raise error."""
+        fallback = self.observer.get_fallback_hero(self.active_hero) if hasattr(self.observer, "get_fallback_hero") else None
+        old_name = self.hero_name
+        old_id = self.active_hero["id"]
+
+        if self.auto_fallback and fallback and fallback["id"] != old_id:
+            logger.warning(
+                "파티 코스트 초과: '%s' 영입 불가 -> 대체 영웅 '%s'(으)로 자동 전환합니다.",
+                old_name, fallback["name"]
+            )
+            self.stats["phase"] = f"{old_name} 코스트 초과 -> {fallback['name']} 대체 영입"
+            self._return_to_cards()
+            self.active_hero = fallback
+            self.hero_name = fallback["name"]
+            if hasattr(self.observer, "replace_hero"):
+                self.observer.replace_hero(old_id, fallback)
+            self._recruit_one()
+            return
+
+        self._return_to_cards()
+        raise PartyCostExceededError(old_name, self.active_hero.get("class"), fallback)
+
+    def _recruit_one(self):
+        self._tap(self._wait(f"{self.hero_name}: 직업 영입권 확인", self._class_button))
+        self._tap(self._wait(f"{self.hero_name}: 목록 및 필터 버튼 확인", self._filter_button))
+        element = self._wait("속성 필터 메뉴 확인", self._element_state)
+        if element[0] == "unselected":
+            self._tap(element[1:])
+
+        def selected_at_target(screen):
+            value = self._element_state(screen)
+            if value and value[0] == "selected":
+                _, x, y, w, h = value
+                _, ox, oy, ow, oh = element
+                if abs(x + w / 2 - ox - ow / 2) < 10 and abs(y + h / 2 - oy - oh / 2) < 10:
+                    return value
+            return None
+
+        self._wait("속성 선택 완료 확인", selected_at_target)
+        self._point("filter_dismiss_point")
+        self._tap(self._wait(f"{self.hero_name} 찾기 (스크롤 없음)", self._target_portrait))
+
+        action = self._wait_recruit_action()
+        if action[0] == "cost_exceeded":
+            self._handle_cost_exceeded()
+            return
+
+        self._tap(action[1])
+        self._wait(f"{self.hero_name} 영입 완료 확인", lambda s: ("done",) if self._current_completed(s) else None)
+
     def _recruit_all(self):
-        for hero in self.observer.heroes:
-            self.active_hero = hero
-            self.hero_name = hero["name"]
+        for hero in list(self.observer.heroes):
+            current_hero = next((h for h in self.observer.heroes if h["class"] == hero["class"]), hero)
+            self.active_hero = current_hero
+            self.hero_name = current_hero["name"]
             def card_state(screen):
                 if self._current_completed(screen):
                     return ("done",)

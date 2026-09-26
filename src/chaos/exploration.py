@@ -23,6 +23,7 @@ HERO_NAMES = {
     'destina': '데스티나',
     'savior_adin': '구원자 아딘',
     'rhianna_luciella': '리안나 루시엘라',
+    'lisette': '리제트',
 }
 
 
@@ -786,16 +787,17 @@ class NodeProgressionBot(KnightRecruitmentBot):
 class ExplorationBot:
     """GUI facade: one stop event and live stats across both stages."""
     def __init__(self, adb, root, runtime_dir, hero_ids=None, rank_priority=None, max_nodes=None, repeat_on_failure=True,
-                 target_clears=1, event_mode='ocr', save_unknown_events=False, diagnostic_capture=False):
+                 target_clears=1, event_mode='ocr', save_unknown_events=False, diagnostic_capture=False, auto_fallback=True):
         self._args = (adb, root, runtime_dir, hero_ids, rank_priority, max_nodes)
         self.node_options = dict(event_mode=event_mode, save_unknown_events=save_unknown_events,
                                  diagnostic_capture=diagnostic_capture, rank_priority=rank_priority)
         self.repeat_on_failure = repeat_on_failure
         self.target_clears = max(1, int(target_clears)) if target_clears is not None else 1
+        self.auto_fallback = auto_fallback
         self.cleared_rounds = 0
         self.failed_rounds = 0
         self.attempt = 1
-        self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids)
+        self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids, auto_fallback=self.auto_fallback)
         self.nodes = NodeProgressionBot(adb, root, runtime_dir, max_nodes=max_nodes, **self.node_options)
         self.nodes.stop_event = self.recruitment.stop_event
         self.active = self.recruitment
@@ -838,7 +840,7 @@ class ExplorationBot:
                     if stop.is_set(): raise _Stopped()
                     self.attempt += 1
                     adb, root, runtime_dir, hero_ids, rank_priority, max_nodes = self._args
-                    self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids)
+                    self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids, auto_fallback=self.auto_fallback)
                     self.nodes = NodeProgressionBot(adb, root, runtime_dir, max_nodes=max_nodes, **self.node_options)
                     self.recruitment.stop_event = self.nodes.stop_event = stop
                     self.active = self.recruitment
@@ -865,7 +867,7 @@ class ExplorationBot:
                     if stop.is_set(): raise _Stopped()
                     self.attempt += 1
                     adb, root, runtime_dir, hero_ids, rank_priority, max_nodes = self._args
-                    self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids)
+                    self.recruitment = PartyRecruitmentBot(adb, root, runtime_dir, hero_ids=hero_ids, auto_fallback=self.auto_fallback)
                     self.nodes = NodeProgressionBot(adb, root, runtime_dir, max_nodes=max_nodes, **self.node_options)
                     self.recruitment.stop_event = self.nodes.stop_event = stop
                     self.active = self.recruitment

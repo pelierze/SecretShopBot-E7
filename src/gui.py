@@ -817,6 +817,26 @@ class SessionView:
         self.penguin_purchase_label = ttk.Label(stats_grid, text="0", foreground="#1E88E5", font=("맑은 고딕", 10, "bold"))
         self.penguin_purchase_label.grid(row=0, column=5, sticky=tk.W, padx=5, pady=2)
 
+    def _check_chaos_hero_cost_warning(self):
+        if not hasattr(self, "chaos_cost_warning_label") or not hasattr(self, "chaos_hero_combos"):
+            return
+        high_cost_selected = []
+        catalog = getattr(self, "chaos_layout", None) or RecruitmentObserver.load_config(get_resource_root())
+        for class_id, combo in self.chaos_hero_combos.items():
+            idx = combo.current()
+            if idx >= 0 and idx < len(self.chaos_hero_choices[class_id]):
+                hero_id = self.chaos_hero_choices[class_id][idx]
+                hero_info = catalog.get("heroes", {}).get(hero_id, {})
+                if hero_info.get("cost") == "high" or hero_id in ("lisette", "rhianna_luciella"):
+                    high_cost_selected.append(hero_info.get("name", hero_id))
+        if high_cost_selected:
+            names = ", ".join(high_cost_selected)
+            self.chaos_cost_warning_label.config(
+                text=f"⚠️ 고코스트 영웅 선택됨 ({names}): 스킬트리가 부족하면 코스트 초과로 대체 영웅이 영입될 수 있습니다."
+            )
+        else:
+            self.chaos_cost_warning_label.config(text="")
+
     def _create_chaos_widgets(self):
         settings = ttk.LabelFrame(self.chaos_tab, text="영웅 영입", style="Card.TLabelframe", padding=12)
         settings.pack(fill=tk.X, padx=10, pady=5)
@@ -850,6 +870,17 @@ class SessionView:
             p_combo.grid(row=row, column=base_col + 3, sticky=tk.W, padx=(2, 5), pady=5)
             self.chaos_rank_priority_combos[class_id] = p_combo
 
+        options_row = ttk.Frame(settings, style="CardInner.TFrame")
+        options_row.grid(row=2, column=0, columnspan=8, sticky=tk.W, padx=5, pady=(4, 2))
+        self.chaos_cost_fallback = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_row, text="코스트 초과 시 대체 영웅 자동 영입", variable=self.chaos_cost_fallback).pack(side=tk.LEFT)
+        self.chaos_cost_warning_label = ttk.Label(options_row, text="", foreground="#d97706", font=("맑은 고딕", 9))
+        self.chaos_cost_warning_label.pack(side=tk.LEFT, padx=10)
+
+        for combo in self.chaos_hero_combos.values():
+            combo.bind("<<ComboboxSelected>>", lambda e: self._check_chaos_hero_cost_warning())
+        self._check_chaos_hero_cost_warning()
+
         ttk.Label(
             settings,
             text="탐사 초기 화면 또는 노드 지도에서 시작하세요.\n"
@@ -858,7 +889,7 @@ class SessionView:
                  "이벤트는 랭크업·전투 우선, 무작위 보상은 후순위. 패배 후 자동 재시작.\n"
                  "현재 설정된 난이도를 사용합니다. 화면 해상도: 1280×720 / DPI 240",
             justify=tk.LEFT,
-        ).grid(row=2, column=0, columnspan=8, sticky=tk.W, padx=5, pady=(4, 10))
+        ).grid(row=3, column=0, columnspan=8, sticky=tk.W, padx=5, pady=(4, 10))
         event_settings = ttk.LabelFrame(self.chaos_tab, text="미등록 이벤트 처리", padding=10)
         event_settings.pack(fill=tk.X,padx=10,pady=5)
         self.chaos_event_mode = tk.StringVar(value="ocr")
@@ -1636,9 +1667,11 @@ class SessionView:
                 except Exception:
                     messagebox.showerror("자동 탐사", "목표 완주 횟수는 1 이상의 정수여야 합니다.")
                     return
+                auto_fb = self.chaos_cost_fallback.get() if hasattr(self, "chaos_cost_fallback") else True
                 self.bot = ExplorationBot(self.adb_controller, get_resource_root(), self.runtime_dir, hero_ids=hero_ids,
                                           rank_priority=rank_priority, target_clears=target_clears,
-                                          event_mode=self.chaos_event_mode.get(),save_unknown_events=self.chaos_save_unknown.get())
+                                          event_mode=self.chaos_event_mode.get(),save_unknown_events=self.chaos_save_unknown.get(),
+                                          auto_fallback=auto_fb)
             except Exception as exc:
                 messagebox.showerror("자동 탐사 준비 실패", str(exc))
                 return

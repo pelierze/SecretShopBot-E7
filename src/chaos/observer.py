@@ -36,6 +36,10 @@ class RecruitmentObserver:
         for hero in self.heroes:
             role = self.config["classes"][hero["class"]]
             needed.update((role["anchor"], role["header"], hero["portrait"], hero["selected"], hero["completed_name"], hero["element"] + "_1"))
+            fallback_id = hero.get("fallback") or role.get("default_hero")
+            if fallback_id and fallback_id in self.config["heroes"]:
+                fb = self.config["heroes"][fallback_id]
+                needed.update((fb["portrait"], fb["selected"], fb["completed_name"], fb["element"] + "_1"))
         for name in sorted(needed):
             definition = self.config["markers"][name]
             path = self.assets / definition["file"]
@@ -110,6 +114,19 @@ class RecruitmentObserver:
 
     def header(self, screen, hero):
         return self.find(screen, self.config["classes"][hero["class"]]["header"])
+
+    def get_fallback_hero(self, hero):
+        fallback_id = hero.get("fallback") or self.config["classes"][hero["class"]].get("default_hero")
+        if fallback_id and fallback_id in self.config["heroes"] and fallback_id != hero.get("id"):
+            return dict(self.config["heroes"][fallback_id], id=fallback_id)
+        return None
+
+    def replace_hero(self, old_hero_id, new_hero):
+        for i, h in enumerate(self.heroes):
+            if h.get("id") == old_hero_id or h.get("class") == new_hero.get("class"):
+                self.heroes[i] = new_hero
+                return True
+        return False
 
 
 class KnightObserver(RecruitmentObserver):

@@ -110,6 +110,54 @@ class ChaosSessionLifecycleTest(unittest.TestCase):
         _, kwargs = mock_exploration_bot.call_args
         self.assertEqual(kwargs.get("target_clears"), 5)
 
+    @patch("src.gui.ExplorationBot")
+    def test_chaos_start_passes_cost_fallback_option(self, mock_exploration_bot):
+        view = object.__new__(SessionView)
+        view.name = "test"
+        view.is_running = False
+        view.bot_thread = None
+        view.adb_controller = Mock()
+        view.runtime_dir = "mock_runtime"
+        view.chaos_event_mode = Mock(get=Mock(return_value="ocr"))
+        view.chaos_save_unknown = Mock(get=Mock(return_value=False))
+        view.chaos_cost_fallback = Mock(get=Mock(return_value=True))
+        view.chaos_status_label = Mock()
+        view._set_running_ui = Mock()
+        view._run_chaos_bot = Mock()
+        view.root = Mock()
+        view.chaos_hero_choices = {"knight": ["shadow_rose"], "warrior": ["wukong"], "soul_weaver": ["lisette"], "thief": ["rhianna_luciella"]}
+        view.chaos_hero_combos = {k: Mock(current=Mock(return_value=0)) for k in view.chaos_hero_choices}
+        view.chaos_target_clears_entry = Mock(get=Mock(return_value="1"))
+        view._start_chaos_bot()
+        self.assertTrue(view.is_running)
+        mock_exploration_bot.assert_called_once()
+        _, kwargs = mock_exploration_bot.call_args
+        self.assertTrue(kwargs.get("auto_fallback"))
+
+    def test_check_chaos_hero_cost_warning(self):
+        view = object.__new__(SessionView)
+        view.chaos_cost_warning_label = Mock()
+        view.chaos_hero_choices = {"knight": ["shadow_rose"], "warrior": ["wukong"], "soul_weaver": ["lisette"], "thief": ["jenua"]}
+        view.chaos_hero_combos = {
+            "knight": Mock(current=Mock(return_value=0)),
+            "warrior": Mock(current=Mock(return_value=0)),
+            "soul_weaver": Mock(current=Mock(return_value=0)), # lisette -> high cost
+            "thief": Mock(current=Mock(return_value=0)),
+        }
+        view.chaos_layout = {
+            "heroes": {
+                "shadow_rose": {"name": "그림자 로제", "cost": "standard"},
+                "wukong": {"name": "불사형 오공", "cost": "standard"},
+                "lisette": {"name": "리제트", "cost": "high"},
+                "jenua": {"name": "제뉴아", "cost": "standard"},
+            }
+        }
+        SessionView._check_chaos_hero_cost_warning(view)
+        view.chaos_cost_warning_label.config.assert_called_once()
+        _, kwargs = view.chaos_cost_warning_label.config.call_args
+        self.assertIn("리제트", kwargs.get("text", ""))
+        self.assertIn("고코스트 영웅", kwargs.get("text", ""))
+
     @patch("tkinter.messagebox.showerror")
     @patch("src.gui.ExplorationBot")
     def test_chaos_start_rejects_invalid_target_clears(self, mock_exploration_bot, mock_showerror):

@@ -14,6 +14,10 @@
     640,
     590
   ],
+  "back_button_point": [
+    42,
+    35
+  ],
   "markers": {
     "start": {
       "file": "templates/themes/start_chaos_button.png",
@@ -613,7 +617,9 @@
       "element": "light",
       "portrait": "lisette",
       "selected": "lisette_selected",
-      "completed_name": "lisette_completed"
+      "completed_name": "lisette_completed",
+      "cost": "high",
+      "fallback": "destina"
     },
     "savior_adin": {
       "name": "구원자 아딘",
@@ -637,7 +643,9 @@
       "element": "dark",
       "portrait": "rhianna_luciella",
       "selected": "rhianna_luciella_selected",
-      "completed_name": "rhianna_luciella_completed"
+      "completed_name": "rhianna_luciella_completed",
+      "cost": "high",
+      "fallback": "savior_adin"
     }
   }
 }
