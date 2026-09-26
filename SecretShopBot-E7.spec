@@ -3,15 +3,63 @@
 import os
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
-# 백업 파일 제외하고 이미지 수집
+# 사용 중인 이미지만 선별 수집 (미사용 대용량 원본/스크린샷 및 백업 제외)
 def collect_images():
+    import json, re
+    from pathlib import Path
+
+    used = set()
+
+    # 1. 노드 진행 설정 이미지
+    nl_path = Path('src/chaos/node_layout.json')
+    if nl_path.exists():
+        nl = json.loads(nl_path.read_text(encoding='utf-8'))
+        for k, v in nl.get('markers', {}).items():
+            if 'file' in v:
+                used.add(Path(v['file']).as_posix())
+
+    # 2. 영웅 영입 설정 이미지
+    rec_path = Path('src/chaos/recruitment_layout.json')
+    if rec_path.exists():
+        rec = json.loads(rec_path.read_text(encoding='utf-8'))
+        rec_base = Path('images/chaos/hero_selection')
+        for k, v in rec.get('markers', {}).items():
+            if 'file' in v:
+                used.add((rec_base / v['file']).as_posix())
+        for theme in rec.get('themes', []):
+            if 'file' in theme:
+                used.add((rec_base / theme['file']).as_posix())
+        for hero in rec.get('heroes', []):
+            if 'file' in hero:
+                used.add((rec_base / hero['file']).as_posix())
+
+    # 3. 템플릿 폴더 이미지
+    for p in Path('images/chaos/node_progression/templates').rglob('*.png'):
+        used.add(p.as_posix())
+    for p in Path('images/chaos/hero_selection/templates').rglob('*.png'):
+        used.add(p.as_posix())
+
+    # 4. 기본 봇 이미지 (버튼, 아이템, 장비, 펭귄, 이벤트)
+    for folder in ['images/buttons', 'images/items', 'images/equipment_options', 'images/penguin', 'images/2026_summer_event']:
+        for p in Path(folder).glob('*.png'):
+            if not p.name.lower().endswith('_backup.png'):
+                used.add(p.as_posix())
+
+    # 5. 소스 코드에서 참조된 추가 이미지
+    img_re = re.compile(r'images/[a-zA-Z0-9_/\\]+\.png')
+    for p in Path('src').rglob('*'):
+        if p.is_file() and p.suffix in ('.py', '.json'):
+            txt = p.read_text(encoding='utf-8', errors='ignore')
+            for m in img_re.finditer(txt):
+                posix = Path(m.group(0)).as_posix()
+                if Path(posix).exists() and not posix.lower().endswith('_backup.png'):
+                    used.add(posix)
+
     datas = []
-    for root, dirs, files in os.walk('images'):
-        for f in files:
-            if f.lower().endswith('.png') and not f.lower().endswith('_backup.png'):
-                src = os.path.join(root, f)
-                dst = root
-                datas.append((src, dst))
+    for rel in sorted(used):
+        src = os.path.normpath(rel)
+        dst = os.path.dirname(src)
+        datas.append((src, dst))
     return datas
 
 
