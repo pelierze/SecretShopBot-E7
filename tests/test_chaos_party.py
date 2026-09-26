@@ -74,6 +74,20 @@ class PartyObserverTest(unittest.TestCase):
         self.assertIsNotNone(obs.find(screen_sel, thief['portrait']))
         self.assertIsNotNone(obs.find(screen_sel, thief['selected']))
 
+    def test_soul_weaver_lisette_selection_and_matching(self):
+        obs = RecruitmentObserver(ROOT, ['shadow_rose', 'wukong', 'lisette', 'jenua'])
+        weaver = obs.heroes[2]
+        self.assertEqual(weaver['id'], 'lisette')
+        self.assertEqual(weaver['element'], 'light')
+        self.assertEqual(weaver['class'], 'soul_weaver')
+        screen_full = self.screen('soul_weaver_light_full.png')
+        screen_sel = self.screen('soul_weaver_Lisette_selected.png')
+        self.assertIsNotNone(obs.find(screen_full, weaver['portrait']))
+        self.assertIsNotNone(obs.find(screen_sel, weaver['portrait']))
+        self.assertIsNotNone(obs.find(screen_sel, weaver['selected']))
+        self.assertIsNotNone(obs.header(screen_full, weaver))
+        self.assertIsNotNone(obs.header(screen_sel, weaver))
+
 
 class ReplayObserver:
     config = {'timeout_seconds': .06, 'poll_seconds': 0, 'stable_frames': 2,

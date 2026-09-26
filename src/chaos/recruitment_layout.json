@@ -334,6 +334,47 @@
         50
       ]
     },
+    "lisette": {
+      "file": "templates/heroes/soul_Weaver_Lisette.png",
+      "region": [
+        330,
+        70,
+        950,
+        535
+      ]
+    },
+    "lisette_selected": {
+      "file": "raw/soul_weaver_Lisette_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        105,
+        72,
+        160,
+        45
+      ]
+    },
+    "lisette_completed": {
+      "file": "raw/soul_weaver_Lisette_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        705,
+        458,
+        160,
+        50
+      ],
+      "threshold": 0.75,
+      "max_color_error": 0.15
+    },
     "thief": {
       "file": "raw/Screenshot_2026.09.24_10.44.15.754.png",
       "crop": [
@@ -565,6 +606,14 @@
       "portrait": "destina",
       "selected": "destina_selected",
       "completed_name": "destina_completed"
+    },
+    "lisette": {
+      "name": "리제트",
+      "class": "soul_weaver",
+      "element": "light",
+      "portrait": "lisette",
+      "selected": "lisette_selected",
+      "completed_name": "lisette_completed"
     },
     "savior_adin": {
       "name": "구원자 아딘",

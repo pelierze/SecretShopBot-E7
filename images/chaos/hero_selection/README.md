@@ -60,6 +60,7 @@
 | knight_shadow_rose | 실제 사용할 암속성 기사 그림자 로제, 목록 내 선택용 | `raw/knight_dark_filter.png` | `templates/heroes/knight_Shadow_Rose.png` | `(491, 296, 141, 44)` | 예, 목록 항목 선택 | `raw/knight_hero_selected_menu.png` | 인식 및 실제 영입 확인 |
 | warrior_wukong | 자연속성 전사 불사형 오공 | `raw/warrier_wukong_full.png` | `templates/heroes/warrier_wukong.png` | `(831, 191, 132, 45)` | 예 | `raw/warrier_wukong_full_selected.png` | 인식 및 실제 영입 확인 |
 | soul_weaver_destina | 자연속성 정령사 데스티나 | `raw/soul_weaver_destina_full.png` | `templates/heroes/soul_Weaver_destina.png` | `(835, 190, 131, 49)` | 예 | `raw/soul_weaver_destina_full_selected.png` | 인식 및 실제 영입 확인 |
+| soul_weaver_lisette | 광속성 정령사 리제트 | `raw/soul_weaver_Lisette_selected.png` | `templates/heroes/soul_Weaver_Lisette.png` | `(505, 504, 130, 48)` | 예 | `raw/soul_weaver_Lisette_selected.png` | 인식 및 설정 등록 완료 |
 | thief_jenua | 화염속성 도적 제뉴아 | `raw/thief_jenua_full.png` | `templates/heroes/thief_Jenua.png` | `(472, 295, 162, 46)` | 예 | `raw/thief_jenua_full_selected.png` | 인식 및 실제 영입 확인 |
 
 준비 상태는 `원본 준비`, `잘라내기 완료`, `인식 검증 완료`로 구분합니다. 인식 임계값과 탐색 영역은 실제 검증 후 구현 설정에 반영하며, 이 단계에서 임의로 정하지 않습니다.
