@@ -837,6 +837,31 @@ class SessionView:
         else:
             self.chaos_cost_warning_label.config(text="")
 
+    def _on_chaos_rank_priority_changed(self, changed_class_id):
+        if not hasattr(self, "chaos_rank_priority_combos"):
+            return
+        combo = self.chaos_rank_priority_combos.get(changed_class_id)
+        if not combo:
+            return
+        new_val = combo.get()
+        if new_val == "1순위":
+            existing_first = None
+            for class_id, p_combo in self.chaos_rank_priority_combos.items():
+                if class_id != changed_class_id and p_combo.get() == "1순위":
+                    existing_first = class_id
+                    break
+
+            if existing_first:
+                taken = {
+                    p_combo.get()
+                    for class_id, p_combo in self.chaos_rank_priority_combos.items()
+                    if class_id != existing_first
+                }
+                for candidate in ("1순위", "2순위", "3순위", "4순위"):
+                    if candidate not in taken:
+                        self.chaos_rank_priority_combos[existing_first].set(candidate)
+                        break
+
     def _create_chaos_widgets(self):
         settings = ttk.LabelFrame(self.chaos_tab, text="영웅 영입", style="Card.TLabelframe", padding=12)
         settings.pack(fill=tk.X, padx=10, pady=5)
@@ -880,6 +905,9 @@ class SessionView:
         for combo in self.chaos_hero_combos.values():
             combo.bind("<<ComboboxSelected>>", lambda e: self._check_chaos_hero_cost_warning())
         self._check_chaos_hero_cost_warning()
+
+        for class_id, p_combo in self.chaos_rank_priority_combos.items():
+            p_combo.bind("<<ComboboxSelected>>", lambda e, cid=class_id: self._on_chaos_rank_priority_changed(cid))
 
         ttk.Label(
             settings,

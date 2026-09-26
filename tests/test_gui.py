@@ -158,6 +158,42 @@ class ChaosSessionLifecycleTest(unittest.TestCase):
         self.assertIn("리제트", kwargs.get("text", ""))
         self.assertIn("고코스트 영웅", kwargs.get("text", ""))
 
+    def test_on_chaos_rank_priority_changed_shifts_former_first_priority(self):
+        view = object.__new__(SessionView)
+        # Setup: warrior is 1st, thief is 2nd, knight is 3rd, soul_weaver is 제외
+        combos = {
+            "warrior": Mock(get=Mock(return_value="1순위"), set=Mock()),
+            "thief": Mock(get=Mock(return_value="1순위"), set=Mock()), # user just selected 1순위 on thief
+            "knight": Mock(get=Mock(return_value="3순위"), set=Mock()),
+            "soul_weaver": Mock(get=Mock(return_value="제외"), set=Mock()),
+        }
+        view.chaos_rank_priority_combos = combos
+
+        # thief was just changed to 1순위
+        SessionView._on_chaos_rank_priority_changed(view, "thief")
+
+        # warrior was the existing 1st priority; unassigned priorities among other classes are:
+        # taken by others (excluding warrior): thief (1순위), knight (3순위), soul_weaver (제외)
+        # highest available: 2순위
+        combos["warrior"].set.assert_called_once_with("2순위")
+
+    def test_on_chaos_rank_priority_changed_selects_lowest_unassigned_when_needed(self):
+        view = object.__new__(SessionView)
+        # Setup: warrior is 1st, thief is 2nd, knight is 3rd, soul_weaver becomes 1st
+        combos = {
+            "warrior": Mock(get=Mock(return_value="1순위"), set=Mock()),
+            "thief": Mock(get=Mock(return_value="2순위"), set=Mock()),
+            "knight": Mock(get=Mock(return_value="3순위"), set=Mock()),
+            "soul_weaver": Mock(get=Mock(return_value="1순위"), set=Mock()), # user selected 1순위
+        }
+        view.chaos_rank_priority_combos = combos
+
+        SessionView._on_chaos_rank_priority_changed(view, "soul_weaver")
+
+        # taken by others (excluding warrior): soul_weaver (1순위), thief (2순위), knight (3순위)
+        # highest available: 4순위
+        combos["warrior"].set.assert_called_once_with("4순위")
+
     @patch("tkinter.messagebox.showerror")
     @patch("src.gui.ExplorationBot")
     def test_chaos_start_rejects_invalid_target_clears(self, mock_exploration_bot, mock_showerror):
