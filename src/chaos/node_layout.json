@@ -1835,6 +1835,74 @@
       ],
       "threshold": 0.92,
       "max_color_error": 0.07
+    },
+    "event_small_flame": {
+      "file": "images/chaos/node_progression/raw/event_small_flame_live.png",
+      "crop": [
+        300,
+        465,
+        680,
+        30
+      ],
+      "region": [
+        280,
+        450,
+        720,
+        60
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_small_flame_heal": {
+      "file": "images/chaos/node_progression/raw/event_small_flame_live.png",
+      "crop": [
+        165,
+        588,
+        190,
+        20
+      ],
+      "region": [
+        140,
+        570,
+        240,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_small_flame_followup": {
+      "file": "images/chaos/node_progression/raw/event_small_flame_followup_live.png",
+      "crop": [
+        290,
+        460,
+        680,
+        45
+      ],
+      "region": [
+        270,
+        445,
+        720,
+        75
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_small_flame_leave": {
+      "file": "images/chaos/node_progression/raw/event_small_flame_followup_live.png",
+      "crop": [
+        715,
+        580,
+        215,
+        20
+      ],
+      "region": [
+        690,
+        565,
+        260,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
     }
   },
   "loot_cards": [
@@ -2329,6 +2397,72 @@
           131
         ]
       ]
+    },
+    {
+      "id": "small_flame",
+      "state_marker": "event_small_flame",
+      "choices": [
+        {
+          "choice_marker": "event_small_flame_heal",
+          "effect": "heal",
+          "bounds": [
+            78,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "small_flame_followup",
+      "state_marker": "event_small_flame_followup",
+      "choices": [
+        {
+          "choice_marker": "event_small_flame_leave",
+          "effect": "leave",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
     }
   ],
   "event_result_markers": [
@@ -2339,6 +2473,7 @@
     "experience",
     "currency_reward",
     "battle_reward",
+    "heal",
     "random_loot",
     "leave"
   ],

@@ -23,7 +23,9 @@ def interpret_effect(title, effect):
         return ('experience', 2, cost)
     if re.fullmatch(r'차원의파편\d+획득', remaining) or (re.fullmatch(r'\d+', remaining) and re.search(r'연료|보충', title)):
         return ('currency_reward', 2, cost)
-    if not remaining and re.search(r'우회한다|떠난다|지나친다|돌아간다|나간다|멈춘다|돌아선다|쉰다', title):
+    if re.fullmatch(r'(?:(?:모든|무작위|선택한)?영웅(?:의)?(?:1명)?)?(?:생명력|체력)\d+%?회복', remaining):
+        return ('heal', 2, cost)
+    if not remaining and re.search(r'우회한다|떠난다|지나친다|돌아간다|나간다|멈춘다|돌아선다|쉰다|물러난다', title):
         return ('leave', 3, cost)
     if re.fullmatch(r'(?:전투후)?(?:\d+%확률로)?무작위전리품\d+개획득', remaining) or re.fullmatch(r'차원주사위\d+개획득', remaining):
         return ('random_loot', 4, cost)

@@ -651,7 +651,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 elif state == 'shop_exit_confirm': self._shop_confirm()
                 elif state == 'rank_menu':
                     self._rankup()
-                    self._state('이벤트 랭크업 후 결과', {'event_result','unknown_event_result','map','levelup','event_loot_popup','rank_result','event'})
+                    self._state('이벤트 랭크업 후 결과', {'event_result','unknown_event_result','map','levelup','event_loot_popup','rank_result','event','unknown_event'})
                 elif state in ('event','unknown_event'):
                     self.event_context = True
                     self._event()
@@ -661,7 +661,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 elif state in ('event_loot_popup', 'rank_result'):
                     close_marker = 'event_loot_close' if self.observer.find(self._capture(), 'event_loot_close') else 'rank_close'
                     self._guarded_tap('전리품/결과 닫기', state, close_marker, exiting=True)
-                    next_state = self._state('결과 닫기 후 복귀', {'event_result','unknown_event_result','map','levelup','event'})
+                    next_state = self._state('결과 닫기 후 복귀', {'event_result','unknown_event_result','map','levelup','event','unknown_event'})
                     if next_state == 'map':
                         self.stats['nodes'] += 1
                 elif state == 'levelup':
@@ -669,7 +669,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     def closed(after, before):
                         return (self.observer.classify(after) != 'levelup'), None
                     self._tap_with_verify(close_btn, '레벨업 팝업 닫기', closed, max_retries=3)
-                    self._state('레벨업 닫기 후 복귀', {'victory', 'event_result', 'unknown_event_result', 'event', 'map', 'battle', 'levelup'})
+                    self._state('레벨업 닫기 후 복귀', {'victory', 'event_result', 'unknown_event_result', 'event', 'unknown_event', 'map', 'battle', 'levelup'})
                 elif state == 'victory':
                     self._victory()
                 elif state == 'recruit_reward':
