@@ -137,6 +137,22 @@ class NodeObserver:
         cards=[tuple(b) for b in self.config['loot_cards'] if abs(b[0]-x)<22]
         return cards[0] if len(cards)==1 else None
 
+    def loot_consume_choices(self, screen):
+        sub = screen[140:300, 500:1100]
+        gray = cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY)
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        centers = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            if 55 <= w <= 110 and 55 <= h <= 110 and abs(w - h) < 15:
+                cx, cy = 500 + x + w // 2, 140 + y + h // 2
+                if 170 <= cy <= 215 and cx >= 650:
+                    if not any(abs(cx - ox) < 20 and abs(cy - oy) < 20 for ox, oy in centers):
+                        centers.append((cx, cy))
+        centers.sort()
+        return centers
+
     def classify(self, screen):
         if self.find(screen, 'defeat'): return 'defeat'
         if self.find(screen, 'expedition_summary') and self.find(screen, 'summary_close'): return 'expedition_summary'
@@ -149,6 +165,7 @@ class NodeObserver:
         if self.find(screen, 'levelup') and self.find(screen, 'level_close'): return 'levelup'
         if self.find(screen, 'rank_close'): return 'rank_result'
         if self.find(screen, 'event_loot_close'): return 'event_loot_popup'
+        if self.find(screen, 'event_loot_consume'): return 'event_loot_consume'
         if self.event_result_marker(screen) and self.find(screen, 'event_advance'): return 'event_result'
         if any(self.find(screen, e['state_marker']) for e in self.config.get('events', [])): return 'event'
         if len(self.all(screen,'loot_reroll')) == 3 and (self.find(screen,'loot_button') or self.find(screen,'loot_button_dim')): return 'loot'

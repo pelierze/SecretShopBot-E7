@@ -19,7 +19,7 @@ class EventPolicyTest(unittest.TestCase):
         self.assertEqual(interpret_effect('', '차원의 파편 100 소모 영웅 랭크 1단계 상승'), ('rank_up', 0, 100))
         self.assertEqual(interpret_effect('', '전투 후 차원의 파편 100 획득'), ('battle_reward', 1, 0))
         self.assertEqual(interpret_effect('', '40% 확률로 무작위 전리품 1개 획득'), ('random_loot', 4, 0))
-        for text in ('영웅 이탈', '영웅 랭크 1단계 상승 생명력 30% 감소', '무언가 좋은 일이 발생한다'):
+        for text in ('영웅 이탈', '영웅 랭크 1단계 상승 생명력 30% 감소', '무언가 좋은 일이 발생한다', '전리품 1개 소모 모든 영웅 생명력 100% 회복'):
             self.assertIsNone(interpret_effect('', text))
 
     def test_unaffordable_rank_falls_back_to_random_reward(self):
@@ -45,7 +45,7 @@ class EventModesTest(unittest.TestCase):
 
     def test_real_two_and_three_choice_geometry(self):
         for name,count in [('event_magic_circle_live.png',3),('event_stairs_live.png',2),
-                           ('event_abandoned_pack_live.png',2)]:
+                           ('event_abandoned_pack_live.png',2),('event_two_paths_live.png',2)]:
             frame = self.screen(name)
             cards = self.observer.event_cards(frame)
             self.assertEqual(len(cards),count)
@@ -63,12 +63,30 @@ class EventModesTest(unittest.TestCase):
             ('event_ancient_mural_live.png', 'ancient_mural', (838, 556, 362, 131)),
             ('event_broken_trap_live.png', 'broken_trap', (268, 556, 362, 131)),
             ('event_broken_mask_live.png', 'broken_mask', (838, 556, 362, 131)),
+            ('event_two_paths_live.png', 'two_paths', (268, 556, 362, 131)),
         ]
         for file, expected_id, expected_choice in cases:
             with self.subTest(file=file):
                 frame = self.screen(file)
                 self.assertEqual(self.observer.known_event(frame), expected_id)
                 self.assertEqual(self.observer.event_choice(frame), expected_choice)
+
+    def test_loot_consume_popup_classified_and_choices_detected(self):
+        frame = self.screen('event_loot_consume_live.png')
+        self.assertEqual(self.observer.classify(frame), 'event_loot_consume')
+        choices = self.observer.loot_consume_choices(frame)
+        self.assertEqual(len(choices), 3)
+        self.assertEqual(choices[0], (704, 192))
+
+    def test_handle_loot_consume_taps_item_and_confirm(self):
+        frame = self.screen('event_loot_consume_live.png')
+        result_frame = self.screen('event_abandoned_pack_result_live.png')
+        adb = Mock(capture_frame=Mock(side_effect=[frame, frame, result_frame, result_frame, result_frame]), tap=Mock(return_value=True))
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = NodeProgressionBot(adb, ROOT, tmp, self.observer)
+            state = bot._handle_loot_consume()
+            self.assertEqual(state, 'event_result')
+            self.assertEqual(adb.tap.call_args_list, [unittest.mock.call(704, 192, delay=0), unittest.mock.call(640, 673, delay=0)])
 
     def test_recruit_reward_classified_for_skip(self):
         frame = self.screen('event_recruit_reward_live.png')

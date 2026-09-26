@@ -1937,6 +1937,57 @@
       ],
       "threshold": 0.92,
       "max_color_error": 0.07
+    },
+    "event_loot_consume": {
+      "file": "images/chaos/node_progression/raw/event_loot_consume_live.png",
+      "crop": [
+        795,
+        485,
+        203,
+        30
+      ],
+      "region": [
+        780,
+        470,
+        230,
+        60
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.06
+    },
+    "event_two_paths": {
+      "file": "images/chaos/node_progression/raw/event_two_paths_live.png",
+      "crop": [
+        537,
+        478,
+        209,
+        18
+      ],
+      "region": [
+        520,
+        465,
+        245,
+        45
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.06
+    },
+    "event_two_paths_loot": {
+      "file": "images/chaos/node_progression/raw/event_two_paths_live.png",
+      "crop": [
+        363,
+        592,
+        175,
+        18
+      ],
+      "region": [
+        350,
+        580,
+        200,
+        45
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.06
     }
   },
   "loot_cards": [
@@ -2533,6 +2584,36 @@
           131
         ]
       ]
+    },
+    {
+      "id": "two_paths",
+      "state_marker": "event_two_paths",
+      "choices": [
+        {
+          "choice_marker": "event_two_paths_loot",
+          "effect": "random_loot",
+          "bounds": [
+            268,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ]
     }
   ],
   "event_result_markers": [
@@ -2553,5 +2634,11 @@
     680,
     40,
     30
+  ],
+  "event_loot_consume_bounds": [
+    472,
+    642,
+    336,
+    62
   ]
 }

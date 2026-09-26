@@ -10,7 +10,7 @@ def interpret_effect(title, effect):
     clean = lambda s: re.sub(r'[^가-힣0-9%]', '', s)
     title, effect = clean(title), clean(effect)
     text = title + effect
-    if re.search(r'이탈|희생|사망|전투불능|생명력.*감소|체력.*감소|잃는다|제거|소멸', text):
+    if re.search(r'이탈|희생|사망|전투불능|생명력.*감소|체력.*감소|잃는다|제거|소멸|전리품.*소모', text):
         return None
     cost_match = re.search(r'차원의파편(\d+)소모', effect)
     cost = int(cost_match[1]) if cost_match else 0
