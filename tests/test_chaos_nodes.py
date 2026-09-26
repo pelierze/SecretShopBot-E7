@@ -430,6 +430,31 @@ class NodeFlowTest(unittest.TestCase):
         self.assertEqual(result['nodes'],1)
         self.assertEqual(len(taps),4)
 
+    def test_event_battle_loot_popup_closed_and_advances_node(self):
+        n = NodeObserver(ROOT); n.config['poll_seconds'] = 0
+        b = NodeProgressionBot(Mock(), ROOT, self.temp.name, observer=n, max_nodes=1)
+        frames = [read_image(str(RAW / 'event_loot_popup_live.png')), read_image(str(RAW / 'map_after_rest_live.png'))]
+        index = [0]; taps = []
+        b._capture = lambda: frames[index[0]]
+        def tap(bounds):
+            taps.append(bounds)
+            index[0] = min(index[0] + 1, len(frames) - 1)
+        b._tap = tap
+        result = b.run()
+        self.assertEqual(result['status'], 'completed', result)
+        self.assertEqual(result['nodes'], 1)
+        self.assertEqual(len(taps), 1)
+
+    def test_battle_returns_early_when_loot_popup_appears(self):
+        n = NodeObserver(ROOT); n.config['poll_seconds'] = 0
+        b = NodeProgressionBot(Mock(), ROOT, self.temp.name, observer=n)
+        b._capture = Mock(return_value=read_image(str(RAW / 'event_loot_popup_live.png')))
+        b._guarded_tap = Mock()
+        b.stop_event = Mock()
+        b.stop_event.wait.return_value = False
+        b._battle()
+        self.assertTrue(b.auto_verified)
+
     def test_event_result_pages_return_without_reselecting_rewards(self):
         n=NodeObserver(ROOT);n.config['poll_seconds']=0
         b=NodeProgressionBot(Mock(),ROOT,self.temp.name,observer=n,max_nodes=1)
