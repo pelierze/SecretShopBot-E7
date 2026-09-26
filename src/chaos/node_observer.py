@@ -202,14 +202,25 @@ class NodeObserver:
         # Bottom corners remain visible when a magnifier replaces the top icon.
         left = sorted((x,y-100,w,h) for x,y,w,h in self.all(screen,'event_card_left'))
         right = sorted(self.all(screen,'event_card_right'))
-        if len(left) not in (2,3) or len(right) != len(left): return []
-        cards = []
-        for (x,y,_,_),(rx,ry,_,_) in zip(left,right):
-            if abs(y-ry)>3 or not 330 <= rx-x <= 345: return []
-            cards.append((x+5,y+4,362,131))
-        if max(c[1] for c in cards)-min(c[1] for c in cards)>3: return []
-        if any(a[0]+a[2] >= b[0] for a,b in zip(cards,cards[1:])): return []
-        return cards
+        if len(left) in (2, 3) and len(right) == len(left):
+            cards = []
+            for (x,y,_,_),(rx,ry,_,_) in zip(left,right):
+                if abs(y-ry)>3 or not 330 <= rx-x <= 345: break
+                cards.append((x+5,y+4,362,131))
+            if len(cards) == len(left) and max(c[1] for c in cards)-min(c[1] for c in cards)<=3:
+                if not any(a[0]+a[2] >= b[0] for a,b in zip(cards,cards[1:])):
+                    return cards
+        # Fallback: if right corners are partially obscured by background effects,
+        # verify left corners form a standard 380px equidistant card row
+        if len(left) in (2, 3) and bool(right):
+            dxs = [b[0] - a[0] for a, b in zip(left, left[1:])]
+            dys = [abs(b[1] - a[1]) for a, b in zip(left, left[1:])]
+            if all(378 <= dx <= 382 for dx in dxs) and all(dy <= 3 for dy in dys):
+                if any(any(abs((rx - x) - 337) <= 5 and abs(ry - y) <= 3 for rx, ry, _, _ in right) for x, y, _, _ in left):
+                    cards = [(x+5, y+4, 362, 131) for x, y, _, _ in left]
+                    if not any(a[0]+a[2] >= b[0] for a,b in zip(cards,cards[1:])):
+                        return cards
+        return []
 
     def available_event_cards(self, screen, cards):
         blocked = self.forbidden(screen)

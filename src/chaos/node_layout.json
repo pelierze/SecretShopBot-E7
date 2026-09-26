@@ -1340,7 +1340,7 @@
         1210,
         165
       ],
-      "threshold": 0.86,
+      "threshold": 0.82,
       "max_color_error": 0.3
     },
     "shop_frame": {
@@ -1900,6 +1900,40 @@
         565,
         260,
         50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_windy_path": {
+      "file": "images/chaos/node_progression/raw/event_windy_path_live.png",
+      "crop": [
+        305,
+        465,
+        670,
+        25
+      ],
+      "region": [
+        280,
+        450,
+        720,
+        55
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.07
+    },
+    "event_windy_path_thief": {
+      "file": "images/chaos/node_progression/raw/event_windy_path_live.png",
+      "crop": [
+        520,
+        588,
+        240,
+        24
+      ],
+      "region": [
+        490,
+        570,
+        300,
+        55
       ],
       "threshold": 0.92,
       "max_color_error": 0.07
@@ -2463,6 +2497,42 @@
           131
         ]
       ]
+    },
+    {
+      "id": "windy_path",
+      "state_marker": "event_windy_path",
+      "choices": [
+        {
+          "choice_marker": "event_windy_path_thief",
+          "effect": "hero_recruit",
+          "bounds": [
+            458,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
     }
   ],
   "event_result_markers": [
@@ -2474,6 +2544,7 @@
     "currency_reward",
     "battle_reward",
     "heal",
+    "hero_recruit",
     "random_loot",
     "leave"
   ],

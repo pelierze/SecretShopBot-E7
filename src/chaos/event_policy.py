@@ -29,6 +29,8 @@ def interpret_effect(title, effect):
         return ('leave', 3, cost)
     if re.fullmatch(r'(?:전투후)?(?:\d+%확률로)?무작위전리품\d+개획득', remaining) or re.fullmatch(r'차원주사위\d+개획득', remaining):
         return ('random_loot', 4, cost)
+    if re.fullmatch(r'(?:사수|도적|마도사|전사|기사|정령사)?영웅(?:\d+명)?영입(?:권)?', remaining):
+        return ('hero_recruit', 4, cost)
     return None
 
 
