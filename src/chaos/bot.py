@@ -18,12 +18,13 @@ class _Stopped(Exception):
 
 
 class PartyCostExceededError(RuntimeError):
-    """Raised when hero recruitment fails due to exceeding party cost."""
-    def __init__(self, hero_name, class_id=None, fallback_hero=None):
+    """Raised when hero recruitment fails due to exceeding party cost or missing hero."""
+    def __init__(self, hero_name, class_id=None, fallback_hero=None, message=None):
         self.hero_name = hero_name
         self.class_id = class_id
         self.fallback_hero = fallback_hero
-        super().__init__(f"파티 코스트 초과: '{hero_name}' 영입 불가 (스킬트리를 확인하거나 다른 영웅을 선택해 주세요)")
+        default_msg = f"'{hero_name}' 목록 미노출 (영웅 미소지 또는 파티 코스트 초과)"
+        super().__init__(message or default_msg)
 
 
 class KnightRecruitmentBot:
@@ -205,8 +206,8 @@ class KnightRecruitmentBot:
         except _Stopped:
             self.stats.update(status="stopped", reason="사용자 중지")
         except PartyCostExceededError as exc:
-            self.stats.update(status="failed", phase="파티 코스트 초과", reason=str(exc))
-            self._record("cost_exceeded")
+            self.stats.update(status="failed", phase="영웅 소지/코스트 오류", reason=str(exc))
+            self._record("hero_missing_or_cost_exceeded")
             logger.error("영웅 영입 실패: %s", exc)
         except Exception as exc:
             self.stats.update(status="failed", reason=str(exc))
@@ -341,6 +342,66 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
         self._return_to_cards()
         raise PartyCostExceededError(old_name, self.active_hero.get("class"), fallback)
 
+    def _wait_hero_portrait(self):
+        """Wait for target hero portrait or detect hero missing (not owned / cost exceeded)."""
+        self.stats["phase"] = f"{self.hero_name} 찾기 (스크롤 없음)"
+        logger.info("자동 탐사: %s", self.stats["phase"])
+        timeout = self.observer.config.get("timeout_seconds", 30)
+        poll = self.observer.config.get("poll_seconds", 0.3)
+        deadline = time.monotonic() + timeout
+        missing_count = 0
+        max_missing_checks = 3
+
+        while time.monotonic() < deadline:
+            screen = self._capture()
+            self._check_stop()
+
+            portrait = self._target_portrait(screen)
+            if portrait:
+                return portrait
+
+            # Check if hero list is actively displayed (header present, filter panel closed)
+            if self.observer.header(screen, self.active_hero) and not self.observer.find(screen, "filter_panel"):
+                missing_count += 1
+                if missing_count >= max_missing_checks:
+                    logger.warning(
+                        "영웅 '%s' 목록 미노출 (영웅 미소지 또는 파티 코스트 초과)",
+                        self.hero_name
+                    )
+                    return None
+            else:
+                missing_count = 0
+
+            if self.stop_event.wait(poll):
+                raise _Stopped()
+
+        return None
+
+    def _handle_hero_not_found(self):
+        """Handle missing hero: fallback to alternative hero or raise error with clear guidance."""
+        fallback = self.observer.get_fallback_hero(self.active_hero) if hasattr(self.observer, "get_fallback_hero") else None
+        old_name = self.hero_name
+        old_id = self.active_hero["id"]
+
+        notice = f"'{old_name}' 영웅을 목록에서 찾을 수 없습니다. (영웅 미소지 또는 파티 코스트 초과로 미노출)"
+
+        if self.auto_fallback and fallback and fallback["id"] != old_id:
+            logger.warning(
+                "%s -> 대체 영웅 '%s'(으)로 자동 전환합니다.",
+                notice, fallback["name"]
+            )
+            self.stats["phase"] = f"{old_name} 미노출 -> {fallback['name']} 대체 영입"
+            self._return_to_cards()
+            self.active_hero = fallback
+            self.hero_name = fallback["name"]
+            if hasattr(self.observer, "replace_hero"):
+                self.observer.replace_hero(old_id, fallback)
+            self._recruit_one()
+            return
+
+        error_msg = f"{notice} — 영웅 보유 여부 또는 스킬트리 코스트 확장을 확인해 주세요."
+        raise PartyCostExceededError(old_name, self.active_hero.get("class"), fallback, message=error_msg)
+
     def _recruit_one(self):
         self._tap(self._wait(f"{self.hero_name}: 직업 영입권 확인", self._class_button))
         self._tap(self._wait(f"{self.hero_name}: 목록 및 필터 버튼 확인", self._filter_button))
@@ -359,7 +420,13 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
 
         self._wait("속성 선택 완료 확인", selected_at_target)
         self._point("filter_dismiss_point")
-        self._tap(self._wait(f"{self.hero_name} 찾기 (스크롤 없음)", self._target_portrait))
+
+        portrait = self._wait_hero_portrait()
+        if portrait is None:
+            self._handle_hero_not_found()
+            return
+
+        self._tap(portrait)
 
         action = self._wait_recruit_action()
         if action[0] == "cost_exceeded":

@@ -210,6 +210,111 @@ class PartyFlowTest(unittest.TestCase):
             self.assertEqual(self.bot.run()['status'],'failed')
         self.adb.tap.assert_not_called()
 
+    def test_missing_hero_in_list_fails_with_ownership_and_cost_notice(self):
+        # Configure soul_weaver portrait missing from list (not owned or cost exceeded)
+        bot = PartyRecruitmentBot(self.adb, ROOT, self.temp.name, observer=self.observer, auto_fallback=False)
+        b = (100, 100, 40, 30)
+        frames = [
+            {'start': b}, {'theme': 'unselected'}, {'theme': 'selected', 'confirm_theme': b},
+            # knight:
+            {'knight_card': b, 'done': []},
+            {'knight_header': b, 'filter': b},
+            {'knight_header': b, 'filter_panel': b, 'dark_1': b},
+            {'knight_header': b, 'filter_panel': b, 'dark_2': b},
+            {'knight_header': b, 'knight_portrait': b},
+            {'knight_header': b, 'knight_portrait': b, 'knight_selected': b, 'recruit_active': b},
+            # warrior:
+            {'warrior_card': b, 'done': ['knight']},
+            {'warrior_header': b, 'filter': b},
+            {'warrior_header': b, 'filter_panel': b, 'forest_1': b},
+            {'warrior_header': b, 'filter_panel': b, 'forest_2': b},
+            {'warrior_header': b, 'warrior_portrait': b},
+            {'warrior_header': b, 'warrior_portrait': b, 'warrior_selected': b, 'recruit_active': b},
+            # soul_weaver:
+            {'soul_weaver_card': b, 'done': ['knight', 'warrior']},
+            {'soul_weaver_header': b, 'filter': b},
+            {'soul_weaver_header': b, 'filter_panel': b, 'forest_1': b},
+            {'soul_weaver_header': b, 'filter_panel': b, 'forest_2': b},
+            # List is shown, but soul_weaver portrait is NOT in list!
+            {'soul_weaver_header': b},
+        ]
+        step = [0]
+        def tap(*args, **kwargs):
+            if step[0] < len(frames) - 1:
+                step[0] += 1
+            return True
+        self.adb.tap.side_effect = tap
+        def capture():
+            return frames[min(step[0], len(frames)-1)]
+        bot._capture = capture
+        with self.assertLogs('src.chaos.bot', level='ERROR'):
+            res = bot.run()
+        self.assertEqual(res['status'], 'failed')
+        self.assertIn('영웅 미소지 또는 파티 코스트 초과', res['reason'])
+
+    def test_missing_hero_in_list_auto_fallback_switches_hero(self):
+        # Configure soul_weaver portrait missing from list with auto_fallback=True
+        self.observer.heroes[2]['fallback'] = 'fallback_weaver'
+        self.observer.heroes[2]['fallback_element'] = 'forest'
+        bot = PartyRecruitmentBot(self.adb, ROOT, self.temp.name, observer=self.observer, auto_fallback=True)
+        b = (100, 100, 40, 30)
+        frames = [
+            {'start': b},
+            {'theme': 'unselected'},
+            {'theme': 'selected', 'confirm_theme': b},
+            # knight:
+            {'knight_card': b, 'done': []},
+            {'knight_header': b, 'filter': b},
+            {'knight_header': b, 'filter_panel': b, 'dark_1': b},
+            {'knight_header': b, 'filter_panel': b, 'dark_2': b},
+            {'knight_header': b, 'knight_portrait': b},
+            {'knight_header': b, 'knight_portrait': b, 'knight_selected': b, 'recruit_active': b},
+            # warrior:
+            {'warrior_card': b, 'done': ['knight']},
+            {'warrior_header': b, 'filter': b},
+            {'warrior_header': b, 'filter_panel': b, 'forest_1': b},
+            {'warrior_header': b, 'filter_panel': b, 'forest_2': b},
+            {'warrior_header': b, 'warrior_portrait': b},
+            {'warrior_header': b, 'warrior_portrait': b, 'warrior_selected': b, 'recruit_active': b},
+            # soul_weaver:
+            {'soul_weaver_card': b, 'done': ['knight', 'warrior']},
+            {'soul_weaver_header': b, 'filter': b},
+            {'soul_weaver_header': b, 'filter_panel': b, 'forest_1': b},
+            {'soul_weaver_header': b, 'filter_panel': b, 'forest_2': b},
+            # 19: list is shown, but soul_weaver portrait is NOT in list
+            {'soul_weaver_header': b},
+            # 20: Card screen after back tap
+            {'soul_weaver_card': b, 'done': ['knight', 'warrior']},
+            # Fallback recruitment:
+            {'soul_weaver_header': b, 'filter': b},
+            {'soul_weaver_header': b, 'filter_panel': b, 'forest_1': b},
+            {'soul_weaver_header': b, 'filter_panel': b, 'forest_2': b},
+            {'soul_weaver_header': b, 'fallback_weaver_portrait': b},
+            {'soul_weaver_header': b, 'fallback_weaver_portrait': b, 'fallback_weaver_selected': b, 'recruit_active': b},
+            # thief:
+            {'thief_card': b, 'done': ['knight', 'warrior', 'fallback_weaver']},
+            {'thief_header': b, 'filter': b},
+            {'thief_header': b, 'filter_panel': b, 'fire_1': b},
+            {'thief_header': b, 'filter_panel': b, 'fire_2': b},
+            {'thief_header': b, 'thief_portrait': b},
+            {'thief_header': b, 'thief_portrait': b, 'thief_selected': b, 'recruit_active': b},
+            # All done:
+            {'done': ['knight', 'warrior', 'fallback_weaver', 'thief']},
+        ]
+        step = [0]
+        def tap(*args, **kwargs):
+            if step[0] < len(frames) - 1:
+                step[0] += 1
+            return True
+        self.adb.tap.side_effect = tap
+        def capture():
+            return frames[min(step[0], len(frames)-1)]
+        bot._capture = capture
+        result = bot.run()
+        self.assertEqual(result['status'], 'completed')
+        self.assertEqual(result['recruited'], 4)
+        self.assertEqual(bot.observer.heroes[2]['id'], 'fallback_weaver')
+
     def test_party_cost_exceeded_fails_when_fallback_disabled(self):
         bot = PartyRecruitmentBot(self.adb, ROOT, self.temp.name, observer=self.observer, auto_fallback=False)
         b = (100, 100, 40, 30)
