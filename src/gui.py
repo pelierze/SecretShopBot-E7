@@ -839,7 +839,8 @@ class SessionView:
             self.chaos_hero_choices[class_id] = [key for key, hero in choices]
             ttk.Label(settings, text=role["label"] + ":").grid(row=row, column=base_col, sticky=tk.W, padx=(10 if col_idx > 0 else 5, 2), pady=5)
             combo = ttk.Combobox(settings, values=[hero["name"] + " · " + elements[hero["element"]] for key, hero in choices], state="readonly", width=18)
-            combo.current(self.chaos_hero_choices[class_id].index(role["default_hero"]))
+            default_hero = "savior_adin" if class_id == "thief" and "savior_adin" in self.chaos_hero_choices[class_id] else role["default_hero"]
+            combo.current(self.chaos_hero_choices[class_id].index(default_hero))
             combo.grid(row=row, column=base_col + 1, sticky=tk.W, padx=2, pady=5)
             self.chaos_hero_combos[class_id] = combo
 

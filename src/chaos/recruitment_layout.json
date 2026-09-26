@@ -566,14 +566,6 @@
       "selected": "destina_selected",
       "completed_name": "destina_completed"
     },
-    "jenua": {
-      "name": "제뉴아",
-      "class": "thief",
-      "element": "fire",
-      "portrait": "jenua",
-      "selected": "jenua_selected",
-      "completed_name": "jenua_completed"
-    },
     "savior_adin": {
       "name": "구원자 아딘",
       "class": "thief",
@@ -581,6 +573,14 @@
       "portrait": "savior_adin",
       "selected": "savior_adin_selected",
       "completed_name": "savior_adin_completed"
+    },
+    "jenua": {
+      "name": "제뉴아",
+      "class": "thief",
+      "element": "fire",
+      "portrait": "jenua",
+      "selected": "jenua_selected",
+      "completed_name": "jenua_completed"
     },
     "rhianna_luciella": {
       "name": "리안나 루시엘라",
