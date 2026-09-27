@@ -439,20 +439,25 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 state = self._handle_loot_consume()
             elif state in ('story_confirm', 'unclaimed_reward'):
                 state = self._handle_event_confirm(target)
-        if state == 'map': self.stats['nodes'] += 1
+        if state == 'map':
+            self.stats['nodes'] += 1
         return state
 
     def _event_transition(self, previous_signature=None):
         states = {'battle_setup','battle','map','story','story_confirm','rank_menu','event_result',
                   'event_loot_popup','unknown_event_result','unknown_event','event','loot','unclaimed_reward','recruit_reward','levelup','event_loot_consume'}
+        retry_bounds = getattr(self, '_last_event_choice_bounds', None)
         def changed(screen):
             state = self._classify(screen)
             if state in ('unknown_event', 'event'):
+                if retry_bounds is not None:
+                    cards = self.observer.event_cards(screen)
+                    if any(abs(c[0] - retry_bounds[0]) < 15 and abs(c[1] - retry_bounds[1]) < 15 for c in cards):
+                        return None
                 if previous_signature is not None and self._event_signature(screen) == previous_signature:
                     return None
             return (state,) if state in states else None
 
-        retry_bounds = getattr(self, '_last_event_choice_bounds', None)
         if retry_bounds is not None:
             for attempt in range(1, 4):
                 before = self._capture()
@@ -538,10 +543,19 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
     def _unknown_event(self):
         def ready(screen):
-            if self._classify(screen) != 'unknown_event': return None
+            st = self._classify(screen)
+            if st in ('event_result', 'unknown_event_result') or (not self.observer.event_cards(screen) and self.observer.find(screen, 'event_advance')):
+                return ('result', None)
+            if st != 'unknown_event': return None
             cards = self.observer.event_cards(screen)
             return (tuple(cards),self._event_signature(screen)) if cards else None
-        cards, signature = self._wait('미등록 이벤트 선택지 확인',ready)
+
+        ready_val = self._wait('미등록 이벤트 선택지 확인', ready)
+        if ready_val[0] == 'result':
+            logger.info('자동 탐사 [미등록 이벤트]: 대기 중 결과/대화 화면 감지 — 결과 닫기 진행')
+            return self._event_result()
+        cards, signature = ready_val
+
         screen = self._capture()
         if ready(screen) != (cards,signature): raise RuntimeError('이벤트 선택지가 변경됐습니다.')
         self._start_report(screen,{'mode':self.event_mode,'cards':cards})
@@ -576,15 +590,14 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 state = self._handle_loot_consume()
             elif state in ('story_confirm', 'unclaimed_reward'):
                 state = self._handle_event_confirm(target, available)
-        if state == 'map': self.stats['nodes'] += 1
+        if state == 'map':
+            self.stats['nodes'] += 1
         return state
 
     def _event_result(self):
         def ready(screen):
-            if self._classify(screen) not in ('event_result','unknown_event_result'): return None
+            if self._classify(screen) not in ('event_result','unknown_event_result') and not self.observer.find(screen, 'event_advance'): return None
             if self.observer.forbidden(screen): raise RuntimeError('이벤트 결과에서 금지 이미지 발견')
-            # The continuation arrow bobs; compare the page identity and use its
-            # verified hit region instead of requiring identical animation pixels.
             if not self.observer.find(screen, 'event_advance'): return None
             identity = self.observer.event_result_marker(screen) or self._event_signature(screen)
             return (identity, *self.observer.config['event_advance_bounds'])
@@ -627,6 +640,36 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
         if not advanced:
             state = self._wait('이벤트 결과 다음 화면', changed)[0]
+
+        while state in ('event_result', 'unknown_event_result'):
+            logger.info('자동 탐사 [이벤트 결과]: 추가 대화/결과 화면 감지 — 계속 진행')
+            target = self._wait('확인된 이벤트 결과 닫기', ready)
+            screen = self._capture()
+            self._report('dialogue', screen)
+            target_sig = self._event_signature(screen)
+            self._tap(target[1:])
+            advanced = False
+            for attempt in range(1, 4):
+                before = self._capture()
+                deadline = time.monotonic() + 1.2
+                while time.monotonic() < deadline:
+                    after = self._capture()
+                    val = changed(after)
+                    if val is not None:
+                        state = val[0]
+                        advanced = True
+                        break
+                    if self.stop_event.wait(0.2):
+                        raise _Stopped()
+                if advanced:
+                    break
+                diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
+                logger.warning('자동 탐사 [이벤트 결과 닫기]: 입력 신호 후 다음 화면 미진행 (시도 %d/3, 화면 변화도: %.2f) — 재입력 시도',
+                               attempt, diff)
+                self._tap(target[1:])
+            if not advanced:
+                state = self._wait('이벤트 결과 다음 화면', changed)[0]
+
         if state == 'map': self.stats['nodes'] += 1
         return state
 
