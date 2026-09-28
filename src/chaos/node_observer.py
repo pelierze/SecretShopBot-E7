@@ -1,12 +1,15 @@
 """Read-only observations for verified exploration nodes; unknown screens fail closed."""
 
 import json
+import re
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import cv2
 import numpy as np
 
 from src.image_matcher import read_image
+from .errors import RecognitionPending
 
 
 class NodeObserver:
@@ -131,6 +134,8 @@ class NodeObserver:
         return results
 
     def find(self, screen, name, region=None):
+        if name == 'rank_close':
+            return tuple(self.config['rank_result_close_bounds']) if self.is_rank_result(screen) else None
         if name in self.config['markers']:
             matches = self.all(screen, name, region)
             if len(matches) == 1:
@@ -173,7 +178,7 @@ class NodeObserver:
         # Every reachable marker must resolve to exactly one type, otherwise stop.
         if any(sum(abs(ax+aw/2-b[0]-b[2]/2)<22 and 0<b[1]-ay<45 for _,b in candidates) != 1
                for ax,ay,aw,ah in arrows):
-            raise RuntimeError('진입 가능 표시와 노드 종류를 명확히 연결하지 못했습니다.')
+            raise RecognitionPending('진입 가능 표시와 노드 종류를 명확히 연결하지 못했습니다.')
         return candidates
 
     def choose_node(self, screen):
@@ -198,7 +203,7 @@ class NodeObserver:
         anchors = sorted(self.all(screen, 'loot_reroll'))
         if len(anchors) != len(cards) or any(not (cx <= x+w/2 <= cx+cw and cy+ch <= y <= cy+ch+60)
                 for (x,y,w,h),(cx,cy,cw,ch) in zip(anchors,cards)):
-            raise RuntimeError('전리품 카드 배치를 확인하지 못했습니다.')
+            raise RecognitionPending('전리품 카드 배치를 확인하지 못했습니다.')
         blocked = set()
         for name, (x,y,w,h) in forbidden:
             owners = [i for i,(cx,cy,cw,ch) in enumerate(cards)
@@ -232,20 +237,27 @@ class NodeObserver:
         return centers
 
     def classify(self, screen):
+        if self.find(screen, 'shop_purchase_dialog'): return 'shop_purchase_confirm'
         if self.find(screen, 'defeat'): return 'defeat'
         if self.find(screen, 'expedition_summary') and self.find(screen, 'summary_close'): return 'expedition_summary'
         if self.find(screen, 'exploration_entry'): return 'exploration_entry'
         if self.find(screen, 'shop_exit_dialog') and self.find(screen, 'story_confirm'): return 'shop_exit_confirm'
         if self.find(screen, 'unclaimed_dialog'): return 'unclaimed_reward'
+        if self.find(screen, 'event_rank_reward_title') and self.find(screen, 'event_reward_continue'): return 'rank_reward'
         if self.find(screen, 'recruit_reward_title') and self.find(screen, 'recruit_continue'): return 'recruit_reward'
         if self.find(screen, 'story_dialog'): return 'story_confirm'
-        if self.find(screen, 'story_confirm'): return 'unclaimed_reward'
+        if self.find(screen, 'story_confirm'): return 'event_warning'
         if self.find(screen, 'levelup') and self.find(screen, 'level_close'): return 'levelup'
-        if self.find(screen, 'rank_close'): return 'rank_result'
+        if self.is_rank_result(screen): return 'rank_result'
         if self.find(screen, 'event_loot_close'): return 'event_loot_popup'
         if self.find(screen, 'event_loot_consume'): return 'event_loot_consume'
         if self.event_result_marker(screen) and self.find(screen, 'event_advance'): return 'event_result'
-        if any(self.find(screen, e['state_marker']) for e in self.config.get('events', [])): return 'event'
+        if self.known_event_candidates(screen):
+            # Event headings/backgrounds can survive on the outcome page. Only
+            # a visible advance arrow with no choice cards authorizes continuing.
+            if self.find(screen, 'event_advance') and not self.event_cards(screen):
+                return 'unknown_event_result'
+            return 'event'
         if len(self.all(screen,'loot_reroll')) == 3 and (self.find(screen,'loot_button') or self.find(screen,'loot_button_dim')): return 'loot'
         if self.find(screen, 'victory') and self.find(screen, 'continue'): return 'victory'
         if self.find(screen,'shop_frame') and self.find(screen,'shop_exit'): return 'shop'
@@ -270,15 +282,17 @@ class NodeObserver:
         found = [name for name in names if self.find(screen, name)]
         return found[0] if len(found) == 1 else None
 
-    def event_choice(self, screen):
+    def event_choice(self, screen, excluded=()):
         # Only reviewed outcomes are allowed; absence of a forbidden image alone
         # does not establish that an unknown event preserves the party.
         blocked = self.forbidden(screen)
-        events = [e for e in self.config.get('events', []) if self.find(screen, e['state_marker'])]
+        ids = self.known_event_candidates(screen)
+        events = [e for e in self.config.get('events', []) if e['id'] in ids]
         if len(events) != 1: return None
         event = events[0]
         priority = self.config['event_effect_priority']
-        candidates = [c for c in event['choices'] if c['effect'] in priority and self.find(screen, c['choice_marker'])]
+        candidates = [c for c in event['choices'] if c['effect'] in priority
+                      and tuple(c['bounds']) not in excluded and self.find(screen, c['choice_marker'])]
         if not candidates: return None
         for _,(bx,by,bw,bh) in blocked:
             owners = [r for r in event['choice_regions'] if r[0] <= bx+bw/2 <= r[0]+r[2]
@@ -290,8 +304,17 @@ class NodeObserver:
         return tuple(choice['bounds'])
 
     def known_event(self, screen):
-        found = [e['id'] for e in self.config['events'] if self.find(screen,e['state_marker'])]
+        found = self.known_event_candidates(screen)
         return found[0] if len(found) == 1 else None
+
+    def known_event_candidates(self, screen):
+        # A temporarily hidden heading must not turn a saved choice into random input.
+        strict = [e['id'] for e in self.config['events'] if self.find(screen,e['state_marker'])]
+        if strict:
+            return strict
+        return [e['id'] for e in self.config['events']
+                if self.find(screen,e['state_marker']) or
+                any(self.find(screen,c['choice_marker']) for c in e['choices'])]
 
     def event_cards(self, screen):
         # Bottom corners remain visible when a magnifier replaces the top icon.
@@ -354,6 +377,89 @@ class NodeObserver:
         digit_wide = self.read_rank_digit(screen[y+35:y+61, max(0, x-30):x+6], allow_max=True)
         if digit_wide is not None:
             return digit_wide
+        return None
+
+    @staticmethod
+    def rank_up_text_matches(text, confidence):
+        # The glowing text overlaps each hero's artwork. Allow one imperfect
+        # letter, but only together with the separate rank transition arrow.
+        normalized = re.sub(r'[^A-Z]', '', text.upper())
+        return confidence >= .55 and 5 <= len(normalized) <= 7 and (
+            SequenceMatcher(None, normalized, 'RANKUP').ratio() >= .8)
+
+    def is_rank_result(self, screen):
+        if not self.find(screen, 'rank_result_arrow'):
+            return False
+        x, y, w, h = self.config['rank_result_text_region']
+        if self.ocr is None:
+            from rapidocr_onnxruntime import RapidOCR
+            self.ocr = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
+        rows, _ = self.ocr(cv2.resize(screen[y:y+h, x:x+w], None, fx=2, fy=2),
+                           use_det=False, use_cls=False)
+        return bool(rows and len(rows) == 1 and self.rank_up_text_matches(*rows[0]))
+
+    def shop_number(self, screen, region):
+        x,y,w,h = region
+        if self.ocr is None:
+            from rapidocr_onnxruntime import RapidOCR
+            self.ocr = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
+        rows, _ = self.ocr(cv2.resize(screen[y:y+h,x:x+w],None,fx=3,fy=3),use_det=False,use_cls=False)
+        if rows and len(rows)==1:
+            text, score = rows[0]
+            text = text.strip().replace(',', '')
+            if score >= .9 and re.fullmatch(r'[0-9]{1,5}',text): return int(text)
+        raise RecognitionPending('상점 가격 또는 보유 파편 재확인')
+
+    def shop_investment_offer(self, screen):
+        if self.classify(screen) != 'shop': return None
+        if self.find(screen, 'shop_insufficient_notice'): return ('skip',)
+        product = self.find(screen, 'shop_future_investment')
+        if not product:
+            # Unaffordable and purchased cards dim their icon; the name stays
+            # readable. Recover the same card origin without matching its art.
+            title = self.find(screen, 'shop_future_investment_title')
+            if title: product = (title[0]-30,title[1]-14,164,174)
+        if not product: return ('skip',)
+        x,y,w,h = product
+        card = (x,y,w,240)
+        if self.find(screen, 'shop_purchase_done', region=card): return ('skip',)
+        for _,(bx,by,bw,bh) in self.forbidden(screen):
+            if x <= bx+bw/2 <= x+w and y <= by+bh/2 <= y+240:
+                return ('skip',)
+        cfg = self.config['shop_purchase']
+        px,py,pw,ph = cfg['price_offset']
+        if self.shop_price_unaffordable(screen,(x+px,y+py,pw,ph)): return ('skip',)
+        price = self.shop_number(screen,(x+px,y+py,pw,ph))
+        balance = self.shop_number(screen,cfg['currency_region'])
+        if price <= 0 or price > balance: return ('skip',)
+        bx,by,bw,bh = cfg['button_offset']
+        return ('buy',price,balance,x,y,x+bx,y+by,bw,bh)
+
+    @staticmethod
+    def shop_price_unaffordable(screen, region):
+        x,y,w,h = region
+        sample = screen[y:y+h,x:x+w]
+        if sample.shape[:2] != (h,w): return False
+        hsv = cv2.cvtColor(sample,cv2.COLOR_BGR2HSV)
+        red = ((hsv[:,:,0] <= 10) | (hsv[:,:,0] >= 170)) & (hsv[:,:,1] >= 150) & (hsv[:,:,2] >= 140)
+        # Only inspect the target's price digits, never neighbouring products.
+        return int(red.sum()) >= max(8, int(w*h*.015))
+
+    def summary_boss_count(self, screen):
+        if self.classify(screen) != 'expedition_summary':
+            return None
+        x, y, w, h = self.config['summary_boss_count_region']
+        if self.ocr is None:
+            from rapidocr_onnxruntime import RapidOCR
+            self.ocr = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
+        rows, _ = self.ocr(cv2.resize(screen[y:y+h, x:x+w], None, fx=4, fy=4),
+                           use_det=False, use_cls=False)
+        if not rows or len(rows) != 1:
+            return None
+        text, confidence = rows[0]
+        text = text.strip()
+        if confidence >= .95 and text in ('0', '1', '2', '3'):
+            return int(text)
         return None
 
     def read_rank_digit(self, sample, allow_max=True):

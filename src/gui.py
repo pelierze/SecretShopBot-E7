@@ -913,7 +913,7 @@ class SessionView:
             settings,
             text="탐사 초기 화면 또는 노드 지도에서 시작하세요.\n"
                  "영입 후 일반·정예·보스 전투, 휴식·보급·상점을 진행합니다.\n"
-                 "영입칸에서 설정한 우선순위에 따라 랭크업. 보급은 전리품, 상점은 구매 없이 퇴장.\n"
+                 "설정한 우선순위에 따라 랭크업. 보급은 전리품, 상점은 옵션을 켜면 미래 투자만 구매.\n"
                  "이벤트는 랭크업·전투 우선, 무작위 보상은 후순위. 패배 후 자동 재시작.\n"
                  "현재 설정된 난이도를 사용합니다. 화면 해상도: 1280×720 / DPI 240",
             justify=tk.LEFT,
@@ -922,6 +922,7 @@ class SessionView:
         event_settings.pack(fill=tk.X,padx=10,pady=5)
         self.chaos_event_mode = tk.StringVar(value="ocr")
         self.chaos_save_unknown = tk.BooleanVar(value=False)
+        self.chaos_buy_future_investment = tk.BooleanVar(value=False)
         self.chaos_event_controls = [
             ttk.Radiobutton(event_settings,text="문구 판단 (랭크업·전투 우선)",variable=self.chaos_event_mode,value="ocr"),
             ttk.Radiobutton(event_settings,text="무작위 선택 (선택지 내용 미판독)",variable=self.chaos_event_mode,value="random"),
@@ -929,6 +930,11 @@ class SessionView:
         ]
         for control in self.chaos_event_controls:
             control.pack(anchor=tk.W)
+        shop_settings = ttk.LabelFrame(self.chaos_tab, text="상점", padding=10)
+        shop_settings.pack(fill=tk.X,padx=10,pady=5)
+        shop_buy = ttk.Checkbutton(shop_settings, text="미래 투자만 구매 (상점마다 1회)", variable=self.chaos_buy_future_investment)
+        shop_buy.pack(anchor=tk.W)
+        self.chaos_event_controls.append(shop_buy)
         ttk.Label(event_settings,text="등록된 이벤트는 기존 규칙 우선. 저장은 기본 꺼짐이며 자동 전송하지 않습니다.").pack(anchor=tk.W)
         controls = ttk.Frame(self.chaos_tab, style="CardInner.TFrame", padding=10)
         controls.pack(fill=tk.X, padx=10, pady=5)
@@ -1699,7 +1705,8 @@ class SessionView:
                 self.bot = ExplorationBot(self.adb_controller, get_resource_root(), self.runtime_dir, hero_ids=hero_ids,
                                           rank_priority=rank_priority, target_clears=target_clears,
                                           event_mode=self.chaos_event_mode.get(),save_unknown_events=self.chaos_save_unknown.get(),
-                                          auto_fallback=auto_fb)
+                                          auto_fallback=auto_fb,
+                                          buy_future_investment=self.chaos_buy_future_investment.get() if hasattr(self, 'chaos_buy_future_investment') else False)
             except Exception as exc:
                 messagebox.showerror("자동 탐사 준비 실패", str(exc))
                 return

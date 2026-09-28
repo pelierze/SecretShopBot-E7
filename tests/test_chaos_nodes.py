@@ -141,7 +141,7 @@ class NodeImagesTest(unittest.TestCase):
                            ('elite_detail_live.png','elite_detail'),('boss_detail_live.png','boss_detail'),
                            ('loot_cards_live.png','loot'),('loot_selected_live.png','loot')]:
             self.assertEqual(self.observer.classify(self.screen(file)),state)
-        shop=read_image(str(ROOT/'images/chaos/raw/Screenshot_2026.09.24_10.22.54.004.png'))
+        shop=read_image(str(ROOT/'images/chaos/node_progression/raw/shop/shop_full.png'))
         self.assertEqual(self.observer.classify(shop),'shop')
         self.assertEqual(self.observer.selected_loot(self.screen('loot_selected_live.png')),(195,96,250,425))
 
@@ -253,15 +253,19 @@ class NodeFlowTest(unittest.TestCase):
         self.bot.adb.tap.assert_not_called()
 
     def test_shop_only_exits_even_when_forbidden_goods_are_displayed(self):
+        self.bot._capture=Mock(return_value=np.zeros((720,1280,3),dtype=np.uint8))
+        self.bot._classify=Mock(return_value='shop')
+        self.bot._purchase_future_investment=Mock()
         self.bot._guarded_tap=Mock();self.bot._state=Mock(return_value='map')
         self.bot._shop()
-        self.bot._guarded_tap.assert_called_once_with('상점 구매 없이 나가기','shop','shop_exit',exiting=True)
+        self.bot._guarded_tap.assert_called_once_with('상점 나가기','shop','shop_exit',exiting=True)
+        self.bot._purchase_future_investment.assert_not_called()
         self.assertEqual(self.bot.stats['nodes'],1)
 
     def test_shop_real_screen_replay_returns_to_map_with_one_exit_input(self):
         n=NodeObserver(ROOT);n.config['poll_seconds']=0
         b=NodeProgressionBot(Mock(),ROOT,self.temp.name,observer=n,max_nodes=1)
-        frames=[read_image(str(ROOT/'images/chaos/raw/Screenshot_2026.09.24_10.22.54.004.png')),
+        frames=[read_image(str(ROOT/'images/chaos/node_progression/raw/shop/shop_full.png')),
                 read_image(str(RAW/'map_after_rest_live.png'))]
         index=[0];taps=[]
         b._capture=lambda:frames[index[0]]
@@ -319,7 +323,7 @@ class NodeFlowTest(unittest.TestCase):
         n=NodeObserver(ROOT);n.config['poll_seconds']=0
         b=NodeProgressionBot(Mock(),ROOT,self.temp.name,observer=n)
         b.stats['outcome'] = 'victory'
-        frames=[read_image(str(RAW/name)) for name in ['expedition_summary_live.png','entry_after_defeat_live.png']]
+        frames=[read_image(str(RAW/name)) for name in ['expedition_clear_summary_live.png','entry_after_defeat_live.png']]
         index=[0];taps=[]
         b._capture=lambda:frames[index[0]]
         def tap(bounds):taps.append(bounds);index[0]+=1
@@ -423,7 +427,7 @@ class NodeFlowTest(unittest.TestCase):
         dummy = np.zeros((720, 1280, 3), dtype=np.uint8)
         b._capture = Mock(return_value=dummy)
         b._tap = Mock()
-        b.observer.classify = Mock(side_effect=[None, None, 'supply'])
+        b.observer.classify = Mock(side_effect=[None, None, 'supply', 'supply'])
         retry_fn = Mock(return_value=None)
         state = b._state('test', {'supply'}, retry_tap=retry_fn)
         self.assertEqual(state, 'supply')

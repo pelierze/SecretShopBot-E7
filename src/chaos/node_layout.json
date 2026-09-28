@@ -389,40 +389,6 @@
         80
       ]
     },
-    "rank_result": {
-      "file": "images/chaos/node_progression/raw/rest_wukong_rankup_live.png",
-      "threshold": 0.9,
-      "max_color_error": 0.055,
-      "crop": [
-        397,
-        505,
-        97,
-        24
-      ],
-      "region": [
-        370,
-        490,
-        160,
-        50
-      ]
-    },
-    "rank_close": {
-      "file": "images/chaos/node_progression/raw/rest_wukong_rankup_live.png",
-      "threshold": 0.9,
-      "max_color_error": 0.055,
-      "crop": [
-        582,
-        679,
-        120,
-        24
-      ],
-      "region": [
-        550,
-        665,
-        190,
-        50
-      ]
-    },
     "levelup": {
       "file": "images/chaos/node_progression/raw/battle/victory_levelup_live.png",
       "threshold": 0.85,
@@ -953,7 +919,7 @@
       "max_color_error": 0.06
     },
     "shop_npc": {
-      "file": "images/chaos/raw/Screenshot_2026.09.24_10.22.54.004.png",
+      "file": "images/chaos/node_progression/raw/shop/shop_full.png",
       "crop": [
         70,
         194,
@@ -970,7 +936,7 @@
       "max_color_error": 0.1
     },
     "shop_exit": {
-      "file": "images/chaos/raw/Screenshot_2026.09.24_10.22.54.004.png",
+      "file": "images/chaos/node_progression/raw/shop/shop_full.png",
       "crop": [
         1057,
         646,
@@ -1406,7 +1372,7 @@
       "max_color_error": 0.3
     },
     "shop_frame": {
-      "file": "images/chaos/raw/Screenshot_2026.09.24_10.22.54.004.png",
+      "file": "images/chaos/node_progression/raw/shop/shop_full.png",
       "crop": [
         381,
         79,
@@ -2577,6 +2543,567 @@
       ],
       "threshold": 0.85,
       "max_color_error": 0.08
+    },
+    "event_rank_reward_title": {
+      "file": "images/chaos/node_progression/raw/event_rank_reward_live.png",
+      "crop": [
+        588,
+        273,
+        111,
+        24
+      ],
+      "region": [
+        570,
+        260,
+        150,
+        50
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.055
+    },
+    "event_rank_reward_button": {
+      "file": "images/chaos/node_progression/raw/event_rank_reward_live.png",
+      "crop": [
+        578,
+        465,
+        126,
+        31
+      ],
+      "region": [
+        540,
+        450,
+        205,
+        60
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.055
+    },
+    "event_reward_continue": {
+      "file": "images/chaos/node_progression/raw/event_rank_reward_live.png",
+      "crop": [
+        578,
+        633,
+        130,
+        32
+      ],
+      "region": [
+        545,
+        615,
+        195,
+        70
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.055
+    },
+    "event_bone_throne": {
+      "file": "images/chaos/node_progression/raw/event_bone_throne_live.png",
+      "crop": [
+        286,
+        463,
+        710,
+        44
+      ],
+      "region": [
+        270,
+        450,
+        740,
+        70
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.055
+    },
+    "event_bone_throne_rank": {
+      "file": "images/chaos/node_progression/raw/event_bone_throne_live.png",
+      "crop": [
+        863,
+        581,
+        315,
+        97
+      ],
+      "region": [
+        845,
+        560,
+        350,
+        128
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.055
+    },
+    "rank_result_arrow": {
+      "file": "images/chaos/node_progression/raw/rank_result_event_live.png",
+      "crop": [
+        837,
+        217,
+        26,
+        24
+      ],
+      "region": [
+        805,
+        195,
+        90,
+        70
+      ],
+      "threshold": 0.85,
+      "max_color_error": 0.15
+    },
+    "event_blood_shelter": {
+      "file": "images/chaos/node_progression/raw/event_blood_shelter_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_blood_shelter_choice_1": {
+      "file": "images/chaos/node_progression/raw/event_blood_shelter_live.png",
+      "crop": [
+        96,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        88,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_blood_shelter_choice_3": {
+      "file": "images/chaos/node_progression/raw/event_blood_shelter_live.png",
+      "crop": [
+        856,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        848,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_open_spellbook": {
+      "file": "images/chaos/node_progression/raw/event_open_spellbook_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_open_spellbook_choice_3": {
+      "file": "images/chaos/node_progression/raw/event_open_spellbook_live.png",
+      "crop": [
+        856,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        848,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_broken_stele": {
+      "file": "images/chaos/node_progression/raw/event_broken_stele_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_broken_stele_choice_1": {
+      "file": "images/chaos/node_progression/raw/event_broken_stele_live.png",
+      "crop": [
+        286,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        278,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_bent_bars": {
+      "file": "images/chaos/node_progression/raw/event_bent_bars_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_bent_bars_choice_3": {
+      "file": "images/chaos/node_progression/raw/event_bent_bars_live.png",
+      "crop": [
+        856,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        848,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_sharp_teeth": {
+      "file": "images/chaos/node_progression/raw/event_sharp_teeth_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_sharp_teeth_choice_2": {
+      "file": "images/chaos/node_progression/raw/event_sharp_teeth_live.png",
+      "crop": [
+        666,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        658,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_wind_prayer": {
+      "file": "images/chaos/node_progression/raw/event_wind_prayer_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_wind_prayer_choice_2": {
+      "file": "images/chaos/node_progression/raw/event_wind_prayer_live.png",
+      "crop": [
+        666,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        658,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_feuding_tablet": {
+      "file": "images/chaos/node_progression/raw/event_feuding_tablet_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_feuding_tablet_choice_2": {
+      "file": "images/chaos/node_progression/raw/event_feuding_tablet_live.png",
+      "crop": [
+        666,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        658,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_torn_map": {
+      "file": "images/chaos/node_progression/raw/event_torn_map_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_torn_map_choice_2": {
+      "file": "images/chaos/node_progression/raw/event_torn_map_live.png",
+      "crop": [
+        666,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        658,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_wandering_ghost": {
+      "file": "images/chaos/node_progression/raw/event_wandering_ghost_live.png",
+      "crop": [
+        270,
+        463,
+        735,
+        48
+      ],
+      "region": [
+        260,
+        453,
+        755,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_wandering_ghost_choice_1": {
+      "file": "images/chaos/node_progression/raw/event_wandering_ghost_live.png",
+      "crop": [
+        286,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        278,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "shop_future_investment": {
+      "file": "images/chaos/node_progression/templates/shop/future_investment.png",
+      "crop": [
+        0,
+        0,
+        164,
+        174
+      ],
+      "region": [
+        380,
+        80,
+        780,
+        520
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "shop_purchase_dialog": {
+      "file": "images/chaos/node_progression/raw/shop/future_investment_confirm.png",
+      "crop": [
+        580,
+        138,
+        125,
+        37
+      ],
+      "region": [
+        560,
+        125,
+        165,
+        62
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "shop_investment_confirm_item": {
+      "file": "images/chaos/node_progression/raw/shop/future_investment_confirm.png",
+      "crop": [
+        506,
+        313,
+        234,
+        75
+      ],
+      "region": [
+        490,
+        298,
+        266,
+        105
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "shop_purchase_button": {
+      "file": "images/chaos/node_progression/raw/shop/future_investment_confirm.png",
+      "crop": [
+        795,
+        490,
+        51,
+        33
+      ],
+      "region": [
+        780,
+        475,
+        85,
+        65
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "shop_purchase_cancel": {
+      "file": "images/chaos/node_progression/raw/shop/future_investment_confirm.png",
+      "crop": [
+        440,
+        490,
+        51,
+        33
+      ],
+      "region": [
+        425,
+        475,
+        85,
+        65
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "shop_purchase_done": {
+      "file": "images/chaos/node_progression/raw/shop/future_investment_purchased.png",
+      "crop": [
+        445,
+        290,
+        80,
+        29
+      ],
+      "region": [
+        380,
+        80,
+        780,
+        520
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "shop_future_investment_title": {
+      "file": "images/chaos/node_progression/templates/shop/future_investment.png",
+      "crop": [
+        30,
+        14,
+        108,
+        30
+      ],
+      "region": [
+        380,
+        80,
+        780,
+        520
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.1
+    },
+    "shop_insufficient_notice": {
+      "file": "images/chaos/node_progression/raw/shop/shop_not_enough_message.png",
+      "crop": [
+        474,
+        650,
+        336,
+        27
+      ],
+      "region": [
+        440,
+        632,
+        400,
+        65
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.12
     }
   },
   "loot_cards": [
@@ -3664,6 +4191,349 @@
           131
         ]
       ]
+    },
+    {
+      "id": "bone_throne",
+      "state_marker": "event_bone_throne",
+      "choices": [
+        {
+          "choice_marker": "event_bone_throne_rank",
+          "effect": "rank_up",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ]
+    },
+    {
+      "id": "blood_shelter",
+      "state_marker": "event_blood_shelter",
+      "choices": [
+        {
+          "choice_marker": "event_blood_shelter_choice_1",
+          "effect": "rank_up",
+          "bounds": [
+            78,
+            556,
+            362,
+            131
+          ]
+        },
+        {
+          "choice_marker": "event_blood_shelter_choice_3",
+          "effect": "experience",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260926_205529_578900"
+    },
+    {
+      "id": "open_spellbook",
+      "state_marker": "event_open_spellbook",
+      "choices": [
+        {
+          "choice_marker": "event_open_spellbook_choice_3",
+          "effect": "rank_up",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260926_210650_485000"
+    },
+    {
+      "id": "broken_stele",
+      "state_marker": "event_broken_stele",
+      "choices": [
+        {
+          "choice_marker": "event_broken_stele_choice_1",
+          "effect": "currency_reward",
+          "bounds": [
+            268,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260927_123553_235600"
+    },
+    {
+      "id": "bent_bars",
+      "state_marker": "event_bent_bars",
+      "choices": [
+        {
+          "choice_marker": "event_bent_bars_choice_3",
+          "effect": "experience",
+          "bounds": [
+            838,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260927_125850_370400"
+    },
+    {
+      "id": "sharp_teeth",
+      "state_marker": "event_sharp_teeth",
+      "choices": [
+        {
+          "choice_marker": "event_sharp_teeth_choice_2",
+          "effect": "leave",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260927_140815_572600"
+    },
+    {
+      "id": "wind_prayer",
+      "state_marker": "event_wind_prayer",
+      "choices": [
+        {
+          "choice_marker": "event_wind_prayer_choice_2",
+          "effect": "experience",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260927_175306_370400"
+    },
+    {
+      "id": "feuding_tablet",
+      "state_marker": "event_feuding_tablet",
+      "choices": [
+        {
+          "choice_marker": "event_feuding_tablet_choice_2",
+          "effect": "hero_recruit",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260927_191230_38200"
+    },
+    {
+      "id": "torn_map",
+      "state_marker": "event_torn_map",
+      "choices": [
+        {
+          "choice_marker": "event_torn_map_choice_2",
+          "effect": "leave",
+          "bounds": [
+            648,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260927_193603_802300"
+    },
+    {
+      "id": "wandering_ghost",
+      "state_marker": "event_wandering_ghost",
+      "choices": [
+        {
+          "choice_marker": "event_wandering_ghost_choice_1",
+          "effect": "currency_reward",
+          "bounds": [
+            268,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          268,
+          556,
+          362,
+          131
+        ],
+        [
+          648,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20260928_114847_921700"
     }
   ],
   "event_result_markers": [
@@ -3691,5 +4561,51 @@
     642,
     336,
     62
-  ]
+  ],
+  "recognition_attempts": 3,
+  "recognition_retry_seconds": 1,
+  "summary_boss_count_region": [
+    268,
+    236,
+    29,
+    29
+  ],
+  "rank_result_text_region": [
+    335,
+    340,
+    210,
+    80
+  ],
+  "rank_result_close_bounds": [
+    582,
+    679,
+    120,
+    24
+  ],
+  "shop_purchase": {
+    "price_offset": [
+      71,
+      193,
+      45,
+      29
+    ],
+    "button_offset": [
+      6,
+      185,
+      150,
+      45
+    ],
+    "currency_region": [
+      922,
+      18,
+      56,
+      32
+    ],
+    "confirm_price_region": [
+      680,
+      489,
+      48,
+      34
+    ]
+  }
 }

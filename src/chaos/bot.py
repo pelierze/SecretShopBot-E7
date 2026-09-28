@@ -9,12 +9,17 @@ from pathlib import Path
 
 from src.image_matcher import read_image
 from .observer import KnightObserver, RecruitmentObserver
+from .errors import RecognitionPending
 
 logger = logging.getLogger(__name__)
 
 
 class _Stopped(Exception):
     pass
+
+
+class RecognitionTimeout(RuntimeError):
+    """A read-only observation window expired, rather than a policy failure."""
 
 
 class PartyCostExceededError(RuntimeError):
@@ -72,7 +77,10 @@ class KnightRecruitmentBot:
         deadline = time.monotonic() + self.observer.config["timeout_seconds"]
         previous, count = None, 0
         while time.monotonic() < deadline:
-            value = predicate(self._capture())
+            try:
+                value = predicate(self._capture())
+            except RecognitionPending:
+                value = None
             self._check_stop()
             if value is not None:
                 # Stable outcomes must refer to the same position, not just any match.
@@ -87,7 +95,7 @@ class KnightRecruitmentBot:
                 previous, count = None, 0
             if self.stop_event.wait(self.observer.config["poll_seconds"]):
                 raise _Stopped()
-        raise RuntimeError(f"{phase}: 대기 시간 초과. 화면 또는 대상 영웅을 확인해 주세요.")
+        raise RecognitionTimeout(f"{phase}: 대기 시간 초과. 화면 또는 대상 영웅을 확인해 주세요.")
 
     def _tap(self, bounds):
         self._check_stop()

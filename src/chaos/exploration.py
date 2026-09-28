@@ -5,16 +5,23 @@ import time
 import hashlib
 import json
 import random
+import subprocess
 from pathlib import Path
 
 import numpy as np
 import cv2
 
-from .bot import KnightRecruitmentBot, PartyRecruitmentBot, _Stopped
+from .bot import KnightRecruitmentBot, PartyRecruitmentBot, _Stopped, RecognitionTimeout
 from .node_observer import NodeObserver
 from .event_policy import KoreanEventReader, choose_read_choice
+from .errors import RecognitionPending
 
 logger = logging.getLogger(__name__)
+
+EVENT_FOLLOWUPS = {'map', 'battle_setup', 'battle', 'story', 'story_confirm',
+    'rank_menu', 'rank_result', 'rank_reward', 'event', 'unknown_event', 'event_result',
+    'unknown_event_result', 'loot', 'event_loot_popup', 'event_loot_consume',
+    'recruit_reward', 'unclaimed_reward', 'event_warning', 'levelup', 'victory'}
 
 HERO_NAMES = {
     'wukong': '오공',
@@ -39,10 +46,11 @@ except Exception:
 class NodeProgressionBot(KnightRecruitmentBot):
     def __init__(self, adb, root, runtime_dir, observer=None, max_nodes=None,
                  event_mode='ocr', save_unknown_events=False, diagnostic_capture=False,
-                 rank_priority=None):
+                 rank_priority=None, buy_future_investment=False):
         super().__init__(adb, root, runtime_dir, observer or NodeObserver(root))
         if event_mode not in ('ocr','random'): raise ValueError('지원하지 않는 이벤트 처리 방식')
         self.event_mode = event_mode
+        self.buy_future_investment = bool(buy_future_investment)
         self.save_unknown_events = save_unknown_events
         self.diagnostic_capture = diagnostic_capture
         self.rank_priority = list(rank_priority) if rank_priority else ['wukong', 'jenua']
@@ -56,11 +64,24 @@ class NodeProgressionBot(KnightRecruitmentBot):
         self.auto_tapped = False
         self.max_nodes = max_nodes
         self.current_node_kind = None
+        self.pending_event_id = None
+        self.rejected_event_choices = set()
         self.stats.update(nodes=0, auto_verified=False)
 
     def _capture(self):
         self._check_stop()
-        screen = self.adb.capture_frame()
+        attempts = self.observer.config.get('recognition_attempts', 3)
+        for attempt in range(1, attempts+1):
+            try:
+                screen = self.adb.capture_frame()
+            except (OSError, subprocess.TimeoutExpired, cv2.error) as exc:
+                logger.warning('화면 캡처 실패 (%d/%d): %s', attempt, attempts, exc)
+                screen = None
+            if screen is not None and screen.shape[:2] == (720,1280):
+                break
+            self.stats['phase'] = f'화면 캡처 재확인 {attempt}/{attempts}'
+            if attempt < attempts and self.stop_event.wait(self.observer.config.get('recognition_retry_seconds', 1)):
+                raise _Stopped()
         self._check_stop()
         self.observer.validate_screen(screen)
         self.last_screen = screen
@@ -68,13 +89,26 @@ class NodeProgressionBot(KnightRecruitmentBot):
             cv2.imencode('.png',screen)[1].tofile(str(self.screen_path))
         return screen
 
+    def _wait(self, phase, predicate):
+        attempts = self.observer.config.get('recognition_attempts', 3)
+        for attempt in range(1, attempts+1):
+            try:
+                return super()._wait(f'{phase} ({attempt}/{attempts})', predicate)
+            except RecognitionTimeout:
+                if attempt == attempts:
+                    raise
+                logger.warning('%s: 화면 인식 재시도 %d/%d (입력 없음)', phase, attempt+1, attempts)
+                if self.stop_event.wait(self.observer.config.get('recognition_retry_seconds', 1)):
+                    raise _Stopped()
+
     def _record(self, label):
         if self.diagnostic_capture: super()._record(label)
         if label == 'failed' and self.last_screen is not None:
-            if self.event_context and self.report_dir is None and self.observer.classify(self.last_screen) is None:
+            if self.event_context and self.report_dir is None:
                 self._start_report(self.last_screen, {'mode': self.event_mode,
                     'stage': 'unrecognized_event', 'reason': self.stats.get('reason','')})
-            self._report('failed', self.last_screen)
+            self._report('failed', self.last_screen, {'phase': self.stats.get('phase'),
+                'reason': self.stats.get('reason'), 'registered_event': self.pending_event_id})
 
     def _report(self, label, screen, metadata=None):
         if not self.save_unknown_events or self.report_dir is None or self.report_sequence >= 12: return
@@ -96,62 +130,37 @@ class NodeProgressionBot(KnightRecruitmentBot):
         text = ((hsv[:,:,1]<110)&(hsv[:,:,2]>170)).astype(np.uint8)
         return hashlib.sha256(cv2.resize(text,(282,58),interpolation=cv2.INTER_AREA).tobytes()).hexdigest()
 
-    def _tap_with_verify(self, bounds, phase, predicate, max_retries=3, wait_seconds=1.2):
-        for attempt in range(1, max_retries + 1):
-            before = self._capture()
-            self._tap(bounds)
-            deadline = time.monotonic() + wait_seconds
-            after = None
-            while time.monotonic() < deadline:
-                after = self._capture()
-                ok, res = predicate(after, before)
-                if ok:
-                    return res
-                if self.stop_event.wait(0.25):
-                    raise _Stopped()
-            if after is None:
-                after = self._capture()
-            diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(after, np.ndarray) and isinstance(before, np.ndarray) else 0.0
-            logger.warning(
-                '자동 탐사 [%s]: 입력 신호 후 진행 확인 안 됨 (시도 %d/%d, 화면 변화도: %.2f) — 재입력 시도',
-                phase, attempt, max_retries, diff
-            )
-        return None
+    def _tap_with_verify(self, bounds, phase, predicate, max_retries=3, wait_seconds=1.2, expected_state=None):
+        before = self._capture()
+        state = self._classify(before)
+        if state is None or (expected_state is not None and state != expected_state):
+            raise RecognitionTimeout(f'{phase}: 입력 전 화면 미확인')
+        self._tap(bounds)
+        def confirmed(after):
+            if self._classify(after) is None:
+                return None
+            ok, result = predicate(after, before)
+            return (result,) if ok else None
+        return self._wait(phase, confirmed)[0]
 
     def _classify(self, screen):
         if screen is None: return None
         state = self.observer.classify(screen)
+        if state == 'event':
+            known = self.observer.known_event(screen)
+            if known:
+                self.pending_event_id = known
         if state is not None: return state
         if self.event_context:
-            if self.observer.event_cards(screen): return 'unknown_event'
+            if self.observer.event_cards(screen):
+                return 'event' if self.pending_event_id or self.observer.known_event_candidates(screen) else 'unknown_event'
             if self.observer.find(screen,'event_advance'): return 'unknown_event_result'
         return None
 
     def _state(self, phase, allowed, retry_tap=None, max_retries=3):
-        def check(s):
-            kind = self._classify(s)
-            return (kind,) if kind in allowed else None
-
-        if retry_tap is not None:
-            for attempt in range(1, max_retries + 1):
-                before = self._capture()
-                deadline = time.monotonic() + 1.2
-                while time.monotonic() < deadline:
-                    after = self._capture()
-                    val = check(after)
-                    if val is not None:
-                        return val[0]
-                    if self.stop_event.wait(0.2):
-                        raise _Stopped()
-                diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
-                target_tap = retry_tap(after) if callable(retry_tap) else retry_tap
-                if target_tap is None:
-                    break
-                logger.warning('자동 탐사 [%s]: 입력 후 다음 화면 미진행 (시도 %d/%d, 화면 변화도: %.2f) — 재입력 시도',
-                               phase, attempt, max_retries, diff)
-                self._tap(target_tap)
-
-        return self._wait(phase, check)[0]
+        # retry_tap is retained for call compatibility, but recognition retries
+        # must never replay a previous screen's coordinates.
+        return self._wait(phase, lambda s: (kind,) if (kind := self._classify(s)) in allowed else None)[0]
 
     def _guarded_tap(self, phase, state, marker, *, exiting=False):
         def ready(screen):
@@ -160,15 +169,14 @@ class NodeProgressionBot(KnightRecruitmentBot):
             if self.observer.forbidden(screen) and not exiting:
                 raise RuntimeError('금지 항목이 발견되어 입력을 중지했습니다.')
             return self.observer.find(screen, marker)
-        bounds = self._wait(phase, ready)
-        # Do not click coordinates from a prior frame if screen changes meanwhile.
-        current_bounds = ready(self._capture())
-        if current_bounds != bounds:
-            if not exiting:
-                raise RuntimeError('클릭 직전 화면이 변경되어 중지했습니다.')
-            if current_bounds is not None:
-                bounds = current_bounds
-        self._tap(bounds)
+        for attempt in range(self.observer.config.get('recognition_attempts', 3)):
+            bounds = self._wait(phase, ready)
+            if ready(self._capture()) == bounds:
+                self._tap(bounds)
+                return
+            self._check_stop()
+            logger.warning('%s: 클릭 직전 화면 변경, 입력 없이 재확인', phase)
+        raise RecognitionTimeout('클릭 직전 화면 변경이 반복되어 중지했습니다.')
 
     def _story(self, state):
         if state == 'story':
@@ -185,11 +193,17 @@ class NodeProgressionBot(KnightRecruitmentBot):
         cfg = self.observer.config
         while time.monotonic()-start < cfg['battle_timeout_seconds']:
             screen = self._capture()
-            state = self.observer.classify(screen)
+            state = self._classify(screen)
             if state == 'defeat':
                 self.stats['outcome'] = 'defeat'
                 return
-            if state in ('victory', 'levelup', 'event_loot_popup', 'rank_result', 'event_result', 'unknown_event_result', 'map'):
+            if state == 'expedition_summary':
+                # Final boss can skip the ordinary victory/reward page entirely.
+                if self.observer.summary_boss_count(screen) == 3:
+                    self.stats['outcome'] = 'victory'
+                return
+            if state in ('victory', 'levelup', 'event_loot_popup', 'rank_result', 'rank_reward',
+                         'rank_menu', 'recruit_reward', 'loot', 'event_result', 'unknown_event_result', 'map'):
                 self.auto_verified = True
                 self.stats['auto_verified'] = True
                 return
@@ -251,7 +265,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     logger.info('%s 랭크 판독 불가 — %s 5랭크(MAX)로 판단하여 다음 우선순위 영웅으로 전환합니다.', target_name, target_name)
                     rank = 5
                 else:
-                    raise RuntimeError(f'{HERO_NAMES.get(target, target)} 랭크를 확실하게 읽지 못했습니다.')
+                    raise RecognitionPending(f'{HERO_NAMES.get(target, target)} 랭크를 확실하게 읽지 못했습니다.')
             if rank < 5:
                 bounds = self.observer.find(screen, target)
                 return (target, rank, *bounds) if bounds else None
@@ -274,13 +288,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if selected(self._capture()) != button: raise RuntimeError('랭크업 선택 상태 변경')
         self._tap(button)
         self._state('랭크업 결과 대기', {'rank_result'})
-        result = self._capture()
-        if self.observer.read_rank_digit(result[540:568,365:384]) != old_rank+1:
-            raise RuntimeError('랭크업 후 숫자가 예상과 다릅니다. 결과 화면에서 중지합니다.')
+        # Completion uses shared arrow + RANK UP text, independent of hero art
+        # and the card's rank-number position. _state requires stable frames.
         close_btn = self._wait('랭크업 결과 닫기 확인', lambda s: self.observer.find(s, 'rank_close') if self.observer.classify(s) == 'rank_result' else None)
         def closed(after, before):
             return (self.observer.classify(after) != 'rank_result'), None
-        self._tap_with_verify(close_btn, '랭크업 결과 닫기', closed, max_retries=3)
+        self._tap_with_verify(close_btn, '랭크업 결과 닫기', closed, expected_state='rank_result')
 
     def _rest(self):
         screen = self._capture()
@@ -298,7 +311,8 @@ class NodeProgressionBot(KnightRecruitmentBot):
             leave_btn = self._wait('휴식 랭크업 비활성화(완료표시) 및 떠나기 확인', rankup_disabled)
         else:
             leave_btn = self._wait('휴식 떠나기 확인', lambda s: self.observer.find(s, 'leave') if self.observer.classify(s) == 'rest' else None)
-        self._state('휴식 후 지도 복귀', {'map'}, retry_tap=leave_btn)
+        self._guarded_tap('휴식 떠나기', 'rest', 'leave', exiting=True)
+        self._state('휴식 후 지도 복귀', {'map'})
         self.stats['nodes'] += 1
 
     def _loot(self):
@@ -312,16 +326,6 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if choice(screen) != target: raise RuntimeError('전리품 후보가 변경됐습니다.')
         if self.observer.selected_loot(screen) != target:
             self._tap(target)
-            for attempt in range(1, 4):
-                fresh = self._capture()
-                if self.observer.selected_loot(fresh) == target:
-                    break
-                if attempt < 3:
-                    diff = float(np.mean(np.abs(fresh.astype(float) - screen.astype(float)))) if isinstance(fresh, np.ndarray) and isinstance(screen, np.ndarray) else 0.0
-                    logger.warning('자동 탐사 [전리품 카드 선택]: 카드 선택 미반영 (시도 %d/3, 화면 변화도: %.2f) — 재선택 시도', attempt, diff)
-                    self._tap(target)
-                    if self.stop_event.wait(0.3):
-                        raise _Stopped()
         def confirmed(screen):
             if self.observer.classify(screen) != 'loot': return None
             allowed = self.observer.loot_choices(screen)
@@ -331,7 +335,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         button = self._wait('허용 전리품 선택 상태 확인', confirmed)
         if confirmed(self._capture()) != button: raise RuntimeError('전리품 확정 직전 화면 변경')
         self._tap(button)
-        self._state('전리품 수령 후 복귀', {'supply','victory','map','event_result','unknown_event_result'}, retry_tap=button)
+        self._state('전리품 수령 후 복귀', {'supply','victory'} | EVENT_FOLLOWUPS, retry_tap=button)
 
     def _supply(self):
         screen = self._capture()
@@ -386,7 +390,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
             return None
 
         state = self._wait('보급 떠나기 후 결과(지도 또는 미획득 팝업) 확인', after_leave)[0]
-        if state in ('unclaimed_reward', 'story_confirm'):
+        if state == 'unclaimed_reward':
             logger.info('보급 노드: 미획득 전리품 팝업 감지 — 확인 버튼 클릭하여 퇴장 진행')
             confirm_btn = self._wait('미획득 전리품 팝업 확인 버튼', lambda s: self.observer.find(s, 'story_confirm'))
             def popup_closed(after, before):
@@ -397,12 +401,67 @@ class NodeProgressionBot(KnightRecruitmentBot):
         self.stats['nodes'] += 1
 
     def _shop(self):
-        self._guarded_tap('상점 구매 없이 나가기', 'shop', 'shop_exit', exiting=True)
+        if self._classify(self._capture()) == 'shop_purchase_confirm':
+            # A resumed confirmation has no verified originating selection.
+            self._guarded_tap('기존 상점 구매 확인 취소', 'shop_purchase_confirm', 'shop_purchase_cancel', exiting=True)
+            self._state('구매 취소 후 상점', {'shop'})
+        if self.buy_future_investment:
+            self._purchase_future_investment()
+        self._guarded_tap('상점 나가기', 'shop', 'shop_exit', exiting=True)
         state = self._state('상점 퇴장 확인', {'map','shop_exit_confirm'})
         if state == 'shop_exit_confirm':
             self._shop_confirm()
         else:
             self.stats['nodes'] += 1
+
+    def _purchase_future_investment(self):
+        offer = self._wait('미래 투자 상품·가격·재화 확인', self.observer.shop_investment_offer)
+        if offer[0] == 'skip':
+            logger.info('미래 투자 구매 생략: 미진열·구매 완료·금지·재화 부족')
+            return
+        if self.observer.shop_investment_offer(self._capture()) != offer:
+            raise RecognitionTimeout('미래 투자 선택 직전 상품 또는 재화 변경')
+        _, price, balance, x, y, *button = offer
+        self._tap(button)
+        def opened(screen):
+            state = self._classify(screen)
+            if state == 'shop' and self.observer.find(screen, 'shop_insufficient_notice'):
+                return ('insufficient',)
+            return ('confirm',) if state == 'shop_purchase_confirm' else None
+        if self._wait('상품 구매 확인 창 또는 재화 부족 안내', opened)[0] == 'insufficient':
+            logger.info('미래 투자 구매 생략: 게임의 재화 부족 안내 확인')
+            return
+        def confirm(screen):
+            if self._classify(screen) != 'shop_purchase_confirm': return None
+            if not self.observer.find(screen, 'shop_investment_confirm_item'): return ('cancel',)
+            for _, (bx,by,bw,bh) in self.observer.forbidden(screen):
+                if 300 <= by+bh/2 <= 415 and 480 <= bx+bw/2 <= 800: return ('cancel',)
+            cfg = self.observer.config['shop_purchase']
+            if self.observer.shop_price_unaffordable(screen, cfg['confirm_price_region']): return ('cancel',)
+            actual_price = self.observer.shop_number(screen, cfg['confirm_price_region'])
+            if actual_price != price: return ('cancel',)
+            button = self.observer.find(screen, 'shop_purchase_button')
+            return ('confirm', *button) if button else None
+        action = self._wait('미래 투자 이름·구매 금액 재확인', confirm)
+        if confirm(self._capture()) != action:
+            raise RecognitionTimeout('구매 확정 직전 화면 변경')
+        if action[0] == 'cancel':
+            self._guarded_tap('상품 불일치 구매 취소', 'shop_purchase_confirm', 'shop_purchase_cancel', exiting=True)
+            self._state('구매 취소 후 상점', {'shop'})
+            return
+        self._tap(action[1:])
+        def completed(screen):
+            if self._classify(screen) != 'shop': return None
+            if self.observer.find(screen, 'shop_insufficient_notice'): return ('insufficient',)
+            if not self.observer.find(screen, 'shop_purchase_done', region=(x,y,164,240)): return None
+            remaining = self.observer.shop_number(screen, self.observer.config['shop_purchase']['currency_region'])
+            return ('done',) if remaining == balance-price else None
+        outcome = self._wait('미래 투자 구매 완료·파편 차감 확인', completed)
+        if outcome[0] == 'insufficient':
+            logger.info('미래 투자 구매 실패: 재화 부족 안내 — 재클릭 없이 퇴장')
+            return
+        self.stats['shop_purchases'] = self.stats.get('shop_purchases', 0)+1
+        logger.info('미래 투자 구매 완료: 파편 %d → %d', balance, balance-price)
 
     def _shop_confirm(self):
         self._guarded_tap('상점 구매 없이 퇴장 확인', 'shop_exit_confirm', 'story_confirm', exiting=True)
@@ -416,150 +475,160 @@ class NodeProgressionBot(KnightRecruitmentBot):
         self._state('탐사 정산 화면 대기', {'expedition_summary'})
 
     def _finish_results(self):
+        cleared = False
+        if self.stats.get('outcome') != 'defeat':
+            def count(frame):
+                value = self.observer.summary_boss_count(frame)
+                return (value,) if value is not None else None
+            bosses = self._wait('정산 보스 처치 횟수 확인', count)[0]
+            self.stats['summary_boss_count'] = bosses
+            cleared = bosses == 3
+            logger.info('탐사 정산 판정: 보스 처치 %d/3, 완주=%s', bosses, cleared)
+            if not cleared:
+                self.stats.update(status='stopped', reason=f'정산 보스 처치 {bosses}/3 — 승패 확인 불가')
+                logger.warning('탐사 정산 유지: %s', self.stats['reason'])
+                return
+            self.stats['outcome'] = 'victory'
         self._record('expedition_summary')
         self._guarded_tap('탐사 정산 닫기', 'expedition_summary', 'summary_close', exiting=True)
         self._state('탐사 초기 화면 복귀', {'exploration_entry'}, retry_tap=lambda s: self.observer.find(s, 'summary_close'))
         if self.stats.get('outcome') == 'defeat':
             self.stats.update(status='round_failed', reason='패배 결과 처리 및 초기 화면 복귀 완료')
-        else:
+        elif cleared:
             self.stats.update(status='round_cleared', reason='탐사 완료 및 초기 화면 복귀 완료')
+        else:
+            self.stats.update(status='stopped', reason='탐사 정산 복귀 완료 — 승패 확인 불가')
 
     def _event(self):
-        if not self.observer.known_event(self._capture()):
+        screen = self._capture()
+        known = self.observer.known_event(screen)
+        candidates = self.observer.known_event_candidates(screen)
+        if not known and not candidates and not self.pending_event_id:
             return self._unknown_event()
-        target = self._wait('허용 이벤트 우선순위 확인', self.observer.event_choice)
-        if self.observer.event_choice(self._capture()) != target:
+        if known:
+            self.pending_event_id = known
+        logger.info('이벤트 등록 규칙 우선: %s', self.pending_event_id or candidates)
+        def choose(frame):
+            state = self._classify(frame)
+            if state in EVENT_FOLLOWUPS - {'event', 'unknown_event'}:
+                return ('followup', state)
+            target = self.observer.event_choice(frame, excluded=self.rejected_event_choices)
+            return ('choice', target) if target else None
+        ready = self._wait('허용 이벤트 우선순위 확인', choose)
+        if ready[0] == 'followup':
+            self._accept_event_page(ready[1])
+            return ready[1]
+        if choose(self._capture()) != ready:
             raise RuntimeError('이벤트 선택 직전 화면 변경')
+        target = ready[1]
         self._last_event_choice_bounds = target
         sig = self._event_signature(self._capture())
         self._tap(target)
         state = self._event_transition(sig)
-        while state in ('event_loot_consume', 'story_confirm', 'unclaimed_reward'):
+        while state in ('event_loot_consume', 'event_warning', 'unclaimed_reward'):
             if state == 'event_loot_consume':
                 state = self._handle_loot_consume()
-            elif state in ('story_confirm', 'unclaimed_reward'):
+            elif state in ('event_warning', 'unclaimed_reward'):
                 state = self._handle_event_confirm(target)
         if state == 'map':
             self.stats['nodes'] += 1
         return state
 
     def _event_transition(self, previous_signature=None):
-        states = {'battle_setup','battle','map','story','story_confirm','rank_menu','event_result',
-                  'event_loot_popup','unknown_event_result','unknown_event','event','loot','unclaimed_reward','recruit_reward','levelup','event_loot_consume'}
-        retry_bounds = getattr(self, '_last_event_choice_bounds', None)
         def changed(screen):
             state = self._classify(screen)
-            if state in ('unknown_event', 'event'):
-                if retry_bounds is not None:
-                    cards = self.observer.event_cards(screen)
-                    if any(abs(c[0] - retry_bounds[0]) < 15 and abs(c[1] - retry_bounds[1]) < 15 for c in cards):
-                        return None
-                if previous_signature is not None and self._event_signature(screen) == previous_signature:
+            if state in ('unknown_event', 'event') and previous_signature is not None:
+                if self._event_signature(screen) == previous_signature:
                     return None
-            return (state,) if state in states else None
-
-        if retry_bounds is not None:
-            for attempt in range(1, 4):
-                before = self._capture()
-                deadline = time.monotonic() + 1.2
-                while time.monotonic() < deadline:
-                    after = self._capture()
-                    val = changed(after)
-                    if val is not None:
-                        state = val[0]
-                        self._report('result', self._capture(), {'state': state})
-                        return state
-                    if self.stop_event.wait(0.2):
-                        raise _Stopped()
-                diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
-                if diff >= 8.0 or not any(abs(c[0] - retry_bounds[0]) < 10 and abs(c[1] - retry_bounds[1]) < 10 for c in self.observer.event_cards(after)):
-                    logger.info('자동 탐사 [이벤트 선택]: 화면 변화 감지(변화도: %.2f) 또는 선택지 사라짐 — 재입력을 보류하고 화면 전환 대기', diff)
-                    continue
-                logger.warning('자동 탐사 [이벤트 선택]: 입력 신호 후 진행/변화 없음 (시도 %d/3, 화면 변화도: %.2f) — 재입력 시도',
-                               attempt, diff)
-                self._tap(retry_bounds)
-
+            return (state,) if state in EVENT_FOLLOWUPS else None
         state = self._wait('이벤트 선택 결과 확인', changed)[0]
-        self._report('result',self._capture(),{'state':state})
+        self._accept_event_page(state)
+        self._report('result', self._capture(), {'state': state})
         return state
+
+    def _accept_event_page(self, state):
+        # Warnings can return to the same choices; other confirmed pages start
+        # a new step even when their card coordinates are unchanged.
+        if state not in ('event_warning', 'unclaimed_reward'):
+            self.pending_event_id = None
+            self.rejected_event_choices.clear()
 
     def _handle_loot_consume(self):
         logger.info('자동 탐사: 전리품 소모 팝업 감지 — 소모할 전리품 선택 및 확인 진행')
         screen = self._capture()
         items = self.observer.loot_consume_choices(screen)
-        target_item = items[0] if items else (704, 192)
+        if self._classify(screen) != 'event_loot_consume' or not items:
+            raise RecognitionTimeout('소모할 전리품 목록을 확인하지 못했습니다.')
+        if self.observer.forbidden(screen):
+            raise RuntimeError('전리품 소모 화면에서 금지 이미지 발견')
+        target_item = items[0]
         tap_coords = (target_item[0], target_item[1], 0, 0) if len(target_item) == 2 else target_item
         self._tap(tap_coords)
         if self.stop_event.wait(0.5):
             raise _Stopped()
 
-        confirm_bounds = self.observer.config.get('event_loot_consume_bounds', [472, 642, 336, 62])
+        fresh = self._capture()
+        if self._classify(fresh) != 'event_loot_consume':
+            return self._state('전리품 선택 후 화면 확인', EVENT_FOLLOWUPS)
+        if target_item not in self.observer.loot_consume_choices(fresh):
+            raise RecognitionTimeout('소모할 전리품 목록이 변경됐습니다.')
+        confirm_bounds = self.observer.config['event_loot_consume_bounds']
         def popup_closed(after, before):
             st = self._classify(after)
             return (st != 'event_loot_consume' and self.observer.find(after, 'event_loot_consume') is None), st
 
-        self._tap_with_verify(confirm_bounds, '전리품 소모 확인', popup_closed, max_retries=3)
-        allowed = {'map','story','story_confirm','event_result','unknown_event_result','event','unknown_event','event_loot_popup','rank_result','levelup','battle_setup','battle','unclaimed_reward'}
+        self._tap_with_verify(confirm_bounds, '전리품 소모 확인', popup_closed, expected_state='event_loot_consume')
+        allowed = EVENT_FOLLOWUPS - {'event_loot_consume'}
         return self._state('전리품 소모 후 결과 확인', allowed)
 
     def _handle_event_confirm(self, failed_target=None, available_cards=None):
-        logger.info('자동 탐사: 이벤트 확인/경고 팝업 감지')
-        screen = self._capture()
-        cancel_btn = self.observer.find(screen, 'story_cancel')
-        confirm_btn = self.observer.find(screen, 'story_confirm')
-
-        remaining = [c for c in (available_cards or []) if c != failed_target]
-        if cancel_btn and remaining:
-            logger.warning('자동 탐사 [이벤트]: 경고 팝업 감지 (취소 가능) — 취소 후 대체 선택지로 전환')
-            def popup_cancelled(after, before):
-                st = self._classify(after)
-                return (st in ('unknown_event', 'event') or (self.observer.find(after, 'story_cancel') is None and self.observer.find(after, 'story_confirm') is None)), st
-            self._tap_with_verify(cancel_btn, '이벤트 경고 팝업 취소', popup_cancelled, max_retries=3)
-            fresh = self._capture()
-            cur_cards = self.observer.event_cards(fresh)
-            cur_available = self.observer.available_event_cards(fresh, cur_cards) if cur_cards else remaining
-            valid_remaining = [c for c in cur_available if c != failed_target] or cur_available
-            if self.event_mode == 'random':
-                new_target = random.choice(valid_remaining)
-            else:
-                rows = self.event_reader.choices(fresh, valid_remaining)
-                money = self.event_reader.currency(fresh) if any(r['rule'] and r['rule'][2] for r in rows) else None
-                selected = choose_read_choice(rows, money)
-                new_target = selected['bounds']
-            logger.info('자동 탐사 [이벤트]: 대체 선택지 %s 선택 및 진행', new_target)
-            self._last_event_choice_bounds = new_target
-            sig = self._event_signature(fresh) if self._classify(fresh) in ('unknown_event', 'event') else None
-            self._tap(new_target)
-            return self._event_transition(sig)
-
-        logger.info('자동 탐사 [이벤트]: 확인 버튼 클릭하여 팝업 진행')
-        btn = confirm_btn or self._wait('이벤트 확인 버튼', lambda s: self.observer.find(s, 'story_confirm'))
-        def popup_confirmed(after, before):
-            st = self._classify(after)
-            return (self.observer.find(after, 'story_confirm') is None), st
-        self._tap_with_verify(btn, '이벤트 팝업 확인', popup_confirmed, max_retries=3)
-        allowed = {'map','story','story_confirm','event_result','unknown_event_result','event','unknown_event','event_loot_popup','rank_result','levelup','battle_setup','battle','event_loot_consume','unclaimed_reward'}
-        return self._state('이벤트 확인 후 결과 확인', allowed)
+        # A generic Confirm label does not identify the consequence of a warning.
+        def cancel_ready(screen):
+            if self._classify(screen) not in ('event_warning', 'unclaimed_reward'):
+                return None
+            return self.observer.find(screen, 'story_cancel')
+        cancel = self._wait('이벤트 경고 취소 버튼 확인', cancel_ready)
+        if cancel_ready(self._capture()) != cancel:
+            raise RecognitionTimeout('이벤트 경고 화면 변경')
+        if failed_target is not None:
+            self.rejected_event_choices.add(tuple(failed_target))
+        self._tap(cancel)
+        # Re-enter the common policy; never choose randomly inside a popup handler.
+        return self._state('이벤트 경고 취소 후 선택지 확인', {'event', 'unknown_event'})
 
     def _unknown_event(self):
         def ready(screen):
             st = self._classify(screen)
-            if st in ('event_result', 'unknown_event_result') or (not self.observer.event_cards(screen) and self.observer.find(screen, 'event_advance')):
+            if st in ('event_result', 'unknown_event_result') or (st is None and not self.observer.event_cards(screen) and self.observer.find(screen, 'event_advance')):
                 return ('result', None)
+            if st in EVENT_FOLLOWUPS - {'event', 'unknown_event'}:
+                return ('followup', st)
+            if self.pending_event_id or self.observer.known_event_candidates(screen):
+                return ('registered', None)
             if st != 'unknown_event': return None
             cards = self.observer.event_cards(screen)
             return (tuple(cards),self._event_signature(screen)) if cards else None
 
         ready_val = self._wait('미등록 이벤트 선택지 확인', ready)
+        if ready_val[0] == 'followup':
+            self._accept_event_page(ready_val[1])
+            return ready_val[1]
+        if ready_val[0] == 'registered':
+            return self._event()
         if ready_val[0] == 'result':
             logger.info('자동 탐사 [미등록 이벤트]: 대기 중 결과/대화 화면 감지 — 결과 닫기 진행')
             return self._event_result()
         cards, signature = ready_val
 
         screen = self._capture()
-        if ready(screen) != (cards,signature): raise RuntimeError('이벤트 선택지가 변경됐습니다.')
+        observed = ready(screen)
+        if observed and observed[0] == 'registered':
+            logger.info('미등록 이벤트 재확인 중 등록 규칙 발견 — 저장 규칙으로 전환')
+            return self._event()
+        if observed != (cards,signature): raise RuntimeError('이벤트 선택지가 변경됐습니다.')
         self._start_report(screen,{'mode':self.event_mode,'cards':cards})
-        available = self.observer.available_event_cards(screen,cards)
+        available = [c for c in self.observer.available_event_cards(screen,cards)
+                     if tuple(c) not in self.rejected_event_choices]
         if not available: raise RuntimeError('금지/비활성 선택지 제외 후 후보 없음')
         rows = []
         if self.event_mode == 'random':
@@ -572,7 +641,11 @@ class NodeProgressionBot(KnightRecruitmentBot):
             selected = choose_read_choice(rows,money)
             target = selected['bounds']
         fresh = self._capture()
-        if ready(fresh) != (cards,signature) or target not in self.observer.available_event_cards(fresh,cards):
+        observed = ready(fresh)
+        if observed and observed[0] == 'registered':
+            logger.info('이벤트 입력 직전 등록 규칙 발견 — 무작위/OCR 후보 폐기')
+            return self._event()
+        if observed != (cards,signature) or target not in self.observer.available_event_cards(fresh,cards):
             raise RuntimeError('이벤트 입력 직전 선택지 변경')
         if self.event_mode == 'ocr':
             confirmed = self.event_reader.choices(fresh,[target])[0]
@@ -582,13 +655,14 @@ class NodeProgressionBot(KnightRecruitmentBot):
             if ready(fresh) != (cards,signature) or target not in self.observer.available_event_cards(fresh,cards):
                 raise RuntimeError('이벤트 재확인 중 화면 변경')
         self._report('selected',fresh,{'mode':self.event_mode,'target':target,'ocr':rows})
+        logger.info('미등록 이벤트 선택 확정: 방식=%s, 후보=%d개, 위치=%s', self.event_mode, len(available), target)
         self._last_event_choice_bounds = target
         self._tap(target)
         state = self._event_transition(signature)
-        while state in ('event_loot_consume', 'story_confirm', 'unclaimed_reward'):
+        while state in ('event_loot_consume', 'event_warning', 'unclaimed_reward'):
             if state == 'event_loot_consume':
                 state = self._handle_loot_consume()
-            elif state in ('story_confirm', 'unclaimed_reward'):
+            elif state in ('event_warning', 'unclaimed_reward'):
                 state = self._handle_event_confirm(target, available)
         if state == 'map':
             self.stats['nodes'] += 1
@@ -596,80 +670,47 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
     def _event_result(self):
         def ready(screen):
-            if self._classify(screen) not in ('event_result','unknown_event_result') and not self.observer.find(screen, 'event_advance'): return None
-            if self.observer.forbidden(screen): raise RuntimeError('이벤트 결과에서 금지 이미지 발견')
-            if not self.observer.find(screen, 'event_advance'): return None
+            if self._classify(screen) not in ('event_result','unknown_event_result'):
+                return None
+            if self.observer.forbidden(screen):
+                raise RuntimeError('이벤트 결과에서 금지 이미지 발견')
+            if not self.observer.find(screen, 'event_advance'):
+                return None
             identity = self.observer.event_result_marker(screen) or self._event_signature(screen)
             return (identity, *self.observer.config['event_advance_bounds'])
         target = self._wait('확인된 이벤트 결과 닫기', ready)
         screen = self._capture()
-        if ready(screen) != target: raise RuntimeError('이벤트 결과 화면 변경')
+        if ready(screen) != target:
+            raise RecognitionTimeout('이벤트 결과 화면 변경')
         if self._classify(screen) == 'unknown_event_result':
-            self._start_report(screen,{'mode':self.event_mode,'stage':'result'})
-        self._report('dialogue',screen)
-        target_sig = self._event_signature(screen)
+            self._start_report(screen, {'mode':self.event_mode, 'stage':'result'})
+        self._report('dialogue', screen)
+        signature = self._event_signature(screen)
         self._tap(target[1:])
-        def changed(screen):
-            state = self._classify(screen)
-            if state == 'map': return (state,)
+        def changed(frame):
+            state = self._classify(frame)
             if state in ('event_result','unknown_event_result'):
-                page = ready(screen)
-                if page and (page[0] != target[0] or self._event_signature(screen) != target_sig): return (state,)
-            if state in ('event','unknown_event','rank_menu','event_loot_popup','rank_result','battle_setup','levelup','recruit_reward','event_loot_consume'): return (state,)
-            return None
+                page = ready(frame)
+                if not page or (page[0] == target[0] and self._event_signature(frame) == signature):
+                    return None
+            return (state,) if state in EVENT_FOLLOWUPS else None
+        # One page per dispatch: loot, heroes, new choices and text all go through
+        # their own validation before any further input.
+        state = self._wait('이벤트 결과 다음 화면', changed)[0]
+        self.pending_event_id = None
+        if state == 'map': self.stats['nodes'] += 1
+        return state
 
-        advanced = False
-        for attempt in range(1, 4):
-            before = self._capture()
-            deadline = time.monotonic() + 1.2
-            while time.monotonic() < deadline:
-                after = self._capture()
-                val = changed(after)
-                if val is not None:
-                    state = val[0]
-                    advanced = True
-                    break
-                if self.stop_event.wait(0.2):
-                    raise _Stopped()
-            if advanced:
-                break
-            diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
-            logger.warning('자동 탐사 [이벤트 결과 닫기]: 입력 신호 후 다음 화면 미진행 (시도 %d/3, 화면 변화도: %.2f) — 재입력 시도',
-                           attempt, diff)
-            self._tap(target[1:])
-
-        if not advanced:
-            state = self._wait('이벤트 결과 다음 화면', changed)[0]
-
-        while state in ('event_result', 'unknown_event_result'):
-            logger.info('자동 탐사 [이벤트 결과]: 추가 대화/결과 화면 감지 — 계속 진행')
-            target = self._wait('확인된 이벤트 결과 닫기', ready)
-            screen = self._capture()
-            self._report('dialogue', screen)
-            target_sig = self._event_signature(screen)
-            self._tap(target[1:])
-            advanced = False
-            for attempt in range(1, 4):
-                before = self._capture()
-                deadline = time.monotonic() + 1.2
-                while time.monotonic() < deadline:
-                    after = self._capture()
-                    val = changed(after)
-                    if val is not None:
-                        state = val[0]
-                        advanced = True
-                        break
-                    if self.stop_event.wait(0.2):
-                        raise _Stopped()
-                if advanced:
-                    break
-                diff = float(np.mean(np.abs(after.astype(float) - before.astype(float)))) if isinstance(before, np.ndarray) and isinstance(after, np.ndarray) else 0.0
-                logger.warning('자동 탐사 [이벤트 결과 닫기]: 입력 신호 후 다음 화면 미진행 (시도 %d/3, 화면 변화도: %.2f) — 재입력 시도',
-                               attempt, diff)
-                self._tap(target[1:])
-            if not advanced:
-                state = self._wait('이벤트 결과 다음 화면', changed)[0]
-
+    def _event_rank_reward(self):
+        self.event_context = True
+        self._guarded_tap('이벤트 랭크업 보상 사용', 'rank_reward', 'event_rank_reward_button')
+        self._state('이벤트 랭크업 영웅 목록', {'rank_menu'})
+        self._rankup()
+        state = self._state('이벤트 랭크업 보상 결과', EVENT_FOLLOWUPS)
+        if state == 'rank_reward':
+            # Only leave the reward card after _rankup verified the new rank.
+            self._guarded_tap('이벤트 랭크업 후 계속 탐사', 'rank_reward', 'event_reward_continue', exiting=True)
+            state = self._state('이벤트 랭크업 후속 화면', EVENT_FOLLOWUPS - {'rank_reward'})
         if state == 'map': self.stats['nodes'] += 1
         return state
 
@@ -682,11 +723,11 @@ class NodeProgressionBot(KnightRecruitmentBot):
         # A hero reward is not part of the configured party; do not recruit it.
         skip_hero = bool(self.observer.find(self._capture(), 'reward_hero'))
         self._guarded_tap('계속 탐사하기', 'victory', 'continue', exiting=True)
-        allowed = {'map','story','story_confirm','event_result','unknown_event_result','expedition_summary','exploration_entry','event_loot_popup','rank_result','event_loot_consume'}
+        allowed = (EVENT_FOLLOWUPS | {'expedition_summary','exploration_entry'}) - {'victory'}
         if skip_hero: allowed.add('unclaimed_reward')
         state = self._state('승리 후 다음 화면 확인', allowed)
         if state in ('event_loot_popup', 'rank_result'):
-            close_marker = 'event_loot_close' if self.observer.find(self._capture(), 'event_loot_close') else 'rank_close'
+            close_marker = 'rank_close' if state == 'rank_result' else 'event_loot_close'
             self._guarded_tap('전리품 결과 닫기', state, close_marker, exiting=True)
             state = self._state('전리품 닫기 후 복귀', {'map','story','story_confirm','event_result','unknown_event_result','expedition_summary','exploration_entry'})
         if state == 'unclaimed_reward':
@@ -695,20 +736,20 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if state == 'expedition_summary':
             self._finish_results()
         elif state == 'exploration_entry':
-            self.stats.update(status='round_cleared', reason='탐사 완료 및 초기 화면 복귀 완료')
-        elif state not in ('event_result','unknown_event_result'):
+            self.stats.update(status='stopped', reason='초기 화면 복귀 — 최종 클리어 정산 미확인')
+        elif state == 'map' or (not self.event_context and state in ('story','story_confirm')):
             self.stats['nodes'] += 1
 
     def _skip_recruit_reward(self):
         btn = self._wait('영웅 영입 건너뛰기 버튼 확인', lambda s: self.observer.find(s, 'recruit_continue') if self.observer.classify(s) == 'recruit_reward' else None)
         self._tap(btn)
-        allowed = {'map','story','story_confirm','unclaimed_reward','event_result','unknown_event_result','event','unknown_event','event_loot_popup','rank_result','levelup','event_loot_consume'}
+        allowed = EVENT_FOLLOWUPS - {'recruit_reward'}
         state = self._state('영웅 영입 건너뛰기 후 확인', allowed, retry_tap=btn)
-        if state in ('unclaimed_reward', 'story_confirm'):
+        if state == 'unclaimed_reward':
             confirm_btn = self._wait('추가 영웅 보상 확인 버튼', lambda s: self.observer.find(s, 'story_confirm') if self._classify(s) in ('unclaimed_reward', 'story_confirm') or self.observer.find(s, 'story_confirm') else None)
             def closed(after, before):
                 return (self.observer.find(after, 'story_confirm') is None), None
-            self._tap_with_verify(confirm_btn, '추가 보상 확인 닫기', closed, max_retries=3)
+            self._tap_with_verify(confirm_btn, '추가 보상 확인 닫기', closed, expected_state='unclaimed_reward')
             state = self._state('보상 확인 후 복귀', allowed)
         return state
 
@@ -742,7 +783,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         self._tap(enter_bounds)
         target_state = {'battle':'battle_setup','elite':'battle_setup','boss':'battle_setup','rest':'rest','supply':'supply','shop':'shop','event':'event'}[kind]
         allowed = {target_state,'story','story_confirm'}
-        if kind == 'event': allowed.update({'unknown_event','event_result','unknown_event_result'})
+        if kind == 'event': allowed.update(EVENT_FOLLOWUPS - {'map'})
         if kind == 'supply': allowed.update({'unclaimed_reward'})
         self._state('노드 내부 진입 확인', allowed, retry_tap=lambda s: self.observer.find(s, 'enter_node'))
         return True
@@ -752,7 +793,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         try:
             while True:
                 self._check_stop()
-                if self.stats.get('status') in ('round_cleared', 'round_failed'):
+                if self.stats.get('status') in ('round_cleared', 'round_failed', 'stopped'):
                     break
                 if self.max_nodes is not None and self.stats['nodes'] >= self.max_nodes:
                     self.stats.update(status='completed', reason='지정한 노드 검증 완료')
@@ -769,11 +810,13 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     if self.stats.get('outcome') == 'defeat':
                         self.stats.update(status='round_failed', reason='패배 결과 처리 및 초기 화면 복귀 완료')
                     else:
-                        self.stats.update(status='round_cleared', reason='탐사 완료 및 초기 화면 복귀 완료')
+                        self.stats.update(status='stopped', reason='초기 화면 복귀 — 최종 클리어 정산 미확인')
                     break
                 if state == 'map':
                     self.event_context = False
                     self.report_dir = None
+                    self.pending_event_id = None
+                    self.rejected_event_choices.clear()
                     if not self._select_node(): break
                 elif state == 'battle_setup':
                     self._guarded_tap('전투 시작', state, 'battle_start')
@@ -783,11 +826,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 elif state == 'rest': self._rest()
                 elif state == 'supply': self._supply()
                 elif state == 'loot': self._loot()
-                elif state == 'shop': self._shop()
+                elif state in ('shop', 'shop_purchase_confirm'): self._shop()
                 elif state == 'shop_exit_confirm': self._shop_confirm()
+                elif state == 'rank_reward': self._event_rank_reward()
                 elif state == 'rank_menu':
                     self._rankup()
-                    self._state('이벤트 랭크업 후 결과', {'event_result','unknown_event_result','map','levelup','event_loot_popup','rank_result','event','unknown_event'})
+                    self._state('이벤트 랭크업 후 결과', EVENT_FOLLOWUPS)
                 elif state in ('event','unknown_event'):
                     self.event_context = True
                     self._event()
@@ -795,10 +839,15 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     self.event_context = True
                     self._event_result()
                 elif state in ('event_loot_popup', 'rank_result'):
-                    close_marker = 'event_loot_close' if self.observer.find(self._capture(), 'event_loot_close') else 'rank_close'
+                    close_marker = 'rank_close' if state == 'rank_result' else 'event_loot_close'
                     self._guarded_tap('전리품/결과 닫기', state, close_marker, exiting=True)
-                    allowed = {'event_result','unknown_event_result','map','levelup','event','unknown_event','recruit_reward','unclaimed_reward','story_confirm','rank_result','event_loot_popup','event_loot_consume'}
+                    allowed = EVENT_FOLLOWUPS
                     next_state = self._state('결과 닫기 후 복귀', allowed)
+                    if state == 'rank_result' and next_state == 'rank_reward':
+                        # Resuming on an already completed rank result must not
+                        # try to spend the same reward a second time.
+                        self._guarded_tap('랭크업 완료 보상에서 계속 탐사', 'rank_reward', 'event_reward_continue', exiting=True)
+                        next_state = self._state('랭크업 완료 후속 화면', EVENT_FOLLOWUPS - {'rank_reward'})
                     if next_state == 'map':
                         self.stats['nodes'] += 1
                 elif state == 'event_loot_consume':
@@ -807,23 +856,25 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     close_btn = self._wait('레벨업 팝업 닫기 확인', lambda s: self.observer.find(s, 'level_close') if self.observer.classify(s) == 'levelup' else None)
                     def closed(after, before):
                         return (self.observer.classify(after) != 'levelup'), None
-                    self._tap_with_verify(close_btn, '레벨업 팝업 닫기', closed, max_retries=3)
-                    allowed = {'victory', 'event_result', 'unknown_event_result', 'event', 'unknown_event', 'map', 'battle', 'levelup', 'recruit_reward', 'unclaimed_reward', 'story_confirm','event_loot_consume'}
+                    self._tap_with_verify(close_btn, '레벨업 팝업 닫기', closed, expected_state='levelup')
+                    allowed = EVENT_FOLLOWUPS
                     self._state('레벨업 닫기 후 복귀', allowed)
                 elif state == 'victory':
                     self._victory()
                 elif state == 'recruit_reward':
                     self._skip_recruit_reward()
-                elif state in ('unclaimed_reward', 'story_confirm'):
+                elif state in ('unclaimed_reward', 'event_warning'):
                     if self.event_context:
                         self._handle_event_confirm()
-                    else:
+                    elif state == 'unclaimed_reward':
                         confirm_btn = self._wait('미획득 보상 확인 버튼', lambda s: self.observer.find(s, 'story_confirm') if self._classify(s) in ('unclaimed_reward', 'story_confirm') or self.observer.find(s, 'story_confirm') else None)
                         def closed(after, before):
                             return (self.observer.find(after, 'story_confirm') is None), None
                         self._tap_with_verify(confirm_btn, '미획득 보상 확인', closed, max_retries=3)
                         allowed = {'map','story','story_confirm','expedition_summary','exploration_entry','event','unknown_event','event_result','unknown_event_result','event_loot_popup','recruit_reward','rank_result','levelup','event_loot_consume'}
                         self._state('보상 확인 후 복귀', allowed)
+                    else:
+                        raise RecognitionTimeout('미등록 확인창의 의미를 확인하지 못했습니다.')
                 else:
                     raise RuntimeError(f'{state}: 중간 화면에서 재개할 수 없습니다. 지도에서 시작해 주세요.')
             self._record('end')
@@ -839,10 +890,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
 class ExplorationBot:
     """GUI facade: one stop event and live stats across both stages."""
     def __init__(self, adb, root, runtime_dir, hero_ids=None, rank_priority=None, max_nodes=None, repeat_on_failure=True,
-                 target_clears=1, event_mode='ocr', save_unknown_events=False, diagnostic_capture=False, auto_fallback=True):
+                 target_clears=1, event_mode='ocr', save_unknown_events=False, diagnostic_capture=False, auto_fallback=True,
+                 buy_future_investment=False):
         self._args = (adb, root, runtime_dir, hero_ids, rank_priority, max_nodes)
         self.node_options = dict(event_mode=event_mode, save_unknown_events=save_unknown_events,
-                                 diagnostic_capture=diagnostic_capture, rank_priority=rank_priority)
+                                 diagnostic_capture=diagnostic_capture, rank_priority=rank_priority,
+                                 buy_future_investment=buy_future_investment)
         self.repeat_on_failure = repeat_on_failure
         self.target_clears = max(1, int(target_clears)) if target_clears is not None else 1
         self.auto_fallback = auto_fallback
@@ -872,9 +925,13 @@ class ExplorationBot:
 
     def run(self):
         try:
+            logger.info('자동 탐사 반복 설정: 목표 완주 %d회, 패배 재도전=%s', self.target_clears, self.repeat_on_failure)
             while True:
                 result = self._run_stages()
                 status = result.get('status') if isinstance(result, dict) else None
+                logger.info('탐사 회차 결과: %d회차, 상태=%s, 사유=%s, 누적 완주=%d/%d',
+                            self.attempt, status, result.get('reason', '') if isinstance(result, dict) else '',
+                            self.cleared_rounds, self.target_clears)
                 if status == 'round_failed':
                     self.failed_rounds += 1
                     if not self.repeat_on_failure:
@@ -900,16 +957,13 @@ class ExplorationBot:
                                 self.attempt, self.cleared_rounds, self.target_clears, self.failed_rounds)
                     continue
 
-                if status in ('round_cleared', 'completed'):
+                if status == 'round_cleared':
                     self.cleared_rounds += 1
                     if self.cleared_rounds >= self.target_clears:
                         if hasattr(self.active, 'stats') and isinstance(self.active.stats, dict):
                             self.active.stats.update(status='completed', reason=f'목표 완주 {self.target_clears}회 달성')
                         base = dict(result) if isinstance(result, dict) else self.get_stats()
-                        if 'status' not in base or base.get('status') == 'round_cleared':
-                            base['status'] = 'completed'
-                        if 'reason' not in base:
-                            base['reason'] = f'목표 완주 {self.target_clears}회 달성'
+                        base.update(status='completed', reason=f'목표 완주 {self.target_clears}회 달성')
                         return dict(base,
                                     cleared_rounds=self.cleared_rounds,
                                     failed_rounds=self.failed_rounds,

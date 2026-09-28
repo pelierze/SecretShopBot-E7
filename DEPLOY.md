@@ -4,6 +4,8 @@
 
 ## 1. 배포 zip 만들기
 
+배포 이미지는 `build_support/release_assets.py`에서 코드와 설정 참조를 기준으로 선별합니다. 미사용 원본·스크린샷·템플릿을 폴더째 포함하지 않습니다. 실행 중 목록으로 읽는 금지 품목 및 `class_*.png` 직업 심볼은 포함합니다. 신규 이미지 로딩 방식을 추가하면 이 선별 정책과 `tests/test_release_assets.py`도 함께 갱신하세요. `raw` 안의 이미지라도 실제 설정에서 인식 원본으로 참조하면 배포에 필요합니다.
+
 VSCode에서 `Terminal > New Terminal`을 열고 프로젝트 루트에서 실행합니다.
 
 ```powershell

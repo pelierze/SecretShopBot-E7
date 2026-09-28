@@ -71,6 +71,80 @@ class EventModesTest(unittest.TestCase):
                 self.assertEqual(self.observer.known_event(frame), expected_id)
                 self.assertEqual(self.observer.event_choice(frame), expected_choice)
 
+    def test_library_outcome_with_retained_marker_continues_once(self):
+        observer = NodeObserver(ROOT)
+        observer.config['poll_seconds'] = 0
+        choices = self.screen('event_library_book_live.png')
+        result = self.screen('event_library_book_result_live.png')
+        self.assertEqual(observer.known_event(result), 'library_book')
+        self.assertEqual(observer.event_cards(result), [])
+        self.assertEqual(observer.classify(result), 'unknown_event_result')
+        self.assertEqual(observer.classify(choices), 'event')
+        self.assertEqual(observer.event_choice(choices), (268,556,362,131))
+        # Exercise saved choice -> retained heading/result -> next choices, also
+        # in random mode: the first selection must still use the saved rule.
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, observer, event_mode='random')
+            bot.event_context = True
+            frames = [choices, result, self.screen('event_stairs_live.png')]
+            current = [0]
+            taps = []
+            bot._capture = lambda: frames[current[0]]
+            def tap(bounds):
+                taps.append(tuple(bounds))
+                current[0] += 1
+            bot._tap = tap
+            self.assertEqual(bot._event(), 'unknown_event_result')
+            self.assertEqual(bot._event_result(), 'event')
+            self.assertEqual(taps, [(268,556,362,131), tuple(observer.config['event_advance_bounds'])])
+
+    def test_retained_marker_without_advance_does_not_authorize_result(self):
+        frame = self.screen('event_library_book_result_live.png').copy()
+        frame[680:720] = 0
+        self.assertEqual(self.observer.classify(frame), 'event')
+
+    def test_known_event_failure_report_requires_opt_in(self):
+        for enabled in (False, True):
+            with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as tmp:
+                bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer, save_unknown_events=enabled)
+                bot.event_context = True
+                bot.pending_event_id = 'library_book'
+                bot.last_screen = self.screen('event_library_book_live.png')
+                bot._record('failed')
+                self.assertEqual(bool(list(Path(tmp).rglob('*.png'))), enabled)
+
+    def test_choice_wait_routes_common_reward_screens_without_input(self):
+        observer = NodeObserver(ROOT)
+        observer.config['poll_seconds'] = 0
+        for filename, state in (
+            ('event_rank_reward_live.png', 'rank_reward'),
+            ('event_recruit_reward_live.png', 'recruit_reward'),
+            ('loot_cards_live.png', 'loot'),
+        ):
+            for handler in ('_event', '_unknown_event'):
+                with self.subTest(screen=filename, handler=handler), tempfile.TemporaryDirectory() as tmp:
+                    bot = NodeProgressionBot(Mock(), ROOT, tmp, observer)
+                    bot.event_context = True
+                    bot.pending_event_id = 'library_book'
+                    bot._capture = Mock(return_value=self.screen(filename))
+                    bot._tap = Mock()
+                    self.assertEqual(getattr(bot, handler)(), state)
+                    bot._tap.assert_not_called()
+
+    def test_unknown_result_handler_ignores_stale_registered_identity(self):
+        observer = NodeObserver(ROOT)
+        observer.config['poll_seconds'] = 0
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, observer)
+            bot.event_context = True
+            bot.pending_event_id = 'library_book'
+            bot._capture = Mock(return_value=self.screen('event_library_book_result_live.png'))
+            bot._event_result = Mock(return_value='loot')
+            bot._event = Mock()
+            self.assertEqual(bot._unknown_event(), 'loot')
+            bot._event_result.assert_called_once()
+            bot._event.assert_not_called()
+
     def test_loot_consume_popup_classified_and_choices_detected(self):
         frame = self.screen('event_loot_consume_live.png')
         self.assertEqual(self.observer.classify(frame), 'event_loot_consume')
@@ -81,7 +155,7 @@ class EventModesTest(unittest.TestCase):
     def test_handle_loot_consume_taps_item_and_confirm(self):
         frame = self.screen('event_loot_consume_live.png')
         result_frame = self.screen('event_abandoned_pack_result_live.png')
-        adb = Mock(capture_frame=Mock(side_effect=[frame, frame, result_frame, result_frame, result_frame]), tap=Mock(return_value=True))
+        adb = Mock(capture_frame=Mock(side_effect=[frame, frame, frame] + [result_frame]*5), tap=Mock(return_value=True))
         with tempfile.TemporaryDirectory() as tmp:
             bot = NodeProgressionBot(adb, ROOT, tmp, self.observer)
             state = bot._handle_loot_consume()
@@ -119,7 +193,7 @@ class EventModesTest(unittest.TestCase):
             self.assertEqual(len(list(Path(tmp).rglob('*.json'))),12)
 
     def test_report_preserves_unrecognized_event_entry_on_failure(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None), patch.object(self.observer,'known_event_candidates',return_value=[]):
             bot=NodeProgressionBot(Mock(),ROOT,tmp,self.observer,save_unknown_events=True)
             bot.event_context=True
             bot.last_screen=self.screen()
@@ -127,14 +201,14 @@ class EventModesTest(unittest.TestCase):
             self.assertTrue(list(Path(tmp).rglob('*choices.png')))
 
     def test_unknown_geometry_requires_event_entry_context(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None), patch.object(self.observer,'known_event_candidates',return_value=[]):
             bot=NodeProgressionBot(Mock(),ROOT,tmp,self.observer)
             self.assertIsNone(bot._classify(self.screen()))
             bot.event_context=True
             self.assertEqual(bot._classify(self.screen()),'unknown_event')
 
     def test_random_does_not_use_ocr_and_waits_for_changed_screen(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None), patch.object(self.observer,'known_event_candidates',return_value=[]):
             bot=NodeProgressionBot(Mock(),ROOT,tmp,self.observer,event_mode='random')
             bot.event_context=True
             bot._capture=Mock(return_value=self.screen())
@@ -160,7 +234,7 @@ class EventModesTest(unittest.TestCase):
             bot._unknown_event.assert_not_called()
 
     def test_screen_changed_during_second_ocr_blocks_click(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None), patch.object(self.observer,'known_event_candidates',return_value=[]):
             bot=NodeProgressionBot(Mock(),ROOT,tmp,self.observer)
             bot.event_context=True
             original=self.screen()
@@ -195,45 +269,28 @@ class EventModesTest(unittest.TestCase):
             self.assertEqual(current[0],2)
             self.assertEqual(bot.stats['nodes'],1)
 
-    def test_unknown_event_warning_popup_cancelled_and_chooses_alternative(self):
+    def test_warning_cancel_returns_to_common_policy_without_random_input(self):
         with tempfile.TemporaryDirectory() as tmp:
-            observer = NodeObserver(ROOT)
-            observer.config['poll_seconds'] = 0
-            bot = NodeProgressionBot(Mock(), ROOT, tmp, observer, event_mode='random')
-            bot.event_context = True
-            card1 = (268, 556, 362, 131)
-            card2 = (648, 556, 362, 131)
-            bot._capture = Mock()
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer, event_mode='random')
+            bot._capture = Mock(return_value=self.screen())
+            bot._classify = Mock(return_value='event_warning')
+            bot._wait = Mock(return_value=(500,430,100,60))
+            bot._state = Mock(return_value='event')
             bot._tap = Mock()
-            bot._tap_with_verify = Mock()
-            observer.event_cards = Mock(return_value=[card1, card2])
-            observer.available_event_cards = Mock(return_value=[card1, card2])
-            bot._event_signature = Mock(return_value='sig_test')
-            observer.find = Mock(side_effect=lambda s, name: (511, 479, 46, 31) if name == 'story_cancel' else ((725, 479, 46, 31) if name == 'story_confirm' else None))
+            with patch.object(self.observer, 'find', return_value=(500,430,100,60)), patch('src.chaos.exploration.random.choice') as random_choice:
+                self.assertEqual(bot._handle_event_confirm((78,556,362,131)), 'event')
+                random_choice.assert_not_called()
+            bot._tap.assert_called_once_with((500,430,100,60))
+            self.assertIn((78,556,362,131), bot.rejected_event_choices)
 
-            bot._event_transition = Mock(return_value='unknown_event_result')
-            res = bot._handle_event_confirm(failed_target=card1, available_cards=[card1, card2])
-            self.assertEqual(res, 'unknown_event_result')
-            bot._tap_with_verify.assert_called_once()
-            self.assertEqual(bot._tap_with_verify.call_args[0][0], (511, 479, 46, 31))
-            bot._tap.assert_called_once_with(card2)
-
-    def test_unknown_event_confirm_popup_confirmed_when_no_alternative(self):
+    def test_unknown_confirm_without_cancel_is_not_accepted(self):
+        from src.chaos.bot import RecognitionTimeout
         with tempfile.TemporaryDirectory() as tmp:
-            observer = NodeObserver(ROOT)
-            observer.config['poll_seconds'] = 0
-            bot = NodeProgressionBot(Mock(), ROOT, tmp, observer, event_mode='random')
-            bot.event_context = True
-            card1 = (268, 556, 362, 131)
-            bot._capture = Mock()
-            bot._tap_with_verify = Mock()
-            bot._state = Mock(return_value='map')
-            observer.find = Mock(side_effect=lambda s, name: (725, 479, 46, 31) if name == 'story_confirm' else None)
-
-            res = bot._handle_event_confirm(failed_target=card1, available_cards=[card1])
-            self.assertEqual(res, 'map')
-            bot._tap_with_verify.assert_called_once()
-            self.assertEqual(bot._tap_with_verify.call_args[0][0], (725, 479, 46, 31))
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer)
+            bot._wait = Mock(side_effect=RecognitionTimeout('확인창 의미 미확인'))
+            bot._tap = Mock()
+            with self.assertRaises(RecognitionTimeout): bot._handle_event_confirm()
+            bot._tap.assert_not_called()
 
     def test_wall_torch_known_event_chooses_exp_card(self):
         observer = NodeObserver(ROOT)

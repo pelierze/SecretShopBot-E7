@@ -15,6 +15,8 @@
 | `templates/story/` | 스토리 건너뛰기 버튼, 건너뛰기 확인 팝업 및 확인 버튼 |
 | `raw/battle/` | 자동 전투를 켜기 전·후의 전체 전투 화면 |
 | `raw/story/` | 스토리 표시 → 건너뛰기 확인 팝업 → 복귀 화면의 전체 원본 |
+| [`raw/shop/`](raw/shop/README.md) | 상점 상품 목록, 구매 전후, 재화 부족, 금지 품목 등의 전체 원본 |
+| [`templates/shop/`](templates/shop/README.md) | 상점 구매 버튼·품절·확인 팝업 등의 인식용 이미지 준비 공간 |
 
 노드 아이콘의 권장 이름은 `rest.png`, `battle.png`, `elite_battle.png`, `shop.png`, `random_event.png`, `boss.png`입니다. 진입 가능/불가에 따라 모습이 다르면 `battle_available.png`, `battle_unavailable.png`처럼 구분합니다. 기존에 준비한 파일명도 사용할 수 있습니다.
 
