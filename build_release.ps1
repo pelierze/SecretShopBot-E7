@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "v1.4.3"
+    [string]$Version = "v1.4.4"
 )
 
 $ErrorActionPreference = "Stop"
@@ -112,10 +112,16 @@ Write-Host "Building Windows app with PyInstaller..."
 python -m PyInstaller `
     --noconfirm `
     SecretShopBot-E7.spec
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller build failed."
+}
 
 $BuiltDir = Join-Path $DistRoot $AppName
 if (-not (Test-Path $BuiltDir)) {
     throw "Build failed: $BuiltDir was not created."
+}
+if (-not (Test-Path (Join-Path $BuiltDir "SecretShopBot-Updater.exe"))) {
+    throw "Automatic updater executable is missing from the build."
 }
 
 Write-Host "Preparing release package..."
@@ -174,5 +180,5 @@ Write-Host "  $ZipPath"
 Write-Host "SHA256:"
 Write-Host "  $($Hash.Hash)"
 Write-Host ""
-Write-Host "Upload the zip file to GitHub Releases:"
+Write-Host "Upload BOTH the zip and its .sha256.txt file to GitHub Releases:"
 Write-Host "  https://github.com/pelierze/SecretShopBot-E7/releases/new"

@@ -365,5 +365,83 @@ class CheckboxIndicatorStyleTest(unittest.TestCase):
             root.destroy()
 
 
-if __name__ == "__main__":
+class UpdateLifecycleTest(unittest.TestCase):
+    def app(self):
+        app = object.__new__(SecretShopGUI)
+        app.root = Mock(); app.sessions = []
+        app.is_closing = False; app.update_in_progress = True
+        app.update_status = Mock(); app.update_progress = Mock(); app.update_window = Mock()
+        return app
+
+    def test_download_completion_stops_all_workers_before_launch(self):
+        app = self.app()
+        session = Mock(); session.is_running = True; session.bot_thread.is_alive.return_value = True
+        app.sessions = [session]
+        app._finish_app_update = Mock()
+        app._app_update_downloaded('plan')
+        session.request_stop_for_close.assert_called_once()
+        app._finish_app_update.assert_called_once()
+
+    @patch('src.gui.launch_update')
+    def test_worker_wait_does_not_close_or_launch_while_bot_active(self, launch):
+        app = self.app()
+        session = Mock(); session.bot_thread.is_alive.return_value = True; app.sessions = [session]
+        app._finish_app_update()
+        launch.assert_not_called()
+        self.assertFalse(app.is_closing)
+        app.root.after.assert_called_once()
+
+    @patch('src.gui.messagebox.showerror')
+    def test_failed_preparation_keeps_current_app_usable(self, _message):
+        app = self.app()
+        app._app_update_failed('network')
+        self.assertFalse(app.update_in_progress)
+        self.assertFalse(app.is_closing)
+        app.root.destroy.assert_not_called()
+        app.update_window.destroy.assert_called_once()
+
+    def test_setting_snapshot_includes_nested_hero_selection_and_entries(self):
+        root = tk.Tk(); root.withdraw()
+        try:
+            session = Mock()
+            session.flag = tk.BooleanVar(root, False)
+            session.chaos_hero_combos = {'knight': ttk.Combobox(root, values=('Rose', 'Other'), state='readonly')}
+            session.chaos_hero_combos['knight'].set('Rose')
+            session.count = ttk.Entry(root); session.count.insert(0, '2')
+            app = self.app(); app.sessions = [session]
+            values = [{k: v.get() for k, v in app._update_variables(session)}]
+            session.flag.set(True); session.count.delete(0, tk.END)
+            session.chaos_hero_combos['knight'].set('Other')
+            app._apply_update_settings(values)
+            self.assertFalse(session.flag.get())
+            self.assertEqual(session.count.get(), '2')
+            self.assertEqual(session.chaos_hero_combos['knight'].get(), 'Rose')
+        finally: root.destroy()
+
+    @patch('src.gui.messagebox.askyesno', return_value=False)
+    def test_declining_update_does_not_start_download(self, prompt):
+        from src.release_checker import ReleaseInfo
+        app = self.app(); app.update_in_progress = False
+        app.release_info = ReleaseInfo('v9.0.0', '', '')
+        with patch('src.gui.sys.frozen', True, create=True), patch('src.gui.release_assets'), patch('src.gui.Path.is_file', return_value=True), patch('src.gui.threading.Thread') as thread:
+            app._request_app_update()
+        thread.assert_not_called()
+        self.assertFalse(app.update_in_progress)
+
+    def test_worker_ack_is_required_before_closing_app(self):
+        import tempfile
+        from pathlib import Path
+        app = self.app(); app.update_worker = Mock(poll=Mock(return_value=None))
+        app.update_worker_deadline = float('inf'); app._finish_closing = Mock()
+        with tempfile.TemporaryDirectory() as temp:
+            app.update_plan = Path(temp) / 'plan.json'
+            app._wait_update_worker()
+            app._finish_closing.assert_not_called()
+            (Path(temp) / 'worker-ready').write_text('ready')
+            app._wait_update_worker()
+        self.assertTrue(app.is_closing)
+        app._finish_closing.assert_called_once()
+
+
+if __name__ == '__main__':
     unittest.main()

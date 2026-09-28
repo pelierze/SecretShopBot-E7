@@ -49,7 +49,12 @@ def main():
     log_dir.mkdir(exist_ok=True)
     
     # GUI 실행
-    run_gui()
+    ready = None
+    if len(sys.argv) == 3 and sys.argv[1] == '--update-ready':
+        ready = Path(sys.argv[2]).resolve()
+        if not ready.parent.name.startswith('.e7-update-') or ready.name != 'app-ready':
+            raise ValueError('Invalid update acknowledgement path')
+    run_gui(update_ready=ready)
 
 
 if __name__ == "__main__":

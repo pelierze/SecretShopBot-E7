@@ -34,6 +34,7 @@ class ReleaseInfo:
     url: str
     name: str
     body: str = ""
+    assets: tuple = ()
 
 
 def fetch_latest_release(api_url: str = DEFAULT_RELEASE_API_URL) -> ReleaseInfo:
@@ -60,7 +61,8 @@ def fetch_latest_release(api_url: str = DEFAULT_RELEASE_API_URL) -> ReleaseInfo:
     if not version:
         raise ValueError("release version is missing")
 
-    return ReleaseInfo(version=version, url=url, name=name, body=body)
+    assets = tuple(payload.get("assets") or ())
+    return ReleaseInfo(version=version, url=url, name=name, body=body, assets=assets)
 
 
 def get_available_update(

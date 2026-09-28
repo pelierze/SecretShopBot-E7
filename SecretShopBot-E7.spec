@@ -90,10 +90,18 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+updater_analysis = Analysis(['updater_main.py'], pathex=[], binaries=[], datas=[],
+                            hiddenimports=[], hookspath=[], runtime_hooks=[], excludes=[], noarchive=False)
+updater_pyz = PYZ(updater_analysis.pure)
+updater_exe = EXE(updater_pyz, updater_analysis.scripts, updater_analysis.binaries,
+                  updater_analysis.datas, [], name='SecretShopBot-Updater',
+                  console=False, upx=False, icon='assets/icons/app_icon_multi_size.ico')
+
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    updater_exe,
     strip=False,
     upx=False,
     upx_exclude=[],

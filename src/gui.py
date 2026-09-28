@@ -4,6 +4,7 @@ tkinter를 사용한 사용자 인터페이스
 """
 import contextvars
 import copy
+import json
 import logging
 import os
 import shutil
@@ -38,6 +39,7 @@ if __package__ in (None, ""):
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     from src.adb_controller import ADBController
+    from src.app_updater import prepare_update, launch_update, release_assets
     from src.chaos.exploration import ExplorationBot
     from src.chaos.observer import RecruitmentObserver
     from src.equipment_reroll_bot import EquipmentRerollBot
@@ -51,6 +53,7 @@ if __package__ in (None, ""):
     from src.version import APP_VERSION
 else:
     from .adb_controller import ADBController
+    from .app_updater import prepare_update, launch_update, release_assets
     from .chaos.exploration import ExplorationBot
     from .chaos.observer import RecruitmentObserver
     from .equipment_reroll_bot import EquipmentRerollBot
@@ -274,7 +277,7 @@ class SessionView:
 
         self.release_link_btn = ttk.Button(
             self.release_info_frame,
-            text="업데이트 보기",
+            text="업데이트 후 재시작",
             style="Secondary.TButton",
             command=self._open_release_page,
         )
@@ -618,7 +621,7 @@ class SessionView:
         self.release_link_btn.pack(anchor="e", pady=(8, 0))
 
     def _open_release_page(self):
-        self.app._open_release_page()
+        self.app._request_app_update()
 
     def add_log_handler(self):
         text_handler = TextHandler(self.log_text, self.name)
@@ -2434,6 +2437,8 @@ class SecretShopGUI:
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.is_closing = False
+        self.update_in_progress = False
+        self.update_plan = None
         self.remote_settings = {}
         self.macro_definitions = [self._default_macro_definition()]
         self.release_info = None
@@ -2468,6 +2473,7 @@ class SecretShopGUI:
             self.notebook.add(session.frame, text=session.name)
 
         self._setup_logging()
+        self._restore_update_settings()
         self._start_settings_update()
         self._start_release_check()
 
@@ -2776,6 +2782,9 @@ class SecretShopGUI:
 
         for session in self.sessions:
             session.apply_settings_update(config)
+        if getattr(self, '_updated_settings', None) is not None:
+            self._apply_update_settings(self._updated_settings)
+            self._updated_settings = None
 
         version = config.get("script_version", config.get("config_version", "unknown"))
         logger.info("원격 스크립트 동기화 완료 (%s, 버전: %s)", source, version)
@@ -2796,12 +2805,141 @@ class SecretShopGUI:
 
         if not self.release_prompted:
             self.release_prompted = True
-            should_open = messagebox.askyesno(
-                "업데이트 안내",
-                f"새 릴리즈 {release.version} 이(가) 있습니다.\n다운로드 페이지를 지금 여시겠습니까?",
-            )
-            if should_open:
+            self._request_app_update()
+
+    def _request_app_update(self):
+        if self.is_closing or self.update_in_progress or not self.release_info:
+            return
+        if not getattr(sys, 'frozen', False):
+            self._open_release_page()
+            return
+        try:
+            release_assets(self.release_info)
+            if not (Path(sys.executable).parent / 'SecretShopBot-Updater.exe').is_file():
+                raise ValueError('자동 업데이트 프로그램이 없습니다. 이번 버전은 수동 설치해 주세요.')
+        except ValueError as exc:
+            if messagebox.askyesno('자동 업데이트 안내', f'{exc}\n\n다운로드 페이지를 여시겠습니까?', parent=self.root):
                 self._open_release_page()
+            return
+        if not messagebox.askyesno('업데이트 안내',
+                f'새 버전 {self.release_info.version}을 설치하고 재시작할까요?\n'
+                '다운로드가 끝나면 실행 중인 봇을 중지합니다.\n설정과 로그는 유지되며 봇은 자동 재개하지 않습니다.', parent=self.root):
+            return
+        self.update_in_progress = True
+        self.update_window = tk.Toplevel(self.root)
+        self.update_window.title('앱 업데이트')
+        self.update_window.transient(self.root)
+        self.update_window.protocol('WM_DELETE_WINDOW', lambda: None)
+        self.update_window.grab_set()
+        self.update_status = ttk.Label(self.update_window, text='다운로드 준비 중...', padding=24)
+        self.update_status.pack()
+        self.update_progress = ttk.Progressbar(self.update_window, mode='indeterminate', length=320)
+        self.update_progress.pack(padx=24, pady=(0,24))
+        self.update_progress.start()
+        threading.Thread(target=self._download_app_update, daemon=True).start()
+
+    def _download_app_update(self):
+        try:
+            plan = prepare_update(self.release_info, Path(sys.executable).parent,
+                lambda text: self.root.after(0, lambda value=text: self.update_status.configure(text=value)))
+            self.root.after(0, lambda: self._app_update_downloaded(plan))
+        except Exception as exc:
+            logger.exception('앱 업데이트 준비 실패')
+            self.root.after(0, lambda error=str(exc): self._app_update_failed(error))
+
+    def _app_update_failed(self, error):
+        self.update_in_progress = False
+        self.update_plan = None
+        self.update_progress.stop()
+        self.update_window.grab_release()
+        self.update_window.destroy()
+        messagebox.showerror('업데이트 실패', f'{error}\n\n현재 버전은 그대로 사용할 수 있습니다.', parent=self.root)
+
+    def _app_update_downloaded(self, plan):
+        self.update_plan = plan
+        self.update_status.configure(text='봇 중지 및 업데이트 준비 중...')
+        for session in self.sessions:
+            if session.is_running or (session.bot_thread and session.bot_thread.is_alive()):
+                session.request_stop_for_close()
+        self._finish_app_update()
+
+    def _finish_app_update(self):
+        if any(s.bot_thread and s.bot_thread.is_alive() for s in self.sessions):
+            self.root.after(300, self._finish_app_update)
+            return
+        try:
+            self._save_update_settings()
+            self.update_worker = launch_update(self.update_plan)
+            self.update_worker_deadline = time.monotonic() + 30
+            self._wait_update_worker()
+        except Exception as exc:
+            self._app_update_failed(str(exc))
+
+    def _wait_update_worker(self):
+        if self.update_worker.poll() is not None:
+            self._app_update_failed('파일 교체 프로그램을 시작하지 못했습니다.')
+        elif (self.update_plan.parent / 'worker-ready').exists():
+            self.is_closing = True
+            self._finish_closing()
+        elif time.monotonic() > self.update_worker_deadline:
+            self.update_worker.terminate()
+            self._app_update_failed('파일 교체 프로그램 시작 시간이 초과되었습니다.')
+        else:
+            self.root.after(200, self._wait_update_worker)
+
+    @staticmethod
+    def _update_variables(session):
+        def walk(value, path):
+            if isinstance(value, (tk.Variable, ttk.Entry, tk.Entry)):
+                yield path, value
+            elif isinstance(value, dict):
+                for key, child in value.items():
+                    yield from walk(child, path + '/' + str(key))
+            elif isinstance(value, (tuple, list)):
+                for index, child in enumerate(value):
+                    yield from walk(child, path + '/' + str(index))
+        for key, value in vars(session).items():
+            yield from walk(value, key)
+
+    def _save_update_settings(self):
+        path = Path(sys.executable).parent / 'updates/app-update-settings.json'
+        path.parent.mkdir(exist_ok=True)
+        values = [{key: var.get() for key, var in self._update_variables(s)} for s in self.sessions]
+        path.write_text(json.dumps(values, ensure_ascii=False), encoding='utf-8')
+
+    def _restore_update_settings(self):
+        if not getattr(sys, 'frozen', False):
+            return
+        path = Path(sys.executable).parent / 'updates/app-update-settings.json'
+        if not path.exists():
+            return
+        try:
+            values = json.loads(path.read_text(encoding='utf-8'))
+            self._apply_update_settings(values)
+            # Remote defaults arrive asynchronously; restore user choices after them too.
+            self._updated_settings = values
+            path.unlink()
+        except Exception:
+            logger.exception('업데이트 이전 설정 복원 실패')
+
+    def _apply_update_settings(self, values):
+        for session, saved in zip(self.sessions, values):
+            for key, var in self._update_variables(session):
+                if key not in saved:
+                    continue
+                if isinstance(var, ttk.Combobox):
+                    if saved[key] in var.cget('values'):
+                        var.set(saved[key])
+                elif isinstance(var, tk.Variable):
+                    var.set(saved[key])
+                else:
+                    state = var.cget('state')
+                    var.configure(state='normal')
+                    var.delete(0, tk.END)
+                    var.insert(0, saved[key])
+                    var.configure(state=state)
+            session._update_macro_dependent_controls()
+            session._check_chaos_hero_cost_warning()
 
     def _open_support_page(self):
         try:
@@ -2832,6 +2970,8 @@ class SecretShopGUI:
         return False
 
     def _on_closing(self):
+        if self.update_in_progress:
+            return
         if self.is_closing:
             return
 
@@ -2862,10 +3002,12 @@ class SecretShopGUI:
         self.root.destroy()
 
 
-def run_gui():
+def run_gui(update_ready=None):
     """GUI 실행"""
     root = tk.Tk()
     if sv_ttk:
         sv_ttk.set_theme("light")
     SecretShopGUI(root)
+    if update_ready is not None:
+        root.after(500, lambda: Path(update_ready).write_text('ready', encoding='ascii'))
     root.mainloop()
