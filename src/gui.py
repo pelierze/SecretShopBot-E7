@@ -40,6 +40,8 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(project_root))
     from src.adb_controller import ADBController
     from src.app_updater import prepare_update, launch_update, release_assets
+    from src.log_split_view import LogSplitView
+    from src.auto_update import get_runtime_root
     from src.chaos.exploration import ExplorationBot
     from src.chaos.observer import RecruitmentObserver
     from src.equipment_reroll_bot import EquipmentRerollBot
@@ -54,6 +56,8 @@ if __package__ in (None, ""):
 else:
     from .adb_controller import ADBController
     from .app_updater import prepare_update, launch_update, release_assets
+    from .log_split_view import LogSplitView
+    from .auto_update import get_runtime_root
     from .chaos.exploration import ExplorationBot
     from .chaos.observer import RecruitmentObserver
     from .equipment_reroll_bot import EquipmentRerollBot
@@ -220,12 +224,13 @@ class SessionView:
         self.buy_count_steps_unit_text = "JSON steps 매크로는 이 값 대신 각 step 설정을 사용합니다."
         self._shop_input_syncing = False
 
-        self.frame = ttk.Frame(parent)
+        self.frame = LogSplitView(parent, get_runtime_root() / 'updates/ui-layout.json', self.session_id)
         self._create_widgets()
         self._apply_session_visual_style()
+        self.frame.options.bind_children()
 
     def _create_widgets(self):
-        self.connection_frame = ttk.LabelFrame(self.frame, text="ADB 연결", padding=10)
+        self.connection_frame = ttk.LabelFrame(self.frame.options.content, text="ADB 연결", padding=10)
         self.connection_frame.pack(fill=tk.X, padx=10, pady=5)
 
         self.ip_label = ttk.Label(self.connection_frame, text="IP 주소:")
@@ -307,7 +312,7 @@ class SessionView:
         )
         self.mumu_checkbox.grid(row=1, column=6, columnspan=2, sticky=tk.W, padx=(8, 5), pady=5)
 
-        self.mode_notebook = ttk.Notebook(self.frame)
+        self.mode_notebook = ttk.Notebook(self.frame.options.content)
         self.mode_notebook.pack(fill=tk.BOTH, expand=False, padx=10, pady=5)
         self.shop_tab = ttk.Frame(self.mode_notebook)
         self.reroll_tab = ttk.Frame(self.mode_notebook)
@@ -500,8 +505,12 @@ class SessionView:
         self._create_event_widgets()
         self._create_chaos_widgets()
 
-        self.log_frame = ttk.Frame(self.frame, style="Card.TFrame", padding=10)
-        self.log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.mode_notebook.bind('<<NotebookTabChanged>>', self._resize_mode_tab, add='+')
+        for tab in (self.shop_tab, self.reroll_tab, self.penguin_tab, self.chaos_tab, self.event_tab):
+            tab.bind('<Configure>', self._resize_mode_tab, add='+')
+        self.mode_notebook.after_idle(self._resize_mode_tab)
+
+        self.log_frame = self.frame.log
 
         log_header_frame = ttk.Frame(self.log_frame, style="CardInner.TFrame")
         log_header_frame.pack(fill=tk.X, pady=(0, 6))
@@ -511,14 +520,29 @@ class SessionView:
 
         self.clear_log_btn = ttk.Button(log_header_frame, text="로그 클리어", command=self._clear_log)
         self.clear_log_btn.pack(side=tk.RIGHT, anchor="n")
+        self.expand_log_btn = ttk.Button(log_header_frame, text='옵션 다시 보기' if self.frame.expanded else '로그 확대', command=self._toggle_log)
+        self.expand_log_btn.pack(side=tk.RIGHT, padx=(0, 8))
 
-        self.log_text = scrolledtext.ScrolledText(self.log_frame, state="disabled", height=20, wrap=tk.WORD)
+        self.log_text = scrolledtext.ScrolledText(self.log_frame, state="disabled", height=8, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
         self._sync_release_status()
 
+    def _toggle_log(self):
+        self.frame.toggle_log()
+        self.expand_log_btn.configure(text='옵션 다시 보기' if self.frame.expanded else '로그 확대')
+
+    def _resize_mode_tab(self, _event=None):
+        selected = self.mode_notebook.select()
+        if selected:
+            tab = self.mode_notebook.nametowidget(selected)
+            height = tab.winfo_reqheight()
+            if int(self.mode_notebook.cget('height')) != height:
+                self.mode_notebook.configure(height=height)
+
     def _apply_session_visual_style(self):
         self.frame.configure(style="App.TFrame")
+        self.frame.options.content.configure(style="App.TFrame")
         self.connection_frame.configure(style="Card.TLabelframe")
         self.settings_frame.configure(style="Card.TLabelframe")
         self.stats_frame.configure(style="Card.TLabelframe")
@@ -915,17 +939,14 @@ class SessionView:
         ttk.Label(
             settings,
             text="탐사 초기 화면 또는 노드 지도에서 시작하세요.\n"
-                 "영입 후 일반·정예·보스 전투, 휴식·보급·상점을 진행합니다.\n"
-                 "설정한 우선순위에 따라 랭크업. 보급은 전리품, 상점은 옵션을 켜면 미래 투자만 구매.\n"
-                 "이벤트는 랭크업·전투 우선, 무작위 보상은 후순위. 패배 후 자동 재시작.\n"
-                 "현재 설정된 난이도를 사용합니다. 화면 해상도: 1280×720 / DPI 240",
+                 "현재 설정된 난이도를 사용합니다.",
             justify=tk.LEFT,
         ).grid(row=3, column=0, columnspan=8, sticky=tk.W, padx=5, pady=(4, 10))
         event_settings = ttk.LabelFrame(self.chaos_tab, text="미등록 이벤트 처리", padding=10)
         event_settings.pack(fill=tk.X,padx=10,pady=5)
-        self.chaos_event_mode = tk.StringVar(value="ocr")
+        self.chaos_event_mode = tk.StringVar(value="random")
         self.chaos_save_unknown = tk.BooleanVar(value=False)
-        self.chaos_buy_future_investment = tk.BooleanVar(value=False)
+        self.chaos_buy_future_investment = tk.BooleanVar(value=True)
         self.chaos_event_controls = [
             ttk.Radiobutton(event_settings,text="문구 판단 (랭크업·전투 우선)",variable=self.chaos_event_mode,value="ocr"),
             ttk.Radiobutton(event_settings,text="무작위 선택 (선택지 내용 미판독)",variable=self.chaos_event_mode,value="random"),
@@ -2433,7 +2454,9 @@ class SecretShopGUI:
         self.root = root
         self.window_title = "에픽세븐 비밀상점 자동화"
         self.root.title(self.window_title)
-        self.root.geometry("1180x920")
+        width = min(1180, max(320, self.root.winfo_screenwidth() - 60))
+        height = min(920, max(240, self.root.winfo_screenheight() - 100))
+        self.root.geometry(f"{width}x{height}")
         self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.is_closing = False

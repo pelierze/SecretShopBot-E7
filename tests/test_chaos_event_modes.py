@@ -155,8 +155,13 @@ class EventModesTest(unittest.TestCase):
     def test_handle_loot_consume_taps_item_and_confirm(self):
         frame = self.screen('event_loot_consume_live.png')
         result_frame = self.screen('event_abandoned_pack_result_live.png')
-        adb = Mock(capture_frame=Mock(side_effect=[frame, frame, frame] + [result_frame]*5), tap=Mock(return_value=True))
-        with tempfile.TemporaryDirectory() as tmp:
+        index = [0]
+        adb = Mock(capture_frame=lambda: frame if index[0] < 2 else result_frame)
+        def tap(*args, **kwargs):
+            index[0] += 1
+            return True
+        adb.tap.side_effect = tap
+        with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer, 'loot_consume_selected', side_effect=lambda *args: index[0] == 1):
             bot = NodeProgressionBot(adb, ROOT, tmp, self.observer)
             state = bot._handle_loot_consume()
             self.assertEqual(state, 'event_result')

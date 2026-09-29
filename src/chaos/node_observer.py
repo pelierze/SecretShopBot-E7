@@ -221,7 +221,7 @@ class NodeObserver:
         return cards[0] if len(cards)==1 else None
 
     def loot_consume_choices(self, screen):
-        sub = screen[140:300, 500:1100]
+        sub = screen[145:470, 650:1140]
         gray = cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY)
         thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
         contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -229,12 +229,46 @@ class NodeObserver:
         for c in contours:
             x, y, w, h = cv2.boundingRect(c)
             if 55 <= w <= 110 and 55 <= h <= 110 and abs(w - h) < 15:
-                cx, cy = 500 + x + w // 2, 140 + y + h // 2
-                if 170 <= cy <= 215 and cx >= 650:
+                cx, cy = 650 + x + w // 2, 145 + y + h // 2
+                if 170 <= cy <= 435 and cx >= 675:
                     if not any(abs(cx - ox) < 20 and abs(cy - oy) < 20 for ox, oy in centers):
                         centers.append((cx, cy))
-        centers.sort()
+        centers.sort(key=lambda point: (point[1]//30, point[0]))
         return centers
+
+    def loot_consume_target(self, screen):
+        items = self.loot_consume_choices(screen)
+        if not items:
+            return None
+        blocked = self.forbidden(screen)
+        # Inventory thumbnails may be smaller than the acquisition cards.
+        for name, template in self.blocked:
+            for scale in (.5, .6, .7):
+                sample = cv2.resize(template, None, fx=scale, fy=scale)
+                blocked.extend((name, bounds) for bounds in self.matches(
+                    screen, sample, [650,145,490,325], .88, .18))
+        banned = [point for point in items if any(
+            abs(point[0]-(x+w/2)) <= 42 and abs(point[1]-(y+h/2)) <= 42
+            for _, (x,y,w,h) in blocked)]
+        return (banned or items)[0]
+
+    def loot_consume_selected(self, screen, item_icon):
+        """Require the chosen icon in the sacrifice slot AND a 1/1 counter."""
+        matched = False
+        for scale in (.8, .9, 1., 1.1, 1.2):
+            sample = cv2.resize(item_icon, None, fx=scale, fy=scale)
+            if self.matches(screen, sample, [855,516,84,84], .80, .20):
+                matched = True
+                break
+        if not matched:
+            return False
+        if self.ocr is None:
+            from rapidocr_onnxruntime import RapidOCR
+            self.ocr = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=2)
+        rows, _ = self.ocr(cv2.resize(screen[650:686,575:718], None, fx=3, fy=3),
+                           use_det=False, use_cls=False)
+        return bool(rows and any(score >= .85 and re.search(r'(?<!\d)1\s*/\s*1(?!\d)', text)
+                                 for text, score in rows))
 
     def classify(self, screen):
         if self.find(screen, 'shop_purchase_dialog'): return 'shop_purchase_confirm'
@@ -251,18 +285,19 @@ class NodeObserver:
         if self.is_rank_result(screen): return 'rank_result'
         if self.find(screen, 'event_loot_close'): return 'event_loot_popup'
         if self.find(screen, 'event_loot_consume'): return 'event_loot_consume'
-        if self.event_result_marker(screen) and self.find(screen, 'event_advance'): return 'event_result'
+        if len(self.all(screen,'loot_reroll')) == 3 and (self.find(screen,'loot_button') or self.find(screen,'loot_button_dim')): return 'loot'
+        if self.find(screen, 'victory') and self.find(screen, 'continue'): return 'victory'
+        if self.find(screen,'shop_frame') and self.find(screen,'shop_exit'): return 'shop'
+        if self.find(screen,'leave') and (self.find(screen,'supply_loot') or self.find(screen,'supply_done')): return 'supply'
+        if self.find(screen, 'rank_title'): return 'rank_menu'
+        if self.find(screen, 'skip'): return 'story'
+        if self.event_result_marker(screen) and self.find(screen, 'event_advance') and not self.event_cards(screen): return 'event_result'
         if self.known_event_candidates(screen):
             # Event headings/backgrounds can survive on the outcome page. Only
             # a visible advance arrow with no choice cards authorizes continuing.
             if self.find(screen, 'event_advance') and not self.event_cards(screen):
                 return 'unknown_event_result'
             return 'event'
-        if len(self.all(screen,'loot_reroll')) == 3 and (self.find(screen,'loot_button') or self.find(screen,'loot_button_dim')): return 'loot'
-        if self.find(screen, 'victory') and self.find(screen, 'continue'): return 'victory'
-        if self.find(screen,'shop_frame') and self.find(screen,'shop_exit'): return 'shop'
-        if self.find(screen,'leave') and (self.find(screen,'supply_loot') or self.find(screen,'supply_done')): return 'supply'
-        if self.find(screen, 'rank_title'): return 'rank_menu'
         if self.find(screen, 'leave'): return 'rest'
         if self.find(screen, 'battle_start'): return 'battle_setup'
         if self.find(screen, 'enter_node') and self.find(screen, 'detail_battle'): return 'battle_detail'
@@ -274,7 +309,6 @@ class NodeObserver:
         if self.find(screen, 'enter_node'): return 'node_detail'
         if self.find(screen, 'map_footer') and self.arrows(screen): return 'map'
         if self.find(screen, 'battle_ui'): return 'battle'
-        if self.find(screen, 'skip'): return 'story'
         return None
 
     def event_result_marker(self, screen):

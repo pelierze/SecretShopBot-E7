@@ -510,6 +510,7 @@ class NodeFlowTest(unittest.TestCase):
         self.bot._capture=Mock(return_value=None)
         self.bot._wait=Mock(side_effect=lambda phase,predicate:predicate(None))
         self.bot._tap=Mock();self.bot._state=Mock(return_value='supply')
+        self.bot._classify=Mock(return_value='supply')
         self.bot._loot();self.bot._tap.assert_called_once_with((592,646,102,29))
         self.observer.loot_choices.side_effect=[[target],[target],[]]
         self.bot._tap.reset_mock()
