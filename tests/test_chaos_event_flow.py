@@ -68,6 +68,41 @@ class EventTraversalTest(unittest.TestCase):
         bot._guarded_tap.assert_called_once_with('스토리 건너뛰기', 'story', 'skip')
         bot._wait.assert_not_called()
 
+    def test_resumed_battle_defers_reward_popup_to_common_dispatch(self):
+        for reward in ('rank_result', 'event_loot_popup'):
+            with self.subTest(reward=reward):
+                bot = object.__new__(NodeProgressionBot)
+                bot.stats = {'nodes': 0}
+                bot.event_context = False
+                bot.observer = Mock()
+                bot.observer.find.return_value = None
+                bot._capture = Mock(return_value=object())
+                bot._guarded_tap = Mock()
+                bot._state = Mock(return_value=reward)
+                self.assertEqual(bot._victory(), reward)
+                bot._guarded_tap.assert_called_once_with(
+                    '계속 탐사하기', 'victory', 'continue', exiting=True)
+                bot._state.assert_called_once()
+                self.assertEqual(bot.stats['nodes'], 0)
+
+    def test_rankup_accepts_battle_completion_without_popup_close(self):
+        bot = object.__new__(NodeProgressionBot)
+        target = ('any_hero', 2, 10, 20, 30, 40)
+        button = (100, 200, 30, 40)
+        bot._wait = Mock(side_effect=[target, button])
+        bot._rank_target = Mock(return_value=target)
+        bot._capture = Mock(return_value=object())
+        bot.observer = Mock()
+        bot.observer.classify.return_value = 'rank_menu'
+        bot.observer.forbidden.return_value = []
+        bot.observer.find.return_value = button
+        bot._tap = Mock()
+        bot._state = Mock(return_value='battle_rank_complete')
+        bot._tap_with_verify = Mock()
+        self.assertEqual(bot._rankup(), 'battle_rank_complete')
+        self.assertIn('battle_rank_complete', bot._state.call_args.args[1])
+        bot._tap_with_verify.assert_not_called()
+
 
 class EventRewardImagesTest(unittest.TestCase):
     @classmethod
@@ -79,6 +114,52 @@ class EventRewardImagesTest(unittest.TestCase):
                             ('event_recruit_reward_live.png','recruit_reward')]:
             with patch.object(self.observer, 'known_event_candidates', return_value=['old_event']):
                 self.assertEqual(self.observer.classify(read_image(str(RAW/file))), state)
+
+    def test_battle_rank_reward_is_claimed_before_continue(self):
+        frame = read_image(str(RAW/'battle/victory_rank_reward_live.png'))
+        self.assertEqual(self.observer.classify(frame), 'victory')
+        self.assertIsNotNone(self.observer.find(frame, 'battle_rank_reward'))
+        for context in (False, True):
+            for following in ('victory', 'loot', 'rank_reward', 'recruit_reward',
+                              'unknown_event_result', 'levelup', 'map'):
+                with self.subTest(context=context, following=following):
+                    with tempfile.TemporaryDirectory() as tmp:
+                        bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer)
+                        bot.event_context = context
+                        bot._capture = Mock(return_value=frame)
+                        bot._guarded_tap = Mock()
+                        bot._rankup = Mock()
+                        bot._state = Mock(side_effect=['rank_menu', following])
+                        self.assertEqual(bot._victory(), following)
+                        bot._rankup.assert_called_once()
+                        bot._guarded_tap.assert_called_once_with(
+                            '전투 보상 영웅 랭크업 열기', 'victory', 'battle_rank_reward')
+                        self.assertIn(following, bot._state.call_args.args[1])
+                        self.assertEqual(bot.stats['nodes'], 0)
+
+    def test_other_battle_rewards_do_not_match_rank_reward(self):
+        for name in ('battle/victory_live.png', 'battle/victory_levelup_live.png',
+                     'event_rank_reward_live.png', 'event_recruit_reward_live.png'):
+            self.assertIsNone(self.observer.find(read_image(str(RAW/name)), 'battle_rank_reward'))
+
+    def test_battle_completed_rank_card_is_not_an_unused_reward(self):
+        frame = read_image(str(RAW/'battle/victory_rank_complete_live.png'))
+        self.assertEqual(self.observer.classify(frame), 'battle_rank_complete')
+        self.assertIsNone(self.observer.find(frame, 'battle_rank_reward'))
+        # Hero art and name may change; only common completion UI is used.
+        frame[170:460,525:750] = 0
+        frame[505:536,525:750] = 0
+        self.assertEqual(self.observer.classify(frame), 'battle_rank_complete')
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer)
+            bot._capture = Mock(return_value=frame)
+            bot._guarded_tap = Mock()
+            bot._state = Mock(return_value='unknown_event_result')
+            bot._rankup = Mock()
+            self.assertEqual(bot._dispatch_event_screen('battle_rank_complete'), 'unknown_event_result')
+            bot._rankup.assert_not_called()
+            bot._guarded_tap.assert_called_once_with(
+                '전투 랭크업 완료 후 계속 탐사', 'battle_rank_complete', 'continue', exiting=True)
 
     def test_consume_prefers_blocked_thumbnail_else_first_item(self):
         frame = read_image(str(RAW/'event_loot_consume_live.png'))

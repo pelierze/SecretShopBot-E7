@@ -286,7 +286,9 @@ class NodeObserver:
         if self.find(screen, 'event_loot_close'): return 'event_loot_popup'
         if self.find(screen, 'event_loot_consume'): return 'event_loot_consume'
         if len(self.all(screen,'loot_reroll')) == 3 and (self.find(screen,'loot_button') or self.find(screen,'loot_button_dim')): return 'loot'
-        if self.find(screen, 'victory') and self.find(screen, 'continue'): return 'victory'
+        if self.find(screen, 'victory') and self.find(screen, 'continue'):
+            if self.find(screen, 'battle_rank_complete'): return 'battle_rank_complete'
+            return 'victory'
         if self.find(screen,'shop_frame') and self.find(screen,'shop_exit'): return 'shop'
         if self.find(screen,'leave') and (self.find(screen,'supply_loot') or self.find(screen,'supply_done')): return 'supply'
         if self.find(screen, 'rank_title'): return 'rank_menu'

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 EVENT_FOLLOWUPS = {'map', 'battle_setup', 'battle', 'story', 'story_confirm',
     'rank_menu', 'rank_result', 'rank_reward', 'event', 'unknown_event', 'event_result',
     'unknown_event_result', 'loot', 'event_loot_popup', 'event_loot_consume',
-    'recruit_reward', 'unclaimed_reward', 'event_warning', 'levelup', 'victory'} | TERMINALS
+    'recruit_reward', 'unclaimed_reward', 'event_warning', 'levelup', 'victory', 'battle_rank_complete'} | TERMINALS
 
 HERO_NAMES = {
     'wukong': '오공',
@@ -207,7 +207,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 if self.observer.summary_boss_count(screen) == 3:
                     self.stats['outcome'] = 'victory'
                 return
-            if state in ('victory', 'levelup', 'event_loot_popup', 'rank_result', 'rank_reward',
+            if state in ('victory', 'battle_rank_complete', 'levelup', 'event_loot_popup', 'rank_result', 'rank_reward',
                          'rank_menu', 'recruit_reward', 'loot', 'event_result', 'unknown_event_result', 'map'):
                 self.auto_verified = True
                 self.stats['auto_verified'] = True
@@ -292,7 +292,9 @@ class NodeProgressionBot(KnightRecruitmentBot):
         button = self._wait('선택 영웅과 랭크업 버튼 확인', selected)
         if selected(self._capture()) != button: raise RuntimeError('랭크업 선택 상태 변경')
         self._tap(button)
-        self._state('랭크업 결과 대기', {'rank_result'})
+        state = self._state('랭크업 결과 대기', {'rank_result', 'battle_rank_complete'})
+        if state == 'battle_rank_complete':
+            return state
         # Completion uses shared arrow + RANK UP text, independent of hero art
         # and the card's rank-number position. _state requires stable frames.
         close_btn = self._wait('랭크업 결과 닫기 확인', lambda s: self.observer.find(s, 'rank_close') if self.observer.classify(s) == 'rank_result' else None)
@@ -589,6 +591,17 @@ class NodeProgressionBot(KnightRecruitmentBot):
             return self._battle()
         if state == 'victory':
             return self._victory()
+        if state == 'battle_rank_complete':
+            screen = self._capture()
+            if self.observer.find(screen, 'loot_reward'):
+                self._guarded_tap('랭크업 후 남은 전리품 보상 열기', state, 'loot_reward')
+                return self._state('추가 전투 보상 확인', EVENT_FOLLOWUPS - {state})
+            skip_hero = bool(self.observer.find(screen, 'reward_hero'))
+            self._guarded_tap('전투 랭크업 완료 후 계속 탐사', state, 'continue', exiting=True)
+            after = self._state('전투 랭크업 완료 후속 화면', EVENT_FOLLOWUPS - {state})
+            if after == 'unclaimed_reward' and skip_hero:
+                return self._confirm_skipped_hero()
+            return after
         raise RecognitionTimeout('지원하지 않는 이벤트 화면: ' + state)
 
     def _leave_used_rank_reward(self, state):
@@ -784,6 +797,16 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
     def _victory(self):
         self.stats['outcome'] = 'victory'
+        # Battle reward cards have a different layout from event reward cards.
+        # Consume a verified rank reward before considering the continue button,
+        # then re-observe: another reward, dialogue or map may follow.
+        if self.observer.find(self._capture(), 'battle_rank_reward'):
+            self._guarded_tap('전투 보상 영웅 랭크업 열기', 'victory', 'battle_rank_reward')
+            state = self._state('전투 랭크업 보상 다음 화면', EVENT_FOLLOWUPS - {'victory'})
+            if state == 'rank_menu':
+                self._rankup()
+                state = self._state('전투 랭크업 완료 후 보상 재확인', EVENT_FOLLOWUPS)
+            return state
         if self.event_context:
             screen = self._capture()
             if self.observer.find(screen, 'loot_reward'):
@@ -806,9 +829,10 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if skip_hero: allowed.add('unclaimed_reward')
         state = self._state('승리 후 다음 화면 확인', allowed)
         if state in ('event_loot_popup', 'rank_result'):
-            close_marker = 'rank_close' if state == 'rank_result' else 'event_loot_close'
-            self._guarded_tap('전리품 결과 닫기', state, close_marker, exiting=True)
-            state = self._state('전리품 닫기 후 복귀', {'map','story','story_confirm','event_result','unknown_event_result','expedition_summary','exploration_entry'})
+            # A resumed event battle has no event_context yet. Let the outer
+            # loop handle this reward and all subsequent rewards identically
+            # to a run that observed the event entrance.
+            return state
         if state == 'unclaimed_reward':
             self._guarded_tap('추가 영웅 보상 없이 진행', state, 'story_confirm', exiting=True)
             state = self._state('보상 확인 후 복귀', {'map','story','story_confirm','expedition_summary','exploration_entry'})
@@ -880,7 +904,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 self.stats['phase'] = state
                 if state in EVENT_STATES and (self.event_context or state in (
                         'event','unknown_event','event_result','unknown_event_result',
-                        'event_loot_consume','event_warning','rank_reward','recruit_reward')):
+                        'event_loot_consume','event_warning','rank_reward','recruit_reward','battle_rank_complete')):
                     run_event_flow(self)
                     continue
                 if state == 'defeat':

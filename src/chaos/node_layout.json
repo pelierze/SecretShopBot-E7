@@ -3104,6 +3104,40 @@
       ],
       "threshold": 0.9,
       "max_color_error": 0.12
+    },
+    "battle_rank_reward": {
+      "file": "images/chaos/node_progression/raw/battle/victory_rank_reward_live.png",
+      "crop": [
+        588,
+        516,
+        109,
+        30
+      ],
+      "region": [
+        240,
+        480,
+        800,
+        100
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.055
+    },
+    "battle_rank_complete": {
+      "file": "images/chaos/node_progression/raw/battle/victory_rank_complete_live.png",
+      "crop": [
+        598,
+        473,
+        91,
+        20
+      ],
+      "region": [
+        240,
+        450,
+        800,
+        55
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
     }
   },
   "loot_cards": [

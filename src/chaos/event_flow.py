@@ -11,7 +11,7 @@ EVENT_STATES = {'event', 'unknown_event', 'event_result', 'unknown_event_result'
                 'event_loot_consume', 'event_warning', 'unclaimed_reward',
                 'rank_reward', 'rank_menu', 'rank_result', 'event_loot_popup',
                 'loot', 'recruit_reward', 'levelup', 'victory', 'story',
-                'story_confirm', 'battle_setup', 'battle'}
+                'story_confirm', 'battle_setup', 'battle', 'battle_rank_complete'}
 
 
 def run_event_flow(bot):
