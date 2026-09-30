@@ -69,6 +69,11 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# Screenshot decoding and template matching use cv2.pyd, not the optional
+# FFmpeg video backend. Keep every other binary and all image/OCR data intact.
+a.binaries = [entry for entry in a.binaries
+              if not (os.path.basename(entry[0].replace('\\', '/')).lower().startswith('opencv_videoio_ffmpeg')
+                      and entry[0].lower().endswith('.dll'))]
 pyz = PYZ(a.pure)
 
 exe = EXE(

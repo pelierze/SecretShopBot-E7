@@ -1,11 +1,13 @@
 param(
-    [string]$Version = "v1.5.0"
+    [string]$Version = "v1.5.1"
 )
 
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Stable package name required by existing automatic update clients.
 $AppName = "SecretShopBot-E7"
+$DisplayName = "Epic7 Assist Bot"
 $ReleaseRoot = Join-Path $ProjectRoot "release"
 $DistRoot = Join-Path $ProjectRoot "dist"
 $BuildRoot = Join-Path $ProjectRoot "build"
@@ -26,7 +28,7 @@ $ZipPath = Join-Path $ReleaseRoot "$PackageName.zip"
 
 Set-Location $ProjectRoot
 
-Write-Host "== SecretShopBot-E7 release build =="
+Write-Host "== $DisplayName (EAB) release build =="
 Write-Host "Version: $NormalizedVersion"
 Write-Host ""
 
@@ -71,11 +73,11 @@ VSVersionInfo(
         u'040904B0',
         [
           StringStruct(u'CompanyName', u'pelierze'),
-          StringStruct(u'FileDescription', u'SecretShopBot-E7 for Epic Seven'),
+          StringStruct(u'FileDescription', u'$DisplayName (EAB)'),
           StringStruct(u'FileVersion', u'$NumericVersion'),
           StringStruct(u'InternalName', u'SecretShopBot-E7'),
           StringStruct(u'OriginalFilename', u'SecretShopBot-E7.exe'),
-          StringStruct(u'ProductName', u'SecretShopBot-E7'),
+          StringStruct(u'ProductName', u'$DisplayName'),
           StringStruct(u'ProductVersion', u'$NumericVersion'),
         ]
       )

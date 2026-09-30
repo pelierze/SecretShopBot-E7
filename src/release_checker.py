@@ -7,12 +7,13 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Optional
 
+from .app_identity import RELEASE_REPOSITORY
 from .version import APP_VERSION
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RELEASE_API_URL = "https://api.github.com/repos/pelierze/SecretShopBot-E7/releases/latest"
-DEFAULT_RELEASES_PAGE_URL = "https://github.com/pelierze/SecretShopBot-E7/releases/latest"
+DEFAULT_RELEASE_API_URL = f"https://api.github.com/repos/{RELEASE_REPOSITORY}/releases/latest"
+DEFAULT_RELEASES_PAGE_URL = f"https://github.com/{RELEASE_REPOSITORY}/releases/latest"
 
 
 def parse_version(version: str) -> tuple[int, ...]:

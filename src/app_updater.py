@@ -13,10 +13,12 @@ import urllib.request
 from urllib.parse import urlparse
 import zipfile
 
-APP = 'SecretShopBot-E7'
-MANAGED = (APP + '.exe', 'SecretShopBot-Updater.exe', '_internal',
+from .app_identity import UPDATE_PACKAGE_NAME, APP_EXECUTABLE, UPDATER_EXECUTABLE, RELEASE_REPOSITORY
+
+APP = UPDATE_PACKAGE_NAME
+MANAGED = (APP_EXECUTABLE, UPDATER_EXECUTABLE, '_internal',
            'README.md', 'DEPLOY.md', 'SECURITY.md', 'RELEASE_NOTES.md')
-REQUIRED = (APP + '.exe', 'SecretShopBot-Updater.exe', '_internal')
+REQUIRED = (APP_EXECUTABLE, UPDATER_EXECUTABLE, '_internal')
 MAX_DOWNLOAD = 600 * 1024**2
 MAX_EXPANDED = 2 * 1024**3
 
@@ -33,7 +35,7 @@ def release_assets(release):
             raise ValueError('릴리즈 ZIP 또는 SHA256 파일이 없습니다. 다운로드 페이지를 이용해 주세요.')
         url = matches[0].get('browser_download_url', '')
         parsed = urlparse(url)
-        prefix = f'/pelierze/{APP}/releases/download/{release.version}/'
+        prefix = f'/{RELEASE_REPOSITORY}/releases/download/{release.version}/'
         if parsed.scheme != 'https' or parsed.netloc != 'github.com' or not parsed.path.startswith(prefix) or parsed.path.rsplit('/', 1)[-1] != expected:
             raise ValueError('공식 저장소의 배포 파일 주소가 아닙니다.')
         result.append(url)
@@ -113,7 +115,7 @@ def prepare_update(release, target, progress=lambda text: None):
         package = extract_verified(archive, checksum, workspace / 'payload')
         # Run the CURRENT trusted updater, never a helper from the downloaded ZIP.
         helper = workspace / 'updater.exe'
-        shutil.copy2(target / 'SecretShopBot-Updater.exe', helper)
+        shutil.copy2(target / UPDATER_EXECUTABLE, helper)
         plan = {'target': str(target), 'package': str(package), 'parent_pid': os.getpid()}
         path = workspace / 'plan.json'
         path.write_text(json.dumps(plan), encoding='utf-8')

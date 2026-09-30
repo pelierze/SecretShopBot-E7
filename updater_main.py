@@ -1,5 +1,6 @@
 """Standalone stdlib-only updater; copied outside the installation before launch."""
 import ctypes
+import base64
 import json
 import os
 from pathlib import Path
@@ -8,7 +9,9 @@ import subprocess
 import sys
 import time
 
-MANAGED = ('SecretShopBot-E7.exe', 'SecretShopBot-Updater.exe', '_internal',
+from src.app_identity import APP_EXECUTABLE, UPDATER_EXECUTABLE
+
+MANAGED = (APP_EXECUTABLE, UPDATER_EXECUTABLE, '_internal',
            'README.md', 'DEPLOY.md', 'SECURITY.md', 'RELEASE_NOTES.md')
 
 
@@ -32,7 +35,7 @@ def wait_parent(pid, ready, timeout=180):
 
 
 def start_app(target, ready=None):
-    args = [str(target / 'SecretShopBot-E7.exe')]
+    args = [str(target / APP_EXECUTABLE)]
     if ready is not None:
         args += ['--update-ready', str(ready)]
     return subprocess.Popen(args, cwd=str(target), env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'})
@@ -102,6 +105,47 @@ def apply_update(target, package, workspace, launcher=start_app, health=await_st
     return process.pid
 
 
+def schedule_cleanup(workspace, target):
+    """Delete only this successful staging folder after this worker exits."""
+    workspace, target = Path(workspace).resolve(), Path(target).resolve()
+    if (not workspace.name.startswith('.e7-update-')
+            or workspace.parent != target.parent
+            or workspace == target
+            or target.is_relative_to(workspace)):
+        raise ValueError('Invalid cleanup workspace')
+    result = json.loads((workspace / 'result.json').read_text(encoding='utf-8'))
+    if result.get('ok') is not True:
+        raise ValueError('Only successful updates can be cleaned up')
+    # The running updater cannot delete its own EXE on Windows. Use the system
+    # PowerShell from outside staging, and wait for the worker before removing it.
+    literal = "'" + str(workspace).replace("'", "''") + "'"
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$stagingPath = {literal}
+$worker = Get-Process -Id {os.getpid()} -ErrorAction SilentlyContinue
+if ($worker -and -not $worker.WaitForExit(180000)) {{ exit 1 }}
+if (-not (Test-Path -LiteralPath $stagingPath)) {{ exit 0 }}
+try {{
+    $outcome = Get-Content -LiteralPath (Join-Path $stagingPath 'result.json') -Raw | ConvertFrom-Json
+    if ($outcome.ok -ne $true) {{ exit 1 }}
+}} catch {{ exit 1 }}
+for ($attempt = 0; $attempt -lt 30; $attempt++) {{
+    try {{
+        Remove-Item -LiteralPath $stagingPath -Recurse -Force
+        exit 0
+    }} catch {{ Start-Sleep -Seconds 1 }}
+}}
+exit 1
+"""
+    encoded = base64.b64encode(script.encode('utf-16le')).decode('ascii')
+    powershell = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+    return subprocess.Popen(
+        [str(powershell), '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden',
+         '-EncodedCommand', encoded], cwd=str(target),
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def main():
     plan_path = Path(sys.argv[1]).resolve()
     workspace = plan_path.parent
@@ -110,22 +154,24 @@ def main():
         plan = json.loads(plan_path.read_text(encoding='utf-8'))
         target = Path(plan['target']).resolve()
         package = Path(plan['package']).resolve()
-        if not workspace.name.startswith('.e7-update-') or workspace.parent != target.parent or not package.is_relative_to(workspace / 'payload') or not (target / 'SecretShopBot-E7.exe').is_file():
+        if not workspace.name.startswith('.e7-update-') or workspace.parent != target.parent or not package.is_relative_to(workspace / 'payload') or not (target / APP_EXECUTABLE).is_file():
             raise ValueError('업데이트 작업 경로가 올바르지 않습니다.')
         if target.is_relative_to(workspace) or workspace.is_relative_to(target):
             raise ValueError('설치 및 임시 폴더가 겹칩니다.')
         wait_parent(int(plan['parent_pid']), workspace / 'worker-ready')
         pid = apply_update(target, package, workspace)
         result.write_text(json.dumps({'ok': True, 'pid': pid}), encoding='utf-8')
-        # Backups are retained for recovery; downloads and payload are disposable.
-        for entry in workspace.glob('*.zip'):
-            entry.unlink()
-        shutil.rmtree(workspace / 'payload', ignore_errors=True)
     except Exception as exc:
         result.write_text(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False), encoding='utf-8')
         if os.name == 'nt':
             ctypes.windll.user32.MessageBoxW(None, str(exc) + '\n\n기록: ' + str(result), '업데이트 실패', 0x10)
         return 1
+    # Cleanup failure must never turn a healthy installation into a failed update.
+    try:
+        schedule_cleanup(workspace, target)
+    except Exception as exc:
+        result.write_text(json.dumps({'ok': True, 'pid': pid, 'cleanup_error': str(exc)},
+                                     ensure_ascii=False), encoding='utf-8')
     return 0
 
 

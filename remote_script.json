@@ -3,7 +3,7 @@
   "script_version": "2026.05.23.1",
   "app_min_version": "1.0.0",
   "gui": {
-    "window_title": "에픽세븐 비밀상점 자동화",
+    "window_title": "Epic7 Assist Bot (EAB)",
     "sections": {
       "connection": "ADB 연결",
       "settings": "매크로 설정",

@@ -1,5 +1,8 @@
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -8,7 +11,7 @@ import zipfile
 
 from src.app_updater import extract_verified, release_assets, prepare_update, MANAGED
 from src.release_checker import ReleaseInfo, fetch_latest_release
-from updater_main import apply_update
+from updater_main import apply_update, schedule_cleanup, main as updater_main
 
 
 class PackageTest(unittest.TestCase):
@@ -151,6 +154,71 @@ class TransactionTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, '복구'):
                 apply_update(self.target, self.package, self.work, self.launcher, Mock())
         self.verify_old()
+
+
+class CleanupTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.target = self.root / 'installed'
+        self.target.mkdir()
+        self.work = self.root / ".e7-update-test's [folder]"
+        self.work.mkdir()
+        (self.work / 'result.json').write_text(json.dumps({'ok': True}))
+        (self.work / 'backup').mkdir()
+        (self.work / 'backup/old.exe').write_bytes(b'old')
+        (self.target / 'settings.json').write_text('user')
+
+    def test_failed_updates_and_unrelated_paths_are_never_deleted(self):
+        (self.work / 'result.json').write_text(json.dumps({'ok': False}))
+        with patch('updater_main.subprocess.Popen') as launch:
+            with self.assertRaises(ValueError):
+                schedule_cleanup(self.work, self.target)
+            with self.assertRaises(ValueError):
+                schedule_cleanup(self.target, self.target)
+            launch.assert_not_called()
+        self.assertTrue((self.work / 'backup/old.exe').exists())
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows cleanup integration')
+    def test_cleanup_waits_for_worker_then_removes_only_staging(self):
+        worker = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+        try:
+            with patch('updater_main.os.getpid', return_value=worker.pid):
+                cleanup = schedule_cleanup(self.work, self.target)
+            try:
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    cleanup.wait(timeout=2)
+                self.assertTrue((self.work / 'backup/old.exe').exists())
+                worker.terminate()
+                worker.wait(timeout=10)
+                self.assertEqual(cleanup.wait(timeout=15), 0)
+                self.assertFalse(self.work.exists())
+                self.assertEqual((self.target / 'settings.json').read_text(), 'user')
+            finally:
+                if cleanup.poll() is None:
+                    cleanup.terminate()
+                    cleanup.wait(timeout=10)
+        finally:
+            if worker.poll() is None:
+                worker.terminate()
+                worker.wait(timeout=10)
+
+    def test_cleanup_dispatch_failure_keeps_update_successful(self):
+        (self.target / 'SecretShopBot-E7.exe').write_bytes(b'new')
+        plan = self.work / 'plan.json'
+        plan.write_text(json.dumps({'target': str(self.target),
+                                   'package': str(self.work / 'payload/package'),
+                                   'parent_pid': 123}))
+        with patch.object(sys, 'argv', ['updater', str(plan)]), \
+                patch('updater_main.wait_parent'), \
+                patch('updater_main.apply_update', return_value=456), \
+                patch('updater_main.schedule_cleanup', side_effect=OSError('unavailable')):
+            self.assertEqual(updater_main(), 0)
+        result = json.loads((self.work / 'result.json').read_text())
+        self.assertTrue(result['ok'])
+        self.assertIn('cleanup_error', result)
+        self.assertTrue((self.work / 'backup/old.exe').exists())
 
 
 if __name__ == '__main__': unittest.main()

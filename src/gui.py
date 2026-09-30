@@ -54,6 +54,7 @@ if __package__ in (None, ""):
     from src.release_checker import get_available_update
     from src.remote_script import RemoteScriptUpdater
     from src.secret_shop_bot import SecretShopBot
+    from src.app_identity import APP_WINDOW_TITLE, UPDATER_EXECUTABLE, resolve_window_title
     from src.version import APP_VERSION
 else:
     from .adb_controller import ADBController
@@ -72,6 +73,7 @@ else:
     from .release_checker import get_available_update
     from .remote_script import RemoteScriptUpdater
     from .secret_shop_bot import SecretShopBot
+    from .app_identity import APP_WINDOW_TITLE, UPDATER_EXECUTABLE, resolve_window_title
     from .version import APP_VERSION
 
 logger = logging.getLogger(__name__)
@@ -2701,7 +2703,7 @@ class SecretShopGUI:
 
     def __init__(self, root):
         self.root = root
-        self.window_title = "에픽세븐 비밀상점 자동화"
+        self.window_title = APP_WINDOW_TITLE
         self.root.title(self.window_title)
         width = min(1180, max(320, self.root.winfo_screenwidth() - 60))
         height = min(920, max(240, self.root.winfo_screenheight() - 100))
@@ -3064,7 +3066,7 @@ class SecretShopGUI:
 
         gui_config = config.get("gui", {})
         if isinstance(gui_config, dict) and gui_config.get("window_title"):
-            self.window_title = gui_config["window_title"]
+            self.window_title = resolve_window_title(gui_config["window_title"])
             self.root.title(self.window_title)
 
         for session in self.sessions:
@@ -3102,7 +3104,7 @@ class SecretShopGUI:
             return
         try:
             release_assets(self.release_info)
-            if not (Path(sys.executable).parent / 'SecretShopBot-Updater.exe').is_file():
+            if not (Path(sys.executable).parent / UPDATER_EXECUTABLE).is_file():
                 raise ValueError('자동 업데이트 프로그램이 없습니다. 이번 버전은 수동 설치해 주세요.')
         except ValueError as exc:
             if messagebox.askyesno('자동 업데이트 안내', f'{exc}\n\n다운로드 페이지를 여시겠습니까?', parent=self.root):
