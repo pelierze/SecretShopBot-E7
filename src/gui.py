@@ -609,6 +609,8 @@ class SessionView:
             height = tab.winfo_reqheight()
             if int(self.mode_notebook.cget('height')) != height:
                 self.mode_notebook.configure(height=height)
+            if hasattr(self, 'frame') and hasattr(self.frame, 'options'):
+                self.root.after_idle(self.frame.options._resize)
 
     def _apply_session_visual_style(self):
         self.frame.configure(style="App.TFrame")
@@ -1504,6 +1506,8 @@ class SessionView:
             self.adb_ctrl_frame.grid(row=1, column=0, columnspan=8, sticky=tk.W, padx=0, pady=4)
             self.mumu_checkbox.config(state=tk.NORMAL)
             self.connection_frame.config(text="연결 설정 (ADB)")
+        if hasattr(self, 'frame') and hasattr(self.frame, 'options'):
+            self.root.after_idle(self.frame.options._resize)
 
     def _scan_stove_windows(self) -> bool:
         with log_session(self.name):
@@ -2731,7 +2735,7 @@ class SecretShopGUI:
         )
         self.support_button.place(relx=1.0, y=8, anchor="ne")
         self.support_button.lift()
-        self.notebook.bind("<<NotebookTabChanged>>", lambda _event: self.support_button.lift(), add="+")
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_main_tab_changed, add="+")
 
         self.sessions = [
             SessionView(self, 1, self.notebook),
@@ -2744,6 +2748,16 @@ class SecretShopGUI:
         self._restore_update_settings()
         self._start_settings_update()
         self._start_release_check()
+
+    def _on_main_tab_changed(self, _event=None):
+        self.support_button.lift()
+        selected = self.notebook.select()
+        if selected:
+            tab_widget = self.notebook.nametowidget(selected)
+            for session in getattr(self, "sessions", []):
+                if session.frame == tab_widget:
+                    self.root.after_idle(session._resize_mode_tab)
+                    break
 
     def _apply_window_icon(self):
         resource_root = get_resource_root()

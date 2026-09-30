@@ -90,6 +90,17 @@ class SmallWindowTest(unittest.TestCase):
             self.assertEqual(session.log_frame.winfo_height(), log_height)
         self.assertGreater(max(heights), min(heights))
 
+    def test_tab_switching_does_not_squish_buttons(self):
+        session = self.session
+        # Cycle through smaller tabs and back to chaos tab
+        for tab in (session.penguin_tab, session.reroll_tab, session.shop_tab, session.event_tab, session.chaos_tab):
+            session.mode_notebook.select(tab)
+            self.root.update()
+        # Ensure chaos_start_btn and controls frame are not vertically compressed
+        self.assertGreaterEqual(session.chaos_start_btn.winfo_height(), 28)
+        self.assertEqual(session.chaos_start_btn.winfo_height(), session.chaos_start_btn.winfo_reqheight())
+        self.assertGreaterEqual(float(session.frame.options.canvas.itemcget(session.frame.options.window, 'height')), session.frame.options.content.winfo_reqheight())
+
 
     def test_drag_height_survives_restart_and_keeps_sessions_separate(self):
         frame = self.session.frame
