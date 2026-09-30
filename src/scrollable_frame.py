@@ -24,14 +24,17 @@ class ScrollableFrame(ttk.Frame):
         for sequence in ('<MouseWheel>', '<Shift-MouseWheel>', '<Button-4>', '<Button-5>'):
             self.bind_class(self._tag, sequence, self._wheel)
         self.bind_class(self._tag, '<FocusIn>', self._focus)
-        self.bind_class(self._tag, '<Configure>', self._resize)
         self.bind('<Destroy>', self._destroy_bindings, add='+')
+        self._current_size = None
 
     def _resize(self, _event=None):
         if not self.canvas.winfo_exists() or not self.content.winfo_exists():
             return
         width = max(self.canvas.winfo_width(), self.content.winfo_reqwidth())
         height = max(self.canvas.winfo_height(), self.content.winfo_reqheight())
+        if self._current_size == (width, height):
+            return
+        self._current_size = (width, height)
         self.canvas.itemconfigure(self.window, width=width, height=height)
         self.canvas.configure(scrollregion=(0, 0, width, height))
 
@@ -76,5 +79,5 @@ class ScrollableFrame(ttk.Frame):
 
     def _destroy_bindings(self, event):
         if event.widget is self:
-            for sequence in ('<MouseWheel>', '<Shift-MouseWheel>', '<Button-4>', '<Button-5>', '<FocusIn>', '<Configure>'):
+            for sequence in ('<MouseWheel>', '<Shift-MouseWheel>', '<Button-4>', '<Button-5>', '<FocusIn>'):
                 self.unbind_class(self._tag, sequence)

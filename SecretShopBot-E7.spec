@@ -51,7 +51,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         'cv2', 'numpy', 'PIL', 'tkinter', 'rapidocr_onnxruntime',
-    ] + collect_submodules('src.event.events.2026_summer_event'),
+    ] + collect_submodules('src.event.events.2026_summer_event') + collect_submodules('src.backend') + collect_submodules('src.core') + collect_submodules('src.display') + collect_submodules('src.finder'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

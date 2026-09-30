@@ -39,6 +39,8 @@ if __package__ in (None, ""):
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     from src.adb_controller import ADBController
+    from src.backend.manager import BackendFactory
+    from src.finder.window_finder import WindowFinder
     from src.app_updater import prepare_update, launch_update, release_assets
     from src.log_split_view import LogSplitView
     from src.auto_update import get_runtime_root
@@ -55,6 +57,8 @@ if __package__ in (None, ""):
     from src.version import APP_VERSION
 else:
     from .adb_controller import ADBController
+    from .backend.manager import BackendFactory
+    from .finder.window_finder import WindowFinder
     from .app_updater import prepare_update, launch_update, release_assets
     from .log_split_view import LogSplitView
     from .auto_update import get_runtime_root
@@ -221,40 +225,52 @@ class SessionView:
         self.input_profile_label_text = "MuMu 앱플레이어 사용 (호환 드래그 사용)"
         self.buy_count_default_label_text = "구매 완료 검증 횟수:"
         self.buy_count_default_unit_text = "회"
-        self.buy_count_steps_unit_text = "JSON steps 매크로는 이 값 대신 각 step 설정을 사용합니다."
+        # STOVE 모드는 단일 클라이언트 연결이므로 세션 1만 기본 활성화
+        initial_backend = "stove" if ("--stove" in sys.argv and self.session_id == 1) else "adb"
+        self.backend_type_var = tk.StringVar(value=initial_backend)
+        self.scanned_stove_windows = []
         self._shop_input_syncing = False
 
         self.frame = LogSplitView(parent, get_runtime_root() / 'updates/ui-layout.json', self.session_id)
         self._create_widgets()
         self._apply_session_visual_style()
         self.frame.options.bind_children()
+        if "--stove" in sys.argv and self.session_id == 1:
+            self.root.after(300, self._on_backend_type_changed)
 
     def _create_widgets(self):
-        self.connection_frame = ttk.LabelFrame(self.frame.options.content, text="ADB 연결", padding=10)
+        self.connection_frame = ttk.LabelFrame(self.frame.options.content, text="연결 설정 (ADB)", padding=10)
         self.connection_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        self.ip_label = ttk.Label(self.connection_frame, text="IP 주소:")
-        self.ip_label.grid(row=0, column=0, sticky=tk.W, padx=5)
-        self.ip_entry = ttk.Entry(self.connection_frame, width=15)
-        self.ip_entry.insert(0, "127.0.0.1")
-        self.ip_entry.grid(row=0, column=1, padx=5)
+        # Row 0: 실행 환경 선택 & 공통 제어 버튼
+        self.backend_label = ttk.Label(self.connection_frame, text="실행 환경:")
+        self.backend_label.grid(row=0, column=0, sticky=tk.W, padx=5)
 
-        self.port_label = ttk.Label(self.connection_frame, text="포트:")
-        self.port_label.grid(row=0, column=2, sticky=tk.W, padx=5)
-        self.port_entry = ttk.Entry(self.connection_frame, width=8)
-        self.port_entry.insert(0, "5555")
-        self.port_entry.grid(row=0, column=3, padx=5)
+        self.backend_adb_radio = ttk.Radiobutton(
+            self.connection_frame,
+            text="앱플레이어 (ADB)",
+            variable=self.backend_type_var,
+            value="adb",
+            command=self._on_backend_type_changed,
+        )
+        self.backend_adb_radio.grid(row=0, column=1, columnspan=2, sticky=tk.W, padx=5)
 
-        self.scan_btn = ttk.Button(self.connection_frame, text="장치 검색", command=self._scan_devices)
-        self.scan_btn.grid(row=0, column=4, padx=5)
+        self.backend_stove_radio = ttk.Radiobutton(
+            self.connection_frame,
+            text="STOVE PC 클라이언트",
+            variable=self.backend_type_var,
+            value="stove",
+            command=self._on_backend_type_changed,
+        )
+        self.backend_stove_radio.grid(row=0, column=3, columnspan=2, sticky=tk.W, padx=5)
 
-        self.connect_btn = ttk.Button(self.connection_frame, text="연결", command=self._connect_adb)
+        self.connect_btn = ttk.Button(self.connection_frame, text="연결", command=self._connect_device)
         self.connect_btn.grid(row=0, column=5, padx=5)
 
         self.disconnect_btn = ttk.Button(
             self.connection_frame,
             text="연결 해제",
-            command=self._disconnect_adb,
+            command=self._disconnect_device,
             state=tk.DISABLED,
         )
         self.disconnect_btn.grid(row=0, column=6, padx=5)
@@ -264,7 +280,7 @@ class SessionView:
         self.connection_frame.columnconfigure(8, weight=1)
 
         self.release_info_frame = ttk.Frame(self.connection_frame, style="CardInner.TFrame")
-        self.release_info_frame.grid(row=0, column=8, rowspan=2, sticky=tk.E, padx=(12, 4))
+        self.release_info_frame.grid(row=0, column=8, rowspan=3, sticky=tk.E, padx=(12, 4))
 
         self.version_badge = ttk.Label(
             self.release_info_frame,
@@ -289,28 +305,82 @@ class SessionView:
         self.release_link_btn.pack(anchor="e", pady=(8, 0))
         self.release_link_btn.pack_forget()
 
-        self.device_label = ttk.Label(self.connection_frame, text="장치:")
-        self.device_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
-        self.device_combo = ttk.Combobox(self.connection_frame, width=30, state="readonly")
-        self.device_combo.grid(row=1, column=1, columnspan=4, sticky=tk.W, padx=5, pady=5)
+        # Row 1-A: ADB 연결 컨트롤 프레임
+        self.adb_ctrl_frame = ttk.Frame(self.connection_frame)
+        self.adb_ctrl_frame.grid(row=1, column=0, columnspan=8, sticky=tk.W, padx=0, pady=4)
+
+        self.ip_label = ttk.Label(self.adb_ctrl_frame, text="IP 주소:")
+        self.ip_label.grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.ip_entry = ttk.Entry(self.adb_ctrl_frame, width=14)
+        self.ip_entry.insert(0, "127.0.0.1")
+        self.ip_entry.grid(row=0, column=1, padx=5)
+
+        self.port_label = ttk.Label(self.adb_ctrl_frame, text="포트:")
+        self.port_label.grid(row=0, column=2, sticky=tk.W, padx=5)
+        self.port_entry = ttk.Entry(self.adb_ctrl_frame, width=7)
+        self.port_entry.insert(0, "5555")
+        self.port_entry.grid(row=0, column=3, padx=5)
+
+        self.scan_btn = ttk.Button(self.adb_ctrl_frame, text="장치 검색", command=self._scan_devices)
+        self.scan_btn.grid(row=0, column=4, padx=5)
+
+        self.device_label = ttk.Label(self.adb_ctrl_frame, text="장치:")
+        self.device_label.grid(row=0, column=5, sticky=tk.W, padx=5)
+        self.device_combo = ttk.Combobox(self.adb_ctrl_frame, width=28, state="readonly")
+        self.device_combo.grid(row=0, column=6, sticky=tk.W, padx=5)
         self.device_combo.bind("<<ComboboxSelected>>", self._on_device_selected)
+
+        # Row 1-B: STOVE 연결 컨트롤 프레임
+        self.stove_ctrl_frame = ttk.Frame(self.connection_frame)
+        self.stove_ctrl_frame.grid(row=1, column=0, columnspan=8, sticky=tk.W, padx=0, pady=4)
+
+        self.stove_label = ttk.Label(self.stove_ctrl_frame, text="에픽세븐 창:")
+        self.stove_label.grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.stove_combo = ttk.Combobox(self.stove_ctrl_frame, width=38, state="readonly")
+        self.stove_combo.grid(row=0, column=1, sticky=tk.W, padx=5)
+
+        self.stove_scan_btn = ttk.Button(self.stove_ctrl_frame, text="창 새로고침", command=self._scan_stove_windows)
+        self.stove_scan_btn.grid(row=0, column=2, padx=5)
+
+        import ctypes
+        is_admin_user = bool(ctypes.windll.shell32.IsUserAnAdmin()) if sys.platform == "win32" else True
+        if not is_admin_user:
+            self.stove_admin_btn = ttk.Button(
+                self.stove_ctrl_frame,
+                text="⚠️ 관리자 권한으로 재실행",
+                command=self._restart_as_admin,
+            )
+            self.stove_admin_btn.grid(row=0, column=3, padx=8)
+
+        # 초기 실행 환경에 맞춰 컨트롤 프레임 표시
+        if self.backend_type_var.get() == "stove":
+            self.adb_ctrl_frame.grid_remove()
+            self.stove_ctrl_frame.grid(row=1, column=0, columnspan=8, sticky=tk.W, padx=0, pady=4)
+            self.mumu_checkbox.config(state=tk.DISABLED)
+            self.connection_frame.config(text="연결 설정 (STOVE PC 클라이언트)")
+        else:
+            self.stove_ctrl_frame.grid_remove()
+
+        # Row 2: 공통 옵션
+        self.options_row_frame = ttk.Frame(self.connection_frame)
+        self.options_row_frame.grid(row=2, column=0, columnspan=8, sticky=tk.W, padx=0, pady=2)
 
         self.debug_mode_var = tk.BooleanVar(value=False)
         self.debug_checkbox = ttk.Checkbutton(
-            self.connection_frame,
+            self.options_row_frame,
             text="디버그 모드 (상세 로그)",
             variable=self.debug_mode_var,
         )
-        self.debug_checkbox.grid(row=1, column=5, sticky=tk.W, padx=5, pady=5)
+        self.debug_checkbox.grid(row=0, column=0, sticky=tk.W, padx=5)
 
         self.mumu_mode_var = tk.BooleanVar(value=False)
         self.mumu_checkbox = ttk.Checkbutton(
-            self.connection_frame,
+            self.options_row_frame,
             text=self.input_profile_label_text,
             variable=self.mumu_mode_var,
             command=self._on_input_profile_changed,
         )
-        self.mumu_checkbox.grid(row=1, column=6, columnspan=2, sticky=tk.W, padx=(8, 5), pady=5)
+        self.mumu_checkbox.grid(row=0, column=1, sticky=tk.W, padx=(15, 5))
 
         self.mode_notebook = ttk.Notebook(self.frame.options.content)
         self.mode_notebook.pack(fill=tk.BOTH, expand=False, padx=10, pady=5)
@@ -775,6 +845,14 @@ class SessionView:
             state=tk.DISABLED,
         )
         self.reroll_stop_btn.pack(side=tk.LEFT, padx=5)
+
+        self.reroll_sound_var = tk.BooleanVar(value=True)
+        self.reroll_sound_checkbox = ttk.Checkbutton(
+            reroll_control_frame,
+            text="알림음 사용 (완료/중지)",
+            variable=self.reroll_sound_var,
+        )
+        self.reroll_sound_checkbox.pack(side=tk.LEFT, padx=(15, 5))
 
         self.reroll_stats_frame = ttk.LabelFrame(self.reroll_tab, text="리롤 통계", padding=10)
         self.reroll_stats_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -1411,6 +1489,139 @@ class SessionView:
                 self._replace_entry(self.ip_entry, ip)
                 self._replace_entry(self.port_entry, port)
 
+    def _on_backend_type_changed(self):
+        backend_type = self.backend_type_var.get()
+        if backend_type == "stove":
+            self.adb_ctrl_frame.grid_remove()
+            self.stove_ctrl_frame.grid(row=1, column=0, columnspan=8, sticky=tk.W, padx=0, pady=4)
+            self.mumu_checkbox.config(state=tk.DISABLED)
+            self.connection_frame.config(text="연결 설정 (STOVE PC 클라이언트)")
+            found = self._scan_stove_windows()
+            if found:
+                self._connect_stove()
+        else:
+            self.stove_ctrl_frame.grid_remove()
+            self.adb_ctrl_frame.grid(row=1, column=0, columnspan=8, sticky=tk.W, padx=0, pady=4)
+            self.mumu_checkbox.config(state=tk.NORMAL)
+            self.connection_frame.config(text="연결 설정 (ADB)")
+
+    def _scan_stove_windows(self) -> bool:
+        with log_session(self.name):
+            try:
+                my_pid = os.getpid()
+                raw_wins = WindowFinder.find_all_windows(
+                    title_keywords=["에픽세븐", "EpicSeven", "Epic Seven"],
+                    process_names=["epicseven.exe", "EpicSeven.exe"],
+                    visible_only=False
+                )
+                logger.info("STOVE raw_wins: %d개 발견 (%s)", len(raw_wins), [f"{hex(w.hwnd)}:{w.class_name}:{w.client_size}" for w in raw_wins[:5]])
+                filtered = []
+                for w in raw_wins:
+                    if w.pid == my_pid:
+                        continue
+                    proc = w.process_name.lower()
+                    if proc in ("chrome.exe", "python.exe", "secretshopbot-e7.exe"):
+                        continue
+                    if w.class_name in ("NVOpenGLPbuffer", "MSCTFIME UI", "IME"):
+                        continue
+                    if "_thread_" in w.title or "message" in w.title.lower() or "gdi+" in w.title.lower():
+                        continue
+                    if (w.client_size[0] < 320 or w.client_size[1] < 180) and not w.is_minimized:
+                        continue
+                    if proc == "epicseven.exe" or w.class_name == "GLFW30" or w.is_minimized:
+                        filtered.append(w)
+
+                # Prioritize: GLFW30 class, non-minimized, and closest to 1280x720
+                filtered.sort(key=lambda x: (
+                    x.class_name != "GLFW30",
+                    x.process_name.lower() != "epicseven.exe",
+                    x.is_minimized,
+                    abs(x.client_size[0] - 1280) + abs(x.client_size[1] - 720)
+                ))
+                logger.info("STOVE filtered: %d개 발견", len(filtered))
+                self.scanned_stove_windows = filtered
+            except Exception as e:
+                logger.error("STOVE 창 검색 중 오류: %s", e)
+                self.scanned_stove_windows = []
+
+            if not self.scanned_stove_windows:
+                self.stove_combo.config(values=["감지된 에픽세븐 창 없음 (게임을 먼저 실행하세요)"])
+                self.stove_combo.current(0)
+                logger.info("STOVE 에픽세븐 창을 찾을 수 없습니다. 게임이 실행 중인지 확인하세요.")
+                return False
+            else:
+                options = [
+                    f"에픽세븐{' [최소화됨]' if w.is_minimized else ''} (HWND: 0x{w.hwnd:X}, {w.client_size[0]}x{w.client_size[1]})"
+                    for w in self.scanned_stove_windows
+                ]
+                self.stove_combo.config(values=options)
+                self.stove_combo.current(0)
+                logger.info("STOVE 창 감지 완료: %s", options[0])
+                return True
+
+    def _restart_as_admin(self):
+        import ctypes
+        logger.info("관리자 권한(UAC) 재실행을 요청합니다...")
+        script_path = Path(sys.argv[0]).resolve()
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, f'"{script_path}"', None, 1
+        )
+        if int(ret) > 32:
+            self.root.quit()
+
+    def _connect_device(self):
+        if self.backend_type_var.get() == "stove":
+            self._connect_stove()
+        else:
+            self._connect_adb()
+
+    def _connect_stove(self):
+        with log_session(self.name):
+            logger.info("STOVE PC 클라이언트 연결 시도 중...")
+            import ctypes
+            is_admin_user = bool(ctypes.windll.shell32.IsUserAnAdmin()) if sys.platform == "win32" else True
+            if not is_admin_user:
+                logger.warning("경고: 관리자 권한으로 실행되지 않았습니다. STOVE 제어(PostMessage)가 차단될 수 있습니다.")
+
+            selected_hwnd = None
+            if hasattr(self, "stove_combo") and self.stove_combo.current() >= 0:
+                idx = self.stove_combo.current()
+                if idx < len(self.scanned_stove_windows):
+                    selected_hwnd = self.scanned_stove_windows[idx].hwnd
+
+            dev = BackendFactory.create_win32_device(hwnd=selected_hwnd)
+            if not dev:
+                self.connection_status.config(text="● 창 없음", foreground="#E53935")
+                logger.error("❌ 에픽세븐 클라이언트 창을 찾을 수 없습니다. 게임이 실행 중인지 확인하세요.")
+                return
+
+            # If window is minimized or not visible, restore and show it
+            hwnd = dev.capture_backend.hwnd
+            if ctypes.windll.user32.IsIconic(hwnd) or not ctypes.windll.user32.IsWindowVisible(hwnd):
+                logger.info("에픽세븐 창을 화면에 복원/표시합니다.")
+                ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
+                import time
+                time.sleep(0.5)
+
+            connected, msg = dev.test_connection()
+            if not connected:
+                self.connection_status.config(text="● 통신 실패", foreground="#E53935")
+                logger.error("❌ STOVE 연결 실패: %s", msg)
+                return
+
+            self.adb_controller = dev
+            self.connection_status.config(text="● 연결됨 (STOVE)", foreground="#43A047")
+            self.start_btn.config(state=tk.NORMAL)
+            self.reroll_start_btn.config(state=tk.NORMAL)
+            self.penguin_start_btn.config(state=tk.NORMAL)
+            self.event_start_btn.config(state=tk.NORMAL)
+            self.chaos_start_btn.config(state=tk.NORMAL)
+            self.test_btn.config(state=tk.NORMAL)
+            self.connect_btn.config(state=tk.DISABLED)
+            self.disconnect_btn.config(state=tk.NORMAL)
+            logger.info("✅ STOVE 에픽세븐 클라이언트 연결 및 테스트 통신 성공: HWND 0x%X", dev.capture_backend.hwnd)
+
     def _connect_adb(self):
         with log_session(self.name):
             selected_entry = self.scanned_devices.get(self.device_combo.get())
@@ -1489,7 +1700,7 @@ class SessionView:
             if self.is_running:
                 return
             if not self.adb_controller:
-                messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+                messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
                 return
 
             self.was_stopped_by_user = False
@@ -1573,7 +1784,7 @@ class SessionView:
             if self.is_running:
                 return
             if not self.adb_controller:
-                messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+                messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
                 return
 
             self.was_stopped_by_user = False
@@ -1662,7 +1873,7 @@ class SessionView:
             if self.is_running:
                 return
             if not self.adb_controller:
-                messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+                messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
                 return
 
             self.was_stopped_by_user = False
@@ -1698,7 +1909,7 @@ class SessionView:
             if self.is_running or (self.bot_thread and self.bot_thread.is_alive()):
                 return
             if not self.adb_controller:
-                messagebox.showerror("자동 탐사", "ADB 연결 후 시작해 주세요.")
+                messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
                 return
             try:
                 hero_ids = []
@@ -1784,7 +1995,7 @@ class SessionView:
             if self.is_running:
                 return
             if not self.adb_controller:
-                messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+                messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
                 return
 
             event_module = load_event_module("2026_summer_event")
@@ -1952,10 +2163,11 @@ class SessionView:
                 self.is_running = False
                 if not self.app.is_closing:
                     self.root.after(0, lambda: self._set_running_ui(False))
-                    if self.was_stopped_by_user or has_error:
-                        self.root.after(0, self._play_stopped_sound)
-                    else:
-                        self.root.after(0, self._play_complete_sound)
+                    if self.reroll_sound_var.get():
+                        if self.was_stopped_by_user or has_error:
+                            self.root.after(0, self._play_stopped_sound)
+                        else:
+                            self.root.after(0, self._play_complete_sound)
 
     def _run_penguin_bot(self):
         with log_session(self.name):
@@ -2102,6 +2314,39 @@ class SessionView:
                 self.adb_controller.disconnect()
                 self.adb_controller = None
                 logger.info("앱 종료 - 이 세션의 ADB 장치 연결을 해제했습니다.")
+
+    def _disconnect_device(self):
+        if self.backend_type_var.get() == "stove":
+            self._disconnect_stove()
+        else:
+            self._disconnect_adb()
+
+    def _disconnect_stove(self):
+        with log_session(self.name):
+            if self.is_running:
+                messagebox.showwarning("경고", "봇이 실행 중일 때는 연결을 해제할 수 없습니다.")
+                return
+            if self.adb_controller:
+                try:
+                    self.adb_controller.close()
+                except Exception:
+                    pass
+                self.adb_controller = None
+            self.current_mode = None
+            self.connection_status.config(text="● 연결 안됨", foreground="#E53935")
+            self.start_btn.config(state=tk.DISABLED)
+            self.reroll_start_btn.config(state=tk.DISABLED)
+            self.reroll_stop_btn.config(state=tk.DISABLED)
+            self.penguin_start_btn.config(state=tk.DISABLED)
+            self.penguin_stop_btn.config(state=tk.DISABLED)
+            self.event_start_btn.config(state=tk.DISABLED)
+            self.event_stop_btn.config(state=tk.DISABLED)
+            self.chaos_start_btn.config(state=tk.DISABLED)
+            self.chaos_stop_btn.config(state=tk.DISABLED)
+            self.test_btn.config(state=tk.DISABLED)
+            self.connect_btn.config(state=tk.NORMAL)
+            self.disconnect_btn.config(state=tk.DISABLED)
+            self.log("✅ STOVE 연결이 해제되었습니다.")
 
     def _disconnect_adb(self):
         with log_session(self.name):
@@ -2338,7 +2583,7 @@ class SessionView:
     def _test_image_matching(self):
         with log_session(self.name):
             if not self.adb_controller:
-                messagebox.showerror("오류", "ADB가 연결되지 않았습니다.")
+                messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
                 return
             if self.is_running:
                 messagebox.showwarning("경고", "봇이 실행 중일 때는 테스트할 수 없습니다.")
@@ -2729,19 +2974,24 @@ class SecretShopGUI:
         style.configure("TCheckbutton", background=colors["surface"], foreground=colors["ink"])
 
     def _create_checkbox_indicators(self, colors):
-        def _make_square(fill_color, outline_color, size=13):
+        def _make_square(fill_color, outline_color, size=13, is_checked=False, inner_color=None):
             im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
             d = ImageDraw.Draw(im)
             d.rectangle([0, 0, size - 1, size - 1], fill=fill_color, outline=outline_color, width=1)
+            if is_checked:
+                # 테두리 안쪽에 1px 여백을 두고 내부 네모를 채워 체크된 느낌 연출
+                margin = 2
+                inner_fill = inner_color or outline_color
+                d.rectangle([margin, margin, size - 1 - margin, size - 1 - margin], fill=inner_fill)
             return ImageTk.PhotoImage(im)
 
         return {
             "off": _make_square(colors.get("surface", "#ffffff"), colors.get("muted", "#776554")),
-            "on": _make_square("#1a1a1a", "#1a1a1a"),
+            "on": _make_square(colors.get("surface", "#ffffff"), colors.get("ink", "#2f261f"), is_checked=True, inner_color="#1a1a1a"),
             "off_active": _make_square("#fdfbf7", colors.get("ink", "#2f261f")),
-            "on_active": _make_square("#000000", "#000000"),
+            "on_active": _make_square("#fdfbf7", colors.get("ink", "#2f261f"), is_checked=True, inner_color="#000000"),
             "off_disabled": _make_square(colors.get("surface_alt", "#f6efe6"), colors.get("line", "#c4b5a5")),
-            "on_disabled": _make_square(colors.get("muted", "#8c7b6c"), colors.get("muted", "#8c7b6c")),
+            "on_disabled": _make_square(colors.get("surface_alt", "#f6efe6"), colors.get("line", "#c4b5a5"), is_checked=True, inner_color=colors.get("muted", "#8c7b6c")),
         }
 
     def _setup_logging(self):
@@ -2754,7 +3004,7 @@ class SecretShopGUI:
         for session in self.sessions:
             session.add_log_handler()
 
-        log_file = Path("logs") / "bot.log"
+        log_file = get_resource_root() / "logs" / "bot.log"
         log_file.parent.mkdir(exist_ok=True)
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.addFilter(SessionContextFilter())
