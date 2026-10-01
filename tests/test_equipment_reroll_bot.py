@@ -1,6 +1,7 @@
 import unittest
+import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
@@ -10,11 +11,15 @@ from src.equipment_reroll_bot import EquipmentRerollBot
 
 
 class EquipmentRerollBotTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+
     def _make_bot(self):
         bot = object.__new__(EquipmentRerollBot)
         bot.threshold = 0.8
         bot.debug_mode = False
-        bot.runtime_dir = Path(".")
+        bot.runtime_dir = Path(self.temp.name)
         bot.target_mode = EquipmentRerollBot.TARGET_MODE_EXACT
         bot.required_match_count = 1
         bot.OPTION_PANEL_BOUNDS = EquipmentRerollBot.OPTION_PANEL_BOUNDS
@@ -35,6 +40,9 @@ class EquipmentRerollBotTest(unittest.TestCase):
         bot.REROLL_BUTTON_RETRY_COUNT = EquipmentRerollBot.REROLL_BUTTON_RETRY_COUNT
         bot.locked_option_count = 0
         bot.locked_rows = []
+        bot.target_specs = [{"option": "speed", "value": 5, "is_percent": False}]
+        bot.user_action = None
+        bot.stats = {"attempts": 1}
         return bot
 
     def test_get_row_bounds_splits_right_option_panel_into_four_rows(self):
@@ -176,7 +184,7 @@ class EquipmentRerollBotTest(unittest.TestCase):
             variant_name = processed_images[0][0]
             if variant_name == "primary":
                 return {(1, True): {"count": 2.0, "confidence_sum": 1.4, "best_confidence": 0.72}}
-            return {(8, True): {"count": 2.0, "confidence_sum": 1.3, "best_confidence": 0.67}}
+            return {(8, True): {"count": 2.0, "confidence_sum": 1.7, "best_confidence": 0.85}}
 
         bot._build_ocr_variants = fake_build_variants
         bot._collect_numeric_candidate_scores = fake_collect
@@ -482,6 +490,219 @@ class EquipmentRerollBotTest(unittest.TestCase):
 
         self.assertEqual(result["option"], "speed")
         self.assertEqual(result["box"][:2], (insert_x, insert_y))
+
+
+class RerollSafetyTests(unittest.TestCase):
+    setUp = EquipmentRerollBotTest.setUp
+    _make_bot = EquipmentRerollBotTest._make_bot
+
+    @staticmethod
+    def score(count, confidence):
+        return {'count': count, 'confidence_sum': count * confidence,
+                'best_confidence': confidence}
+
+    @staticmethod
+    def row(value, option='speed'):
+        return {'row_index': 0, 'option': option, 'value': value,
+                'is_percent': False, 'similarity': .95}
+
+    def prepare_run(self):
+        bot = self._make_bot()
+        bot.startup_error = None
+        bot.paused = False
+        bot.max_rerolls = 2
+        bot.delay_before_reroll = 0
+        bot.locked_rows = [1, 2, 3]
+        bot.stats.update(rerolls=0, goal_achieved=False, end_time=None)
+        bot._validate_images = Mock(return_value={'reroll_button': Path('button.png')})
+        bot._capture_screen = Mock(return_value=np.zeros((720, 1280, 3), dtype=np.uint8))
+        bot._sleep_with_stop = Mock(return_value=True)
+        bot._click_image_with_retry = Mock(return_value=True)
+        return bot
+
+    def test_failed_capture_never_reads_stale_file_or_clicks(self):
+        bot = self._make_bot()
+        bot.screenshot_path = bot.runtime_dir / 'old.png'
+        bot.screenshot_path.write_bytes(b'previous screenshot')
+        bot.adb = Mock()
+        bot.adb.screenshot.return_value = False
+        bot.matcher = Mock()
+        with patch.object(equipment_module, 'read_image') as read:
+            self.assertIsNone(bot._capture_screen())
+            self.assertFalse(bot._click_image(Path('button.png'), 'reroll'))
+        read.assert_not_called()
+        bot.matcher.find_image.assert_not_called()
+        bot.adb.tap.assert_not_called()
+        self.assertEqual(bot.screenshot_path.read_bytes(), b'previous screenshot')
+
+    def test_low_confidence_votes_do_not_override_strong_five_after_retry(self):
+        bot = self._make_bot()
+        bot._build_ocr_variants = Mock(return_value=[])
+        bot._collect_numeric_candidate_scores = Mock(side_effect=[
+            {(3, False): self.score(4, .36), (5, False): self.score(1, .95)},
+            {(5, False): self.score(2, .95)},
+        ])
+        value, percent = bot._read_row_numeric_value(
+            np.zeros((60, 160, 3), dtype=np.uint8), (0, 0, 160, 60), (0, 0, 20, 20), 0, 'speed')
+        self.assertEqual((value, percent), (5, False))
+        self.assertEqual(bot._build_ocr_variants.call_count, 2)
+
+    def test_unresolved_conflict_or_low_confidence_returns_no_number(self):
+        bot = self._make_bot()
+        for scores in ({(3, False): self.score(4, .90), (5, False): self.score(2, .95)},
+                       {(3, False): self.score(8, .36)}):
+            with self.subTest(scores=scores):
+                bot._build_ocr_variants = Mock(return_value=[])
+                bot._collect_numeric_candidate_scores = Mock(return_value=scores)
+                self.assertEqual(bot._read_row_numeric_value(
+                    np.zeros((60, 160, 3), dtype=np.uint8), (0, 0, 160, 60),
+                    (0, 0, 20, 20), 0, 'speed'), (None, False))
+                self.assertEqual(bot._build_ocr_variants.call_count, 2)
+
+    def test_strict_parser_rejects_mixed_text_and_preserves_percent(self):
+        bot = self._make_bot()
+        bot.ocr_engine = Mock(return_value=([
+            ['S3', .99], ['3/5', .99], ['5.0', .99], ['5', .9]], None))
+        self.assertEqual(bot._ocr_numeric_image(np.zeros((20, 20), dtype=np.uint8), False),
+                         (5, .9, False))
+        bot.ocr_engine.return_value = ([['＋５％', .91]], None)
+        self.assertEqual(bot._ocr_numeric_image(np.zeros((20, 20), dtype=np.uint8), False),
+                         (5, .91, True))
+        bot.ocr_engine.return_value = ([['5', float('nan')], ['5', 1.2]], None)
+        self.assertIsNone(bot._ocr_numeric_image(np.zeros((20, 20), dtype=np.uint8), False)[0])
+
+    def test_goal_seen_on_fresh_frame_is_never_rerolled(self):
+        bot = self.prepare_run()
+        bot._scan_target_rows = Mock(side_effect=[[self.row(3)], [self.row(5)]])
+        result = bot.run()
+        self.assertTrue(result['goal_achieved'])
+        self.assertEqual(result['rerolls'], 0)
+        bot._click_image_with_retry.assert_not_called()
+
+    def test_ambiguous_readings_across_frames_never_reroll(self):
+        bot = self.prepare_run()
+        bot._scan_target_rows = Mock(return_value=[self.row(None)])
+        result = bot.run()
+        self.assertFalse(result['goal_achieved'])
+        self.assertEqual(bot._capture_screen.call_count, 3)
+        bot._click_image_with_retry.assert_not_called()
+
+    def test_different_below_goal_readings_must_agree_before_reroll(self):
+        bot = self.prepare_run()
+        bot._scan_target_rows = Mock(side_effect=[[self.row(2)], [self.row(3)], [self.row(4)]])
+        bot.run()
+        bot._click_image_with_retry.assert_not_called()
+
+    def test_consistent_below_goal_readings_can_reroll(self):
+        bot = self.prepare_run()
+        bot._scan_target_rows = Mock(side_effect=[[self.row(3)], [self.row(3)], [self.row(5)]])
+        result = bot.run()
+        self.assertEqual(result['rerolls'], 1)
+        self.assertTrue(result['goal_achieved'])
+        bot._click_image_with_retry.assert_called_once()
+
+    def test_missing_row_is_not_treated_as_absent_target(self):
+        bot = self.prepare_run()
+        bot.locked_rows = []
+        bot._scan_target_rows = Mock(return_value=[self.row(None, 'attack')])
+        bot.run()
+        bot._click_image_with_retry.assert_not_called()
+
+    def test_capture_failure_and_stop_during_confirmation_prevent_click(self):
+        bot = self.prepare_run()
+        bot._capture_screen.side_effect = [np.zeros((720, 1280, 3), dtype=np.uint8), None]
+        bot._scan_target_rows = Mock(return_value=[self.row(3)])
+        bot.run()
+        bot._click_image_with_retry.assert_not_called()
+        bot = self.prepare_run()
+        bot._sleep_with_stop.return_value = False
+        bot._scan_target_rows = Mock(return_value=[self.row(3)])
+        bot.run()
+        self.assertEqual(bot._capture_screen.call_count, 1)
+        bot._click_image_with_retry.assert_not_called()
+
+    def test_user_delay_precedes_fresh_goal_check(self):
+        bot = self.prepare_run()
+        bot.delay_before_reroll = 5
+        order = []
+        bot._capture_screen.side_effect = lambda: (order.append('capture') or np.zeros((720,1280,3), dtype=np.uint8))
+        bot._sleep_with_stop.side_effect = lambda seconds: (order.append(seconds) or True)
+        bot._scan_target_rows = Mock(side_effect=[[self.row(3)], [self.row(5)]])
+        self.assertTrue(bot.run()['goal_achieved'])
+        self.assertEqual(order, ['capture', 5, .2, 'capture'])
+        bot._click_image_with_retry.assert_not_called()
+
+    def test_failed_input_is_not_reported_as_successful_click(self):
+        bot = self.prepare_run()
+        bot.matcher = Mock()
+        bot.matcher.find_image.return_value = (100, 200, 10, 20)
+        bot.matcher.get_center.return_value = (105, 210)
+        bot.screenshot_path = bot.runtime_dir / 'current.png'
+        bot.adb = Mock()
+        bot.adb.tap.return_value = False
+        self.assertFalse(bot._click_image(Path('button.png'), 'reroll'))
+        self.assertIn('전송 실패', bot.stats['stop_reason'])
+
+    def test_stop_received_during_button_capture_prevents_input(self):
+        bot = self.prepare_run()
+        bot.matcher = Mock()
+        bot.matcher.find_image.return_value = (100, 200, 10, 20)
+        bot.screenshot_path = bot.runtime_dir / 'current.png'
+        bot.adb = Mock()
+        def capture_then_stop():
+            bot.user_action = 'stop'
+            return np.zeros((720, 1280, 3), dtype=np.uint8)
+        bot._capture_screen.side_effect = capture_then_stop
+        self.assertFalse(bot._click_image(Path('button.png'), 'reroll'))
+        bot.adb.tap.assert_not_called()
+
+    def test_pause_during_confirmation_waits_before_new_capture(self):
+        bot = self.prepare_run()
+        bot.paused = True
+        def resume(seconds):
+            bot.paused = False
+            return True
+        bot._sleep_with_stop.side_effect = resume
+        bot._scan_target_rows = Mock(return_value=[self.row(3)])
+        self.assertIsNotNone(bot._confirm_before_reroll([self.row(3)], {}))
+        self.assertEqual([c.args[0] for c in bot._sleep_with_stop.call_args_list], [.1, .2])
+
+    def test_conflicting_same_frame_numbers_are_not_resolved_by_icon_score(self):
+        bot = self._make_bot()
+        first, second = self.row(3), self.row(5)
+        second['similarity'] = .99
+        rows = bot._merge_row_results([first], [second])
+        self.assertIsNone(rows[0]['value'])
+        self.assertTrue(rows[0]['numeric_conflict'])
+        self.assertIsNone(bot._merge_row_results(rows, [second])[0]['value'])
+
+    def test_evidence_is_saved_without_debug_and_is_bounded(self):
+        bot = self._make_bot()
+        screen = np.zeros((10, 10, 3), dtype=np.uint8)
+        root = bot.runtime_dir / 'reroll_evidence'
+        root.mkdir()
+        unrelated = root / 'user_notes'
+        unrelated.mkdir()
+        for index in range(bot.MAX_OCR_EVIDENCE + 3):
+            bot._save_reroll_evidence(screen, {'reason': 'test', 'index': index}, screen)
+        folders = sorted(root.glob('scan_*'))
+        self.assertEqual(len(folders), bot.MAX_OCR_EVIDENCE)
+        self.assertTrue(unrelated.is_dir())
+        for folder in folders:
+            self.assertTrue((folder / 'screen.png').is_file())
+            self.assertTrue((folder / 'number_roi.png').is_file())
+            self.assertTrue((folder / 'recognition.json').is_file())
+
+    def test_uncertain_retry_includes_uncropped_and_nearest_images(self):
+        bot = self._make_bot()
+        image = np.zeros((30, 120, 3), dtype=np.uint8)
+        cv2.putText(image, '5', (50, 24), cv2.FONT_HERSHEY_SIMPLEX, .8, (255,255,255), 2)
+        normal = dict(bot._build_ocr_variants(image))
+        retry = dict(bot._build_ocr_variants(image, scale_multiplier=1.5))
+        self.assertNotIn('ocr_uncropped', normal)
+        self.assertIn('ocr_uncropped', retry)
+        self.assertIn('ocr_nearest', retry)
+        self.assertGreater(retry['ocr_uncropped'].shape[1], retry['ocr_gray'].shape[1])
 
 
 if __name__ == "__main__":

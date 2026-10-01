@@ -2195,11 +2195,14 @@ class SessionView:
     def _run_reroll_bot(self):
         with log_session(self.name):
             has_error = False
+            stopped_for_safety = False
             try:
                 self.root.after(500, self._update_running_state)
                 final_stats = self.bot.run()
+                stopped_for_safety = bool(final_stats.get('stop_reason'))
                 self.root.after(0, lambda: self._update_reroll_stats(final_stats))
-                self.log(self._format_reroll_summary("장비 리롤 완료", final_stats))
+                title = '장비 리롤 안전 중지' if stopped_for_safety else '장비 리롤 완료'
+                self.log(self._format_reroll_summary(title, final_stats))
             except Exception as e:
                 has_error = True
                 logger.error("장비 리롤 실행 중 오류: %s", e, exc_info=True)
@@ -2210,7 +2213,7 @@ class SessionView:
                 if not self.app.is_closing:
                     self.root.after(0, lambda: self._set_running_ui(False))
                     if self.reroll_sound_var.get():
-                        if self.was_stopped_by_user or has_error:
+                        if self.was_stopped_by_user or has_error or stopped_for_safety:
                             self.root.after(0, self._play_stopped_sound)
                         else:
                             self.root.after(0, self._play_complete_sound)
@@ -2589,6 +2592,7 @@ class SessionView:
     def _format_reroll_summary(self, title, stats):
         elapsed = self._format_elapsed_seconds(stats.get("elapsed_time", 0))
         goal_achieved = "성공" if stats.get("goal_achieved") else "실패"
+        stop_reason = f"- 중지 사유: {stats['stop_reason']}\n" if stats.get('stop_reason') else ''
         return (
             f"\n{'=' * 42}\n"
             f"{title}\n"
@@ -2598,6 +2602,7 @@ class SessionView:
             f"- 목표 달성: {goal_achieved}\n"
             f"- 최종 일치: {stats.get('target_found', 0)}개\n"
             f"- 소요 시간: {elapsed}\n"
+            f"{stop_reason}"
             f"{'=' * 42}"
         )
 

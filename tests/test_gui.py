@@ -443,5 +443,34 @@ class UpdateLifecycleTest(unittest.TestCase):
         app._finish_closing.assert_called_once()
 
 
+
+class RerollSafetySummaryTest(unittest.TestCase):
+    def test_safety_stop_summary_includes_reason(self):
+        view = object.__new__(SessionView)
+        summary = view._format_reroll_summary('장비 리롤 안전 중지', {
+            'stop_reason': '옵션 또는 숫자 재확인 불일치', 'goal_achieved': False,
+        })
+        self.assertIn('중지 사유: 옵션 또는 숫자 재확인 불일치', summary)
+
+    def test_safety_stop_uses_stopped_sound(self):
+        view = object.__new__(SessionView)
+        view.name = 'test'
+        view.root = Mock()
+        view.app = Mock(is_closing=False)
+        view.bot = Mock()
+        view.bot.run.return_value = {'stop_reason': '숫자 재확인 불일치'}
+        view.reroll_sound_var = Mock()
+        view.reroll_sound_var.get.return_value = True
+        view.was_stopped_by_user = False
+        view._play_stopped_sound = Mock()
+        view._play_complete_sound = Mock()
+        view.log = Mock()
+        view._run_reroll_bot()
+        self.assertIn('안전 중지', view.log.call_args.args[0])
+        callbacks = [c.args[1] for c in view.root.after.call_args_list]
+        self.assertTrue(any(c is view._play_stopped_sound for c in callbacks))
+        self.assertFalse(any(c is view._play_complete_sound for c in callbacks))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -10,8 +10,13 @@ dialog. It supports two stop modes:
 from __future__ import annotations
 
 import logging
+import json
+import math
+import re
+import shutil
 import sys
 import time
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -135,6 +140,10 @@ class EquipmentRerollBot:
     NUMBER_SCAN_LEFT_GAP_RATIO = 0.08
     OCR_SCALE = 3
     OCR_MIN_CONFIDENCE = 0.35
+    OCR_DECISION_MIN_CONFIDENCE = 0.70
+    OCR_DECISION_MIN_VOTES = 2
+    NUMERIC_CONFIRMATION_ATTEMPTS = 2
+    MAX_OCR_EVIDENCE = 10
     OCR_FOREGROUND_MIN_PIXELS = 16
     OCR_FOREGROUND_PADDING = 10
     OCR_ONE_MAX_WIDTH_RATIO = 0.42
@@ -357,6 +366,17 @@ class EquipmentRerollBot:
                 return self._finish_stats()
 
             row_results = self._scan_target_rows(screen, images, read_numeric=True)
+            evaluation = self._evaluate_target_matches(row_results)
+            self.stats.update(option_found=evaluation[0], target_found=evaluation[1],
+                              goal_achieved=evaluation[4])
+            if attempt < self.max_rerolls and not evaluation[4]:
+                if self.delay_before_reroll > 0:
+                    logger.info("리롤 전 %.1f초 대기합니다.", self.delay_before_reroll)
+                    if not self._sleep_with_stop(self.delay_before_reroll):
+                        return self._finish_stats()
+                row_results = self._confirm_before_reroll(row_results, images)
+                if row_results is None:
+                    return self._finish_stats()
             option_match_count, target_match_count, matched_specs, ocr_failure, success = self._evaluate_target_matches(row_results)
             self.stats["option_found"] = option_match_count
             self.stats["target_found"] = target_match_count
@@ -373,6 +393,7 @@ class EquipmentRerollBot:
                 return self._finish_stats()
 
             if ocr_failure is not None:
+                self.stats['stop_reason'] = '대상 옵션 숫자 인식 불확실'
                 logger.info(
                     "대상 옵션 '%s'은(는) 찾았지만 숫자 OCR에 실패했습니다. 안전을 위해 즉시 중지합니다.",
                     self._target_option_label(ocr_failure["option"]),
@@ -407,11 +428,6 @@ class EquipmentRerollBot:
                 logger.warning("최대 리롤 횟수에 도달했습니다.")
                 return self._finish_stats()
 
-            if self.delay_before_reroll > 0:
-                logger.info("리롤 전 %.1f초 대기합니다.", self.delay_before_reroll)
-                if not self._sleep_with_stop(self.delay_before_reroll):
-                    return self._finish_stats()
-
             if self._click_image_with_retry(images["reroll_button"], "보조 능력치 변경 버튼", retries=self.REROLL_BUTTON_RETRY_COUNT):
                 self.stats["rerolls"] += 1
                 if not self._sleep_with_stop(0.5):
@@ -424,18 +440,25 @@ class EquipmentRerollBot:
 
     def _capture_screen(self) -> Optional[np.ndarray]:
         try:
-            self.adb.screenshot(str(self.screenshot_path))
+            if not self.adb.screenshot(str(self.screenshot_path)):
+                self.stats['stop_reason'] = '최신 화면 캡처 실패'
+                logger.error("장비 리롤 화면 캡처 실패 — 이전 화면으로 판정하거나 클릭하지 않습니다.")
+                return None
             time.sleep(0.2)
             screen = read_image(str(self.screenshot_path))
             if screen is None:
+                self.stats['stop_reason'] = '최신 화면 이미지 읽기 실패'
                 logger.error("리롤 스크린샷을 불러오지 못했습니다: %s", self.screenshot_path)
                 return None
+            self.stats.pop('stop_reason', None)
             return screen
         except Exception as e:
+            self.stats['stop_reason'] = '최신 화면 캡처 또는 읽기 오류'
             logger.error("리롤 스크린샷 캡처 중 오류: %s", e, exc_info=self.debug_mode)
             return None
 
     def _scan_target_rows(self, screen: np.ndarray, images: Dict[str, Path], read_numeric: bool) -> List[Dict]:
+        self._numeric_read_reports = []
         target_templates = {
             key.split(":", 1)[1]: read_image(str(path), cv2.IMREAD_COLOR)
             for key, path in images.items()
@@ -480,6 +503,55 @@ class EquipmentRerollBot:
             if not self._should_retry_option_recognition(merged_results):
                 break
         return merged_results
+
+    def _readings_complete(self, rows):
+        desired = {spec['option'] for spec in self.target_specs}
+        return (len({row['row_index'] for row in rows}) >= self._expected_visible_option_count()
+                and all(row['value'] is not None
+                        and self._is_value_in_expected_range(row['option'], row['value'], row['is_percent'])
+                        for row in rows if row['option'] in desired))
+
+    @staticmethod
+    def _reading_signature(rows):
+        return tuple(sorted((row['row_index'], row['option'], row['value'], row['is_percent'])
+                            for row in rows))
+
+    def _confirm_before_reroll(self, rows, images):
+        """Require matching readings from fresh captures before discarding options."""
+        previous = self._reading_signature(rows) if self._readings_complete(rows) else None
+        for attempt in range(self.NUMERIC_CONFIRMATION_ATTEMPTS):
+            while self.paused:
+                if not self._sleep_with_stop(0.1):
+                    return None
+            if not self._sleep_with_stop(0.2):
+                return None
+            screen = self._capture_screen()
+            if screen is None:
+                return None
+            current = self._scan_target_rows(screen, images, read_numeric=True)
+            if self._evaluate_target_matches(current)[4]:
+                self._save_reroll_evidence(screen, {
+                    'reason': 'goal_found_on_fresh_frame', 'readings': current,
+                    'numeric_readings': getattr(self, '_numeric_read_reports', []),
+                })
+                return current  # A newly found goal must never be rerolled.
+            signature = self._reading_signature(current) if self._readings_complete(current) else None
+            if signature is not None and signature == previous:
+                self._save_reroll_evidence(screen, {
+                    'reason': 'confirmed_before_reroll', 'readings': current,
+                    'numeric_readings': getattr(self, '_numeric_read_reports', []),
+                })
+                return current
+            self._save_reroll_evidence(screen, {
+                'reason': 'fresh_frame_disagreement_or_incomplete',
+                'confirmation_attempt': attempt + 1,
+                'previous_readings': rows, 'current_readings': current,
+                'numeric_readings': getattr(self, '_numeric_read_reports', []),
+            })
+            rows, previous = current, signature
+        self.stats['stop_reason'] = '옵션 또는 숫자 재확인 불일치'
+        logger.error("장비 옵션 또는 숫자 재확인이 일치하지 않아 리롤하지 않고 중지합니다.")
+        return None
 
     def _scan_target_rows_once(
         self,
@@ -562,6 +634,14 @@ class EquipmentRerollBot:
             existing = merged.get(row["row_index"])
             if existing is None:
                 merged[row["row_index"]] = dict(row)
+                continue
+
+            if (existing.get('numeric_conflict') or row.get('numeric_conflict')
+                    or (existing['option'] == row['option']
+                        and existing.get('value') is not None and row.get('value') is not None
+                        and (existing['value'], existing['is_percent']) != (row['value'], row['is_percent']))):
+                existing['value'] = None
+                existing['numeric_conflict'] = True
                 continue
 
             existing_score = (existing.get("value") is not None, existing.get("similarity", 0.0))
@@ -762,58 +842,56 @@ class EquipmentRerollBot:
             for variant_name, variant_image in processed_images:
                 self._save_debug_image(f"row_{row_index + 1}_{variant_name}.png", variant_image)
 
-        shape_info = self._analyze_numeric_shape(number_roi)
-        best_candidate = None
-        best_confidence = 0.0
-        best_has_percent = False
-        candidate_scores = self._collect_numeric_candidate_scores(processed_images)
-
-        if candidate_scores:
-            best_candidate, best_has_percent, best_confidence = self._select_best_numeric_candidate(
-                candidate_scores,
-                shape_info,
-            )
-
-        if best_candidate is not None and not self._is_value_in_expected_range(option_key, best_candidate, best_has_percent):
-            logger.warning(
-                "??%s %s ?レ옄 OCR 寃곌낵 %s%s媛 ?덉긽 踰붿쐞瑜?踰쀬뼱?섏뿬 ?ㅼ떆 ?몄떇?⑸땲??",
-                row_index + 1,
-                self._target_option_label(option_key),
-                best_candidate,
-                "%" if best_has_percent else "",
-            )
-            retry_processed_images = self._build_ocr_variants(number_roi, scale_multiplier=1.5)
-            if self.debug_mode:
-                for variant_name, variant_image in retry_processed_images:
-                    self._save_debug_image(f"row_{row_index + 1}_retry_{variant_name}.png", variant_image)
-            retry_scores = self._collect_numeric_candidate_scores(retry_processed_images)
-            candidate_scores = self._merge_numeric_candidate_scores(candidate_scores, retry_scores)
-            valid_scores = self._filter_candidate_scores_by_expected_range(candidate_scores, option_key)
-            if valid_scores:
-                best_candidate, best_has_percent, best_confidence = self._select_best_numeric_candidate(
-                    valid_scores,
-                    shape_info,
-                )
-            else:
-                logger.warning(
-                    "??%s %s ?レ옄 OCR 寃곌낵媛 ?덉긽 踰붿쐞 ?꾩뿬?쒕룄 ?ㅼ떆 ?몄떇?섏? 紐삵뻽?듬땲??",
-                    row_index + 1,
-                    self._target_option_label(option_key),
-                )
-                return None, False
-
-        if best_candidate is None:
-            logger.info("행 %s 숫자 OCR 결과가 비어 있습니다.", row_index + 1)
+        self._numeric_ocr_trace = []
+        scores = self._collect_numeric_candidate_scores(processed_images)
+        candidate, has_percent, confidence, reason = self._resolve_numeric_scores(scores, option_key)
+        retry_reason = None
+        if reason is not None:
+            logger.warning("행 %s 숫자 재인식: %s", row_index + 1, reason)
+            retry_images = self._build_ocr_variants(number_roi, scale_multiplier=1.5)
+            retry_scores = self._collect_numeric_candidate_scores(retry_images)
+            scores = self._merge_numeric_candidate_scores(scores, retry_scores)
+            candidate, has_percent, confidence, retry_reason = self._resolve_numeric_scores(scores, option_key)
+            self._save_reroll_evidence(screen, {
+                'reason': reason, 'remaining_uncertainty': retry_reason,
+                'row': row_index + 1, 'option': option_key,
+                'selected_value': candidate, 'is_percent': has_percent,
+                'candidate_scores': [{'value': value, 'is_percent': percent, **score}
+                                     for (value, percent), score in scores.items()],
+                'ocr_results': self._numeric_ocr_trace,
+            }, number_roi)
+        if hasattr(self, '_numeric_read_reports'):
+            self._numeric_read_reports.append({
+                'row': row_index + 1, 'option': option_key,
+                'roi_bounds': [number_x1, number_y1, number_x2, number_y2],
+                'value': candidate, 'is_percent': has_percent,
+                'uncertainty': retry_reason,
+                'candidate_scores': [{'value': value, 'is_percent': percent, **score}
+                                     for (value, percent), score in scores.items()],
+                'ocr_results': list(self._numeric_ocr_trace),
+            })
+        if retry_reason is not None:
+            logger.warning("행 %s 숫자를 확정하지 못했습니다: %s", row_index + 1, retry_reason)
             return None, False
+        logger.info("행 %s 숫자 OCR 결과: %s%s (신뢰도 %.1f%%)",
+                    row_index + 1, candidate, '%' if has_percent else '', confidence * 100)
+        return candidate, has_percent
 
-        logger.info(
-            "행 %s 숫자 OCR 결과: %s%s (신뢰도 %.1f%%)",
-            row_index + 1,
-            best_candidate,
-            "%" if best_has_percent else "",
-            best_confidence * 100,
-        )
-        return best_candidate, best_has_percent
+    def _resolve_numeric_scores(self, scores, option_key):
+        valid = self._filter_candidate_scores_by_expected_range(scores, option_key)
+        strong = {
+            key: score for key, score in valid.items()
+            if score['count'] > 0
+            and score['confidence_sum'] / score['count'] >= self.OCR_DECISION_MIN_CONFIDENCE
+            and score['best_confidence'] >= self.OCR_DECISION_MIN_CONFIDENCE
+        }
+        if len(strong) != 1:
+            reason = '숫자 후보 충돌' if len(strong) > 1 else '유효한 고신뢰 숫자 후보 없음'
+            return None, False, 0.0, reason
+        (candidate, percent), score = next(iter(strong.items()))
+        if score['count'] < self.OCR_DECISION_MIN_VOTES:
+            return None, False, 0.0, '숫자 후보의 반복 확인 부족'
+        return candidate, percent, score['best_confidence'], None
 
     def _select_best_numeric_candidate(
         self,
@@ -847,7 +925,8 @@ class EquipmentRerollBot:
         candidate_scores: Dict[Tuple[int, bool], Dict[str, float]] = defaultdict(
             lambda: {"count": 0.0, "confidence_sum": 0.0, "best_confidence": 0.0}
         )
-        for _, image in processed_images:
+        for name, image in processed_images:
+            self._numeric_variant_name = name
             candidate, confidence, has_percent = self._ocr_numeric_image(image, use_detection=False)
             if candidate is None:
                 candidate, confidence, has_percent = self._ocr_numeric_image(image, use_detection=True)
@@ -923,7 +1002,7 @@ class EquipmentRerollBot:
         kernel = np.ones((2, 2), np.uint8)
         closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
         opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
-        return [
+        variants = [
             ("ocr_gray", enlarged),
             ("ocr_normalized", normalized),
             ("ocr_binary", binary),
@@ -933,6 +1012,13 @@ class EquipmentRerollBot:
             ("ocr_closed", closed),
             ("ocr_opened", opened),
         ]
+        if scale_multiplier > 1.0:
+            uncropped = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            nearest = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)
+            for name, image in (('ocr_uncropped', uncropped), ('ocr_nearest', nearest)):
+                variants.append((name, cv2.copyMakeBorder(image, 12, 12, 12, 12,
+                                                        cv2.BORDER_CONSTANT, value=0)))
+        return variants
 
     def _extract_numeric_foreground(
         self,
@@ -1031,24 +1117,36 @@ class EquipmentRerollBot:
         best_confidence = 0.0
         best_has_percent = False
         for item in ocr_res:
-            if use_detection:
-                if len(item) < 3:
-                    continue
-                text = str(item[1])
-                confidence = float(item[2])
-            else:
-                if len(item) < 2:
-                    continue
-                text = str(item[0])
-                confidence = float(item[1])
-
-            has_percent = "%" in text
-            digits = "".join(ch for ch in text if ch.isdigit())
-            if not digits or confidence < self.OCR_MIN_CONFIDENCE:
+            try:
+                if use_detection:
+                    if len(item) < 3:
+                        continue
+                    text = str(item[1])
+                    confidence = float(item[2])
+                else:
+                    if len(item) < 2:
+                        continue
+                    text = str(item[0])
+                    confidence = float(item[1])
+            except (TypeError, ValueError):
                 continue
 
+            normalized = unicodedata.normalize('NFKC', text).strip()
+            match = re.fullmatch(r"\+?\s*([0-9]+)\s*(%)?", normalized)
+            acceptable = (match is not None and math.isfinite(confidence)
+                          and self.OCR_MIN_CONFIDENCE <= confidence <= 1.0)
+            if hasattr(self, '_numeric_ocr_trace'):
+                self._numeric_ocr_trace.append({
+                    'variant': getattr(self, '_numeric_variant_name', 'unknown'),
+                    'detection': use_detection, 'text': text,
+                    'confidence': confidence if math.isfinite(confidence) else None,
+                    'accepted': acceptable,
+                })
+            if not acceptable:
+                continue
+            has_percent = match.group(2) is not None
             try:
-                value = int(digits)
+                value = int(match.group(1))
             except ValueError:
                 continue
 
@@ -1058,6 +1156,34 @@ class EquipmentRerollBot:
                 best_has_percent = has_percent
 
         return best_candidate, best_confidence, best_has_percent
+
+    def _save_reroll_evidence(self, screen, metadata, number_roi=None):
+        """Retain the ten latest decision reports, including outside debug mode."""
+        try:
+            root = (self.runtime_dir / 'reroll_evidence').resolve()
+            root.mkdir(parents=True, exist_ok=True)
+            folder = root / f'scan_{time.time_ns()}'
+            folder.mkdir()
+            for name, image in (('screen.png', screen), ('number_roi.png', number_roi)):
+                if image is not None and image.size:
+                    ok, encoded = cv2.imencode('.png', image)
+                    if ok:
+                        encoded.tofile(str(folder / name))
+            details = {'attempt': getattr(self, 'stats', {}).get('attempts'),
+                       'targets': self.target_specs, **metadata}
+            (folder / 'recognition.json').write_text(json.dumps(
+                details, ensure_ascii=False, indent=2,
+                default=lambda value: value.item() if isinstance(value, np.generic) else str(value),
+            ), encoding='utf-8')
+            reports = sorted(p for p in root.glob('scan_*')
+                             if re.fullmatch(r'scan_[0-9]+', p.name) and p.is_dir() and not p.is_symlink())
+            for old in reports[:-self.MAX_OCR_EVIDENCE]:
+                # Delete only generated report folders immediately inside this root.
+                if old.resolve().parent == root:
+                    shutil.rmtree(old)
+            logger.info('장비 리롤 인식 확인 자료: %s', folder)
+        except (OSError, cv2.error, TypeError, ValueError) as exc:
+            logger.warning('장비 리롤 인식 확인 자료 저장 실패: %s', exc)
 
     def _save_debug_image(self, name: str, image: np.ndarray):
         debug_dir = self.runtime_dir / "reroll_debug"
@@ -1088,8 +1214,10 @@ class EquipmentRerollBot:
         return False
 
     def _click_image(self, image_path: Path, label: str) -> bool:
-        self.adb.screenshot(str(self.screenshot_path))
-        time.sleep(0.2)
+        if self.user_action == 'stop':
+            return False
+        if self._capture_screen() is None:
+            return False
         location = self.matcher.find_image(
             str(self.screenshot_path),
             str(image_path),
@@ -1097,8 +1225,13 @@ class EquipmentRerollBot:
         )
         if not location:
             return False
+        if self.user_action == 'stop':
+            return False
         center_x, center_y = self.matcher.get_center(location)
-        self.adb.tap(center_x, center_y, delay=0.3)
+        if not self.adb.tap(center_x, center_y, delay=0.3):
+            self.stats['stop_reason'] = '리롤 클릭 입력 전송 실패'
+            logger.error("%s 입력 전송 실패", label)
+            return False
         logger.info("%s 클릭: (%s, %s)", label, center_x, center_y)
         return True
 
