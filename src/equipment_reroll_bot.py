@@ -9,6 +9,8 @@ dialog. It supports two stop modes:
 """
 from __future__ import annotations
 
+from .frame_capture import capture_image
+
 import logging
 import sys
 import time
@@ -424,9 +426,7 @@ class EquipmentRerollBot:
 
     def _capture_screen(self) -> Optional[np.ndarray]:
         try:
-            self.adb.screenshot(str(self.screenshot_path))
-            time.sleep(0.2)
-            screen = read_image(str(self.screenshot_path))
+            screen = capture_image(self.adb, self.screenshot_path, reader=read_image)
             if screen is None:
                 logger.error("리롤 스크린샷을 불러오지 못했습니다: %s", self.screenshot_path)
                 return None
@@ -1088,10 +1088,11 @@ class EquipmentRerollBot:
         return False
 
     def _click_image(self, image_path: Path, label: str) -> bool:
-        self.adb.screenshot(str(self.screenshot_path))
-        time.sleep(0.2)
+        screen = self._capture_screen()
+        if screen is None:
+            return False
         location = self.matcher.find_image(
-            str(self.screenshot_path),
+            screen,
             str(image_path),
             threshold=self.threshold,
         )

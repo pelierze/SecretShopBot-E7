@@ -13,6 +13,7 @@ import logging
 from typing import Optional, Dict
 from pathlib import Path
 
+from .core.device import UnifiedDevice
 from .adb_controller import ADBController
 from .image_matcher import ImageMatcher
 
@@ -243,7 +244,13 @@ class SecretShopBot:
         screenshot_path = Path(self.screenshot_path)
         screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         self.screenshot_path = screenshot_path
-        if self.adb.screenshot(str(self.screenshot_path)):
+        self._screen_source = str(self.screenshot_path)
+        if isinstance(self.adb, UnifiedDevice):
+            frame = self.adb.capture_frame()
+            if frame is not None:
+                self._screen_source = frame
+                return True
+        elif self.adb.screenshot(str(self.screenshot_path)):
             return True
         logger.error("스크린샷 촬영 실패: %s", context)
         return False
@@ -431,14 +438,14 @@ class SecretShopBot:
                 continue
 
             result = self.matcher.find_image(
-                str(self.screenshot_path),
+                getattr(self, "_screen_source", str(self.screenshot_path)),
                 str(image_path),
                 threshold=self.thresholds.get(item_name, 0.92),
             )
             if result:
                 found_items[item_name] = result
                 similarity = self.matcher.get_similarity_at_location(
-                    str(self.screenshot_path),
+                    getattr(self, "_screen_source", str(self.screenshot_path)),
                     str(image_path),
                     result,
                 )
@@ -517,7 +524,7 @@ class SecretShopBot:
             buy_button_path = self._find_image_file(self.resource_dir / self.BUTTONS_DIR, self.button_images["buy"])
             if buy_button_path:
                 result = self.matcher.find_image(
-                    str(self.screenshot_path),
+                    getattr(self, "_screen_source", str(self.screenshot_path)),
                     str(buy_button_path),
                     threshold=self.thresholds.get("buy_button", 0.92),
                 )
@@ -613,7 +620,7 @@ class SecretShopBot:
             logger.warning("비활성화된 구입 버튼 이미지를 찾을 수 없음 - 기존 방식으로 동작")
             # 기존 방식: 활성화된 버튼만 찾기
             all_buttons = self.matcher.find_all_images(
-                str(self.screenshot_path),
+                getattr(self, "_screen_source", str(self.screenshot_path)),
                 str(purchase_button_path),
                 threshold=self.thresholds.get("purchase_button", 0.92),
             )
@@ -635,12 +642,12 @@ class SecretShopBot:
         # 임계값을 낮춰서 모든 후보를 찾음
         candidate_threshold = self._macro_threshold("purchase_candidate", 70)
         all_active_buttons = self.matcher.find_all_images(
-            str(self.screenshot_path),
+            getattr(self, "_screen_source", str(self.screenshot_path)),
             str(purchase_button_path),
             threshold=candidate_threshold,
         )
         all_disabled_buttons = self.matcher.find_all_images(
-            str(self.screenshot_path),
+            getattr(self, "_screen_source", str(self.screenshot_path)),
             str(purchase_button_disabled_path),
             threshold=candidate_threshold,
         )
@@ -667,12 +674,12 @@ class SecretShopBot:
             if abs(btn_center_y - item_center_y) <= y_tolerance and btn_x > item_x:
                 # 활성화/비활성화 이미지 유사도 비교
                 active_similarity = self.matcher.get_similarity_at_location(
-                    str(self.screenshot_path), 
+                    getattr(self, "_screen_source", str(self.screenshot_path)),
                     str(purchase_button_path), 
                     button
                 )
                 disabled_similarity = self.matcher.get_similarity_at_location(
-                    str(self.screenshot_path), 
+                    getattr(self, "_screen_source", str(self.screenshot_path)),
                     str(purchase_button_disabled_path), 
                     button
                 )
@@ -734,7 +741,11 @@ class SecretShopBot:
                     debug_path = self.runtime_dir / "debug_refresh_button.png"
                     debug_path.parent.mkdir(exist_ok=True)
                     import shutil
-                    shutil.copy(self.screenshot_path, debug_path)
+                    if isinstance(self.adb, UnifiedDevice):
+                        import cv2
+                        cv2.imencode('.png', self._screen_source)[1].tofile(str(debug_path))
+                    else:
+                        shutil.copy(self.screenshot_path, debug_path)
                     logger.error(f"💡 디버그 스크린샷: {debug_path}")
             return False
 
@@ -829,7 +840,7 @@ class SecretShopBot:
             "buy": "buy_button",
         }.get(button_type, "buy_button")
         threshold = self.thresholds.get(threshold_key, 0.92)
-        result = self.matcher.find_image(str(self.screenshot_path), str(button_path), threshold=threshold)
+        result = self.matcher.find_image(getattr(self, "_screen_source", str(self.screenshot_path)), str(button_path), threshold=threshold)
         
         if result:
             # 버튼 중심 클릭
@@ -864,7 +875,7 @@ class SecretShopBot:
             return False
         
         result = self.matcher.find_image(
-            str(self.screenshot_path),
+            getattr(self, "_screen_source", str(self.screenshot_path)),
             str(disabled_button_path),
             threshold=self._macro_threshold("verification_disabled_button", 85),
         )

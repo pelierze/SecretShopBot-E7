@@ -3,6 +3,8 @@ Penguin purchase automation.
 """
 from __future__ import annotations
 
+from .frame_capture import capture_image
+
 import logging
 import sys
 import time
@@ -273,12 +275,10 @@ class PenguinBot:
         for attempt in range(1, attempts + 1):
             if self.user_action == "stop":
                 return None
-            if self._capture_screen(context):
-                screen = read_image(str(self.screenshot_path), cv2.IMREAD_COLOR)
-                if screen is not None:
-                    return screen
-                logger.warning("%s 스크린샷을 읽지 못했습니다. (%s/%s)", context, attempt, attempts)
-            elif attempt < attempts:
+            screen = capture_image(self.adb, self.screenshot_path, reader=read_image)
+            if screen is not None:
+                return screen
+            if attempt < attempts:
                 logger.warning("%s 스크린샷 촬영을 재시도합니다. (%s/%s)", context, attempt, attempts)
             if attempt < attempts and not self._sleep_with_stop(self.RETRY_INTERVAL):
                 return None

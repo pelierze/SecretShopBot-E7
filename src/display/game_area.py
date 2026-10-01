@@ -94,10 +94,9 @@ class GameAreaDetector:
     def _detect_pillarbox(cls, frame: np.ndarray) -> GameArea:
         """Detect left and right black bars."""
         h, w = frame.shape[:2]
-        gray = frame if frame.ndim == 2 else np.mean(frame, axis=2)
 
         # Average along vertical axis -> 1D profile of width
-        col_mean = np.mean(gray, axis=0)
+        col_mean = np.mean(frame, axis=0 if frame.ndim == 2 else (0, 2))
 
         left = 0
         while left < w // 3 and col_mean[left] < cls.BLACK_BAR_THRESHOLD:
@@ -117,9 +116,8 @@ class GameAreaDetector:
     def _detect_letterbox(cls, frame: np.ndarray) -> GameArea:
         """Detect top and bottom black bars."""
         h, w = frame.shape[:2]
-        gray = frame if frame.ndim == 2 else np.mean(frame, axis=2)
 
-        row_mean = np.mean(gray, axis=1)
+        row_mean = np.mean(frame, axis=1 if frame.ndim == 2 else (1, 2))
 
         top = 0
         while top < h // 3 and row_mean[top] < cls.BLACK_BAR_THRESHOLD:

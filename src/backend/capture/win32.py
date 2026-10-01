@@ -4,7 +4,7 @@ Captures windows in the background without requiring foreground activation.
 """
 import ctypes
 from ctypes import wintypes
-import time
+import threading
 from typing import Optional, Tuple
 import logging
 import numpy as np
@@ -60,6 +60,23 @@ class BITMAPINFO(ctypes.Structure):
     ]
 
 
+for library, name, args, result in (
+    (user32, 'GetDC', [wintypes.HWND], wintypes.HDC),
+    (user32, 'GetWindowDC', [wintypes.HWND], wintypes.HDC),
+    (user32, 'ReleaseDC', [wintypes.HWND, wintypes.HDC], ctypes.c_int),
+    (user32, 'PrintWindow', [wintypes.HWND, wintypes.HDC, wintypes.UINT], wintypes.BOOL),
+    (gdi32, 'CreateCompatibleDC', [wintypes.HDC], wintypes.HDC),
+    (gdi32, 'CreateCompatibleBitmap', [wintypes.HDC, ctypes.c_int, ctypes.c_int], wintypes.HANDLE),
+    (gdi32, 'SelectObject', [wintypes.HDC, wintypes.HANDLE], wintypes.HANDLE),
+    (gdi32, 'DeleteObject', [wintypes.HANDLE], wintypes.BOOL),
+    (gdi32, 'DeleteDC', [wintypes.HDC], wintypes.BOOL),
+    (gdi32, 'BitBlt', [wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.DWORD], wintypes.BOOL),
+    (gdi32, 'GetDIBits', [wintypes.HDC, wintypes.HANDLE, wintypes.UINT, wintypes.UINT, ctypes.c_void_p, ctypes.POINTER(BITMAPINFO), wintypes.UINT], ctypes.c_int),
+):
+    function = getattr(library, name)
+    function.argtypes, function.restype = args, result
+
+
 class Win32CaptureBackend(CaptureBackend):
     """
     Win32 implementation of CaptureBackend.
@@ -78,9 +95,52 @@ class Win32CaptureBackend(CaptureBackend):
         self.auto_rebind = auto_rebind
         self._last_size: Tuple[int, int] = (0, 0)
         self._print_window_flag = PW_RENDERFULLCONTENT
+        self._lock = threading.RLock()
+        self._resource_key = None
+        self._hdc_mem = None
+        self._hbmp = None
+        self._h_old = None
+        self._buffer = None
 
     def set_hwnd(self, hwnd: int) -> None:
-        self.hwnd = hwnd
+        with self._lock:
+            if hwnd != self.hwnd:
+                self.close()
+                self._print_window_flag = PW_RENDERFULLCONTENT
+            self.hwnd = hwnd
+
+    def close(self) -> None:
+        with self._lock:
+            if self._hdc_mem and self._h_old:
+                gdi32.SelectObject(self._hdc_mem, self._h_old)
+            if self._hbmp:
+                gdi32.DeleteObject(self._hbmp)
+            if self._hdc_mem:
+                gdi32.DeleteDC(self._hdc_mem)
+            self._resource_key = None
+            self._hdc_mem = self._hbmp = self._h_old = self._buffer = None
+
+    def _prepare_resources(self, hdc_window, width, height):
+        key = (self.hwnd, self.use_client_area, width, height)
+        if self._resource_key == key:
+            return
+        self.close()
+        try:
+            self._hdc_mem = gdi32.CreateCompatibleDC(hdc_window)
+            if not self._hdc_mem:
+                raise OSError('CreateCompatibleDC failed')
+            self._hbmp = gdi32.CreateCompatibleBitmap(hdc_window, width, height)
+            if not self._hbmp:
+                raise OSError('CreateCompatibleBitmap failed')
+            self._h_old = gdi32.SelectObject(self._hdc_mem, self._hbmp)
+            if not self._h_old or self._h_old == ctypes.c_void_p(-1).value:
+                self._h_old = None
+                raise OSError('SelectObject failed')
+            self._buffer = (ctypes.c_char * (width * height * 4))()
+            self._resource_key = key
+        except Exception:
+            self.close()
+            raise
 
     def is_connected(self) -> bool:
         if self.hwnd and user32.IsWindow(self.hwnd):
@@ -90,7 +150,7 @@ class Win32CaptureBackend(CaptureBackend):
         # Attempt auto-rebind
         win = WindowFinder.find_target_window()
         if win:
-            self.hwnd = win.hwnd
+            self.set_hwnd(win.hwnd)
             logger.info("Auto-rebound HWND to 0x%X", self.hwnd)
             return True
         return False
@@ -102,6 +162,10 @@ class Win32CaptureBackend(CaptureBackend):
         return c_size
 
     def capture(self) -> Optional[np.ndarray]:
+        with self._lock:
+            return self._capture()
+
+    def _capture(self) -> Optional[np.ndarray]:
         """
         Captures the window and returns a BGR numpy array.
         """
@@ -133,11 +197,10 @@ class Win32CaptureBackend(CaptureBackend):
             logger.error("Capture failed: Could not get Window DC.")
             return None
 
-        hdc_mem = gdi32.CreateCompatibleDC(hdc_window)
-        hbmp = gdi32.CreateCompatibleBitmap(hdc_window, width, height)
-        h_old = gdi32.SelectObject(hdc_mem, hbmp)
-
         try:
+            self._prepare_resources(hdc_window, width, height)
+            hdc_mem, hbmp = self._hdc_mem, self._hbmp
+            gdi32.SelectObject(hdc_mem, hbmp)
             # First attempt: PrintWindow with PW_RENDERFULLCONTENT (supports hardware acceleration on Win 8.1+)
             flag = self._print_window_flag | (PW_CLIENTONLY if self.use_client_area else 0)
             res = user32.PrintWindow(self.hwnd, hdc_mem, flag)
@@ -150,7 +213,8 @@ class Win32CaptureBackend(CaptureBackend):
 
             if not res:
                 # Fallback to BitBlt
-                gdi32.BitBlt(hdc_mem, 0, 0, width, height, hdc_window, 0, 0, SRCCOPY)
+                if not gdi32.BitBlt(hdc_mem, 0, 0, width, height, hdc_window, 0, 0, SRCCOPY):
+                    raise OSError('PrintWindow and BitBlt failed')
 
             # Setup Bitmap header for top-down 32bpp BGRA
             bmi = BITMAPINFO()
@@ -162,7 +226,9 @@ class Win32CaptureBackend(CaptureBackend):
             bmi.bmiHeader.biCompression = BI_RGB
             bmi.bmiHeader.biSizeImage = width * height * 4
 
-            buffer = (ctypes.c_char * (width * height * 4))()
+            buffer = self._buffer
+            # GetDIBits requires the bitmap to be deselected from the DC.
+            gdi32.SelectObject(hdc_mem, self._h_old)
             scan_lines = gdi32.GetDIBits(
                 hdc_mem,
                 hbmp,
@@ -181,7 +247,9 @@ class Win32CaptureBackend(CaptureBackend):
             img_bgra = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
             
             # Extract BGR (discard alpha)
-            img_bgr = np.ascontiguousarray(img_bgra[:, :, :3])
+            # Own the pixels even for 1x1 captures, where ascontiguousarray can
+            # otherwise return a view into the next capture's reusable buffer.
+            img_bgr = img_bgra[:, :, :3].copy(order='C')
             return img_bgr
 
         except Exception as e:
@@ -189,10 +257,4 @@ class Win32CaptureBackend(CaptureBackend):
             return None
 
         finally:
-            gdi32.SelectObject(hdc_mem, h_old)
-            gdi32.DeleteObject(hbmp)
-            gdi32.DeleteDC(hdc_mem)
-            if self.use_client_area:
-                user32.ReleaseDC(self.hwnd, hdc_window)
-            else:
-                user32.ReleaseDC(self.hwnd, hdc_window)
+            user32.ReleaseDC(self.hwnd, hdc_window)

@@ -3,6 +3,7 @@
 OpenCV를 사용하여 화면에서 이미지 찾기
 """
 import os
+from collections import OrderedDict
 import cv2
 import numpy as np
 from typing import Optional, Tuple, List
@@ -50,6 +51,33 @@ class ImageMatcher:
             threshold: 이미지 매칭 임계값 (0.0 ~ 1.0)
         """
         self.threshold = threshold
+        self._templates = OrderedDict()
+
+    def _read_template(self, path):
+        # Stat each time so replacing a template never leaves stale recognition.
+        try:
+            stat = os.stat(path)
+            key = (os.path.abspath(path), stat.st_mtime_ns, stat.st_size)
+        except (OSError, TypeError):
+            return read_image(path, cv2.IMREAD_COLOR)
+        cache = self._templates
+        if key in cache:
+            cache.move_to_end(key)
+            return cache[key]
+        image = read_image(path, cv2.IMREAD_COLOR)
+        if image is not None:
+            for old in list(cache):
+                if old[0] == key[0]:
+                    del cache[old]
+            cache[key] = image
+            while len(cache) > 64:
+                cache.popitem(last=False)
+        return image
+
+    @staticmethod
+    def _read_screen(source):
+        return source if isinstance(source, np.ndarray) else read_image(source, cv2.IMREAD_COLOR)
+
         
     def find_image(self, screen_img_path: str, template_img_path: str, 
                    threshold: Optional[float] = None) -> Optional[Tuple[int, int, int, int]]:
@@ -66,8 +94,8 @@ class ImageMatcher:
         """
         try:
             # 이미지 로드
-            screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
-            template = read_image(template_img_path, cv2.IMREAD_COLOR)
+            screen = self._read_screen(screen_img_path)
+            template = self._read_template(template_img_path)
             
             if screen is None:
                 logger.error(f"스크린샷 이미지를 불러올 수 없음: {screen_img_path}")
@@ -114,8 +142,8 @@ class ImageMatcher:
         """
         try:
             # 이미지 로드
-            screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
-            template = read_image(template_img_path, cv2.IMREAD_COLOR)
+            screen = self._read_screen(screen_img_path)
+            template = self._read_template(template_img_path)
             
             if screen is None or template is None:
                 logger.error("이미지를 불러올 수 없음")
@@ -161,8 +189,8 @@ class ImageMatcher:
         """
         try:
             # 이미지 로드
-            screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
-            template = read_image(template_img_path, cv2.IMREAD_COLOR)
+            screen = self._read_screen(screen_img_path)
+            template = self._read_template(template_img_path)
             
             if screen is None or template is None:
                 return 0.0
@@ -192,8 +220,8 @@ class ImageMatcher:
         """
         try:
             # 이미지 로드
-            screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
-            template = read_image(template_img_path, cv2.IMREAD_COLOR)
+            screen = self._read_screen(screen_img_path)
+            template = self._read_template(template_img_path)
             
             if screen is None or template is None:
                 return 0.0

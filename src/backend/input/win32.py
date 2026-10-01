@@ -17,6 +17,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 user32 = ctypes.windll.user32
+user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+user32.PostMessageW.restype = wintypes.BOOL
 
 # Window Messages
 WM_MOUSEMOVE = 0x0200
@@ -51,7 +53,7 @@ class Win32InputBackend(InputBackend):
         if not self.auto_rebind:
             return False
         try:
-            from finder.window_finder import WindowFinder
+            from ...finder.window_finder import WindowFinder
             win = WindowFinder.find_target_window()
             if win:
                 self.hwnd = win.hwnd

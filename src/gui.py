@@ -1494,15 +1494,14 @@ class SessionView:
                 self._replace_entry(self.port_entry, port)
 
     def _on_backend_type_changed(self):
+        self._stove_request_id = getattr(self, '_stove_request_id', 0) + 1
         backend_type = self.backend_type_var.get()
         if backend_type == "stove":
             self.adb_ctrl_frame.grid_remove()
             self.stove_ctrl_frame.grid(row=1, column=0, columnspan=8, sticky=tk.W, padx=0, pady=4)
             self.mumu_checkbox.config(state=tk.DISABLED)
             self.connection_frame.config(text="연결 설정 (STOVE PC 클라이언트)")
-            found = self._scan_stove_windows()
-            if found:
-                self._connect_stove()
+            self._scan_stove_windows(connect=True)
         else:
             self.stove_ctrl_frame.grid_remove()
             self.adb_ctrl_frame.grid(row=1, column=0, columnspan=8, sticky=tk.W, padx=0, pady=4)
@@ -1511,7 +1510,50 @@ class SessionView:
         if hasattr(self, 'frame') and hasattr(self.frame, 'options'):
             self.root.after_idle(self.frame.options._resize)
 
-    def _scan_stove_windows(self) -> bool:
+    def _stove_request_current(self, request):
+        return (request == getattr(self, '_stove_request_id', 0)
+                and self.backend_type_var.get() == 'stove'
+                and not getattr(self.app, 'is_closing', False))
+
+    def _scan_stove_windows(self, connect=False):
+        self._stove_request_id = getattr(self, '_stove_request_id', 0) + 1
+        request = self._stove_request_id
+        self.connection_status.config(text="● 창 검색 중")
+        def worker():
+            windows = self._find_stove_windows()
+            try:
+                self.root.after(0, lambda: self._stove_scan_finished(request, windows, connect))
+            except (RuntimeError, tk.TclError):
+                pass
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _stove_scan_finished(self, request, windows, connect):
+        if not self._stove_request_current(request):
+            return
+        self.scanned_stove_windows = windows
+        found = self._apply_stove_windows()
+        self.connection_status.config(text="● 창 감지됨" if found else "● 창 없음")
+        if connect and found:
+            self._connect_stove()
+
+    def _apply_stove_windows(self):
+        if not self.scanned_stove_windows:
+            self.stove_combo.config(values=["감지된 에픽세븐 창 없음 (게임을 먼저 실행하세요)"])
+            self.stove_combo.current(0)
+            logger.info("STOVE 에픽세븐 창을 찾을 수 없습니다. 게임이 실행 중인지 확인하세요.")
+            return False
+        else:
+            options = [
+                f"에픽세븐{' [최소화됨]' if w.is_minimized else ''} (HWND: 0x{w.hwnd:X}, {w.client_size[0]}x{w.client_size[1]})"
+                for w in self.scanned_stove_windows
+            ]
+            self.stove_combo.config(values=options)
+            self.stove_combo.current(0)
+            logger.info("STOVE 창 감지 완료: %s", options[0])
+            return True
+
+
+    def _find_stove_windows(self):
         with log_session(self.name):
             try:
                 my_pid = os.getpid()
@@ -1545,25 +1587,10 @@ class SessionView:
                     abs(x.client_size[0] - 1280) + abs(x.client_size[1] - 720)
                 ))
                 logger.info("STOVE filtered: %d개 발견", len(filtered))
-                self.scanned_stove_windows = filtered
+                return filtered
             except Exception as e:
                 logger.error("STOVE 창 검색 중 오류: %s", e)
-                self.scanned_stove_windows = []
-
-            if not self.scanned_stove_windows:
-                self.stove_combo.config(values=["감지된 에픽세븐 창 없음 (게임을 먼저 실행하세요)"])
-                self.stove_combo.current(0)
-                logger.info("STOVE 에픽세븐 창을 찾을 수 없습니다. 게임이 실행 중인지 확인하세요.")
-                return False
-            else:
-                options = [
-                    f"에픽세븐{' [최소화됨]' if w.is_minimized else ''} (HWND: 0x{w.hwnd:X}, {w.client_size[0]}x{w.client_size[1]})"
-                    for w in self.scanned_stove_windows
-                ]
-                self.stove_combo.config(values=options)
-                self.stove_combo.current(0)
-                logger.info("STOVE 창 감지 완료: %s", options[0])
-                return True
+                return []
 
     def _restart_as_admin(self):
         import ctypes
@@ -1582,51 +1609,65 @@ class SessionView:
             self._connect_adb()
 
     def _connect_stove(self):
-        with log_session(self.name):
-            logger.info("STOVE PC 클라이언트 연결 시도 중...")
-            import ctypes
-            is_admin_user = bool(ctypes.windll.shell32.IsUserAnAdmin()) if sys.platform == "win32" else True
-            if not is_admin_user:
-                logger.warning("경고: 관리자 권한으로 실행되지 않았습니다. STOVE 제어(PostMessage)가 차단될 수 있습니다.")
+        selected_hwnd = None
+        if hasattr(self, "stove_combo") and self.stove_combo.current() >= 0:
+            idx = self.stove_combo.current()
+            if idx < len(self.scanned_stove_windows):
+                selected_hwnd = self.scanned_stove_windows[idx].hwnd
 
-            selected_hwnd = None
-            if hasattr(self, "stove_combo") and self.stove_combo.current() >= 0:
-                idx = self.stove_combo.current()
-                if idx < len(self.scanned_stove_windows):
-                    selected_hwnd = self.scanned_stove_windows[idx].hwnd
+        self._stove_request_id = getattr(self, '_stove_request_id', 0) + 1
+        request = self._stove_request_id
+        self.connect_btn.config(state=tk.DISABLED)
+        self.connection_status.config(text="● 연결 중")
+        def worker():
+            dev = None
+            try:
+                with log_session(self.name):
+                    dev = BackendFactory.create_win32_device(hwnd=selected_hwnd)
+                    if dev is None:
+                        raise RuntimeError('에픽세븐 창을 찾을 수 없습니다.')
+                    import ctypes
+                    hwnd = dev.capture_backend.hwnd
+                    if ctypes.windll.user32.IsIconic(hwnd) or not ctypes.windll.user32.IsWindowVisible(hwnd):
+                        ctypes.windll.user32.ShowWindow(hwnd, 9)
+                        ctypes.windll.user32.ShowWindow(hwnd, 5)
+                        time.sleep(0.5)
+                    connected, message = dev.test_connection()
+                    if not connected:
+                        raise RuntimeError(message)
+                error = None
+            except Exception as exc:
+                error = str(exc)
+            try:
+                self.root.after(0, lambda: self._stove_connection_finished(request, dev, error))
+            except (RuntimeError, tk.TclError):
+                if dev is not None:
+                    dev.close()
+        threading.Thread(target=worker, daemon=True).start()
 
-            dev = BackendFactory.create_win32_device(hwnd=selected_hwnd)
-            if not dev:
-                self.connection_status.config(text="● 창 없음", foreground="#E53935")
-                logger.error("❌ 에픽세븐 클라이언트 창을 찾을 수 없습니다. 게임이 실행 중인지 확인하세요.")
-                return
-
-            # If window is minimized or not visible, restore and show it
-            hwnd = dev.capture_backend.hwnd
-            if ctypes.windll.user32.IsIconic(hwnd) or not ctypes.windll.user32.IsWindowVisible(hwnd):
-                logger.info("에픽세븐 창을 화면에 복원/표시합니다.")
-                ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
-                ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW
-                import time
-                time.sleep(0.5)
-
-            connected, msg = dev.test_connection()
-            if not connected:
+    def _stove_connection_finished(self, request, dev, error):
+        if not self._stove_request_current(request) or error:
+            if dev is not None:
+                dev.close()
+            if self._stove_request_current(request):
+                self.connect_btn.config(state=tk.NORMAL)
                 self.connection_status.config(text="● 통신 실패", foreground="#E53935")
-                logger.error("❌ STOVE 연결 실패: %s", msg)
-                return
-
-            self.adb_controller = dev
-            self.connection_status.config(text="● 연결됨 (STOVE)", foreground="#43A047")
-            self.start_btn.config(state=tk.NORMAL)
-            self.reroll_start_btn.config(state=tk.NORMAL)
-            self.penguin_start_btn.config(state=tk.NORMAL)
-            self.event_start_btn.config(state=tk.NORMAL)
-            self.chaos_start_btn.config(state=tk.NORMAL)
-            self.test_btn.config(state=tk.NORMAL)
-            self.connect_btn.config(state=tk.DISABLED)
-            self.disconnect_btn.config(state=tk.NORMAL)
-            logger.info("✅ STOVE 에픽세븐 클라이언트 연결 및 테스트 통신 성공: HWND 0x%X", dev.capture_backend.hwnd)
+                logger.error('STOVE 연결 실패: %s', error)
+            return
+        if self.adb_controller is not None:
+            closer = getattr(self.adb_controller, 'close', None) or self.adb_controller.disconnect
+            closer()
+        self.adb_controller = dev
+        self.connection_status.config(text="● 연결됨 (STOVE)", foreground="#43A047")
+        self.start_btn.config(state=tk.NORMAL)
+        self.reroll_start_btn.config(state=tk.NORMAL)
+        self.penguin_start_btn.config(state=tk.NORMAL)
+        self.event_start_btn.config(state=tk.NORMAL)
+        self.chaos_start_btn.config(state=tk.NORMAL)
+        self.test_btn.config(state=tk.NORMAL)
+        self.connect_btn.config(state=tk.DISABLED)
+        self.disconnect_btn.config(state=tk.NORMAL)
+        logger.info("✅ STOVE 에픽세븐 클라이언트 연결 및 테스트 통신 성공: HWND 0x%X", dev.capture_backend.hwnd)
 
     def _connect_adb(self):
         with log_session(self.name):
@@ -2328,6 +2369,7 @@ class SessionView:
             self._disconnect_adb()
 
     def _disconnect_stove(self):
+        self._stove_request_id = getattr(self, '_stove_request_id', 0) + 1
         with log_session(self.name):
             if self.is_running:
                 messagebox.showwarning("경고", "봇이 실행 중일 때는 연결을 해제할 수 없습니다.")

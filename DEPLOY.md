@@ -134,7 +134,7 @@ https://raw.githubusercontent.com/pelierze/SecretShopBot-E7/master/remote_script
 - `SecretShopBot-E7-vX.Y.Z.zip`
 - `SecretShopBot-E7-vX.Y.Z.zip.sha256.txt`
 
-ZIP 최상위 폴더는 `SecretShopBot-E7-vX.Y.Z`여야 합니다. `build_release.ps1`이 두 파일을 생성합니다. ZIP에는 EXE 두 개, `_internal`, 배포 문서만 포함합니다. 기존의 미사용 이미지 제외 정책을 유지합니다. 릴리즈 파일을 다시 만들었다면 체크섬도 함께 교체하세요.
+ZIP 최상위 폴더는 `SecretShopBot-E7-vX.Y.Z`여야 합니다. `build_release.ps1`이 두 파일을 생성합니다. ZIP에는 EXE 두 개와 `_internal`만 포함합니다. README·DEPLOY·SECURITY 문서와 개발 프리뷰 스크립트는 배포하지 않으며 저장소에서 제공합니다. ADB 실행 파일과 DLL, OCR 모델 및 라이선스는 명시적 허용 목록으로 수집합니다. 패키지 검증에 실패하면 ZIP 생성 전에 빌드를 중단합니다. 기존의 미사용 이미지 제외 정책을 유지합니다. 릴리즈 파일을 다시 만들었다면 체크섬도 함께 교체하세요.
 
 앱은 공식 저장소의 정식 릴리즈만 받고 SHA256 검증 후 설치합니다. 다운로드·압축 해제까지 기존 봇은 계속 실행되며, 준비가 끝나면 모든 세션을 중지하고 앱이 종료된 뒤 교체합니다. 새 앱 GUI가 시작됐다는 응답을 확인해야 성공입니다. 재시작 후 봇은 자동 실행하지 않습니다.
 

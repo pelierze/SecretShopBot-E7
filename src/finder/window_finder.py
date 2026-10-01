@@ -18,6 +18,28 @@ kernel32 = ctypes.windll.kernel32
 WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
+# ctypes defaults to a 32-bit integer return; handles are pointer-sized.
+for library, name, args, result in (
+    (user32, 'OpenDesktopW', [wintypes.LPCWSTR, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
+    (user32, 'CloseDesktop', [wintypes.HANDLE], wintypes.BOOL),
+    (user32, 'EnumDesktopWindows', [wintypes.HANDLE, WNDENUMPROC, wintypes.LPARAM], wintypes.BOOL),
+    (user32, 'EnumWindows', [WNDENUMPROC, wintypes.LPARAM], wintypes.BOOL),
+    (user32, 'GetWindowThreadProcessId', [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)], wintypes.DWORD),
+    (kernel32, 'OpenProcess', [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
+    (kernel32, 'CloseHandle', [wintypes.HANDLE], wintypes.BOOL),
+    (kernel32, 'QueryFullProcessImageNameW', [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)], wintypes.BOOL),
+    (kernel32, 'CreateToolhelp32Snapshot', [wintypes.DWORD, wintypes.DWORD], wintypes.HANDLE),
+):
+    function = getattr(library, name)
+    function.argtypes, function.restype = args, result
+for name in ('IsWindow', 'IsWindowVisible', 'IsIconic'):
+    getattr(user32, name).argtypes = [wintypes.HWND]
+for name in ('GetWindowRect', 'GetClientRect'):
+    getattr(user32, name).argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+for name in ('GetWindowTextW', 'GetClassNameW'):
+    getattr(user32, name).argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+
 # Enable DPI awareness if possible so coordinates match exact physical pixels
 try:
     # Per-Monitor V2 DPI awareness (Windows 10 1703+)
@@ -61,20 +83,13 @@ class WindowFinder:
 
     @staticmethod
     def ensure_default_desktop() -> None:
-        """Ensures the current thread is attached to the interactive 'default' desktop on WinSta0."""
-        try:
-            hwinsta = user32.OpenWindowStationW("WinSta0", False, 0x0000037F)
-            if hwinsta:
-                user32.SetProcessWindowStation(hwinsta)
-            h_default = user32.OpenDesktopW("default", 0, False, 0x01FF)
-            if not h_default:
-                h_default = user32.OpenDesktopW("default", 0, False, 0x0041)
-            if not h_default:
-                h_default = user32.OpenDesktopW("default", 0, False, 0x10000000)
-            if h_default:
-                user32.SetThreadDesktop(h_default)
-        except Exception:
-            pass
+        """Compatibility hook; GUI threads already inherit their desktop.
+
+        Enumerate a separately opened desktop without switching the process or
+        thread desktop. Switching leaked handles and cannot succeed once a GUI
+        thread owns windows.
+        """
+        return
 
     @staticmethod
     def get_window_text(hwnd: int) -> str:
@@ -108,7 +123,12 @@ class WindowFinder:
                 ('szExeFile', ctypes.c_char * 260)
             ]
 
+        h_snap = None
         try:
+            for name in ('Process32First', 'Process32Next'):
+                function = getattr(kernel32, name)
+                function.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
+                function.restype = wintypes.BOOL
             h_snap = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
             if not h_snap or h_snap == ctypes.c_void_p(-1).value:
                 return ""
@@ -117,13 +137,14 @@ class WindowFinder:
             if kernel32.Process32First(h_snap, ctypes.byref(pe)):
                 while True:
                     if pe.th32ProcessID == target_pid:
-                        kernel32.CloseHandle(h_snap)
                         return pe.szExeFile.decode('utf-8', errors='ignore')
                     if not kernel32.Process32Next(h_snap, ctypes.byref(pe)):
                         break
-            kernel32.CloseHandle(h_snap)
         except Exception:
             pass
+        finally:
+            if h_snap and h_snap != ctypes.c_void_p(-1).value:
+                kernel32.CloseHandle(h_snap)
         return ""
 
     _proc_name_cache = {}
@@ -190,6 +211,8 @@ class WindowFinder:
                 ]
             wp = WINDOWPLACEMENT()
             wp.length = ctypes.sizeof(WINDOWPLACEMENT)
+            user32.GetWindowPlacement.argtypes = [wintypes.HWND, ctypes.c_void_p]
+            user32.GetWindowPlacement.restype = wintypes.BOOL
             if user32.GetWindowPlacement(hwnd, ctypes.byref(wp)):
                 rc = wp.rcNormalPosition
                 norm_w = max(0, rc.right - rc.left - 16)
@@ -227,8 +250,6 @@ class WindowFinder:
             h_desk = user32.OpenDesktopW("default", 0, False, 0x0041)
         if not h_desk:
             h_desk = user32.OpenDesktopW("default", 0, False, 0x10000000)
-        if h_desk:
-            user32.SetThreadDesktop(h_desk)
 
         windows_result: List[WindowInfo] = []
         seen_hwnds = set()
@@ -250,8 +271,10 @@ class WindowFinder:
 
         cb = WNDENUMPROC(enum_window_callback)
         if h_desk:
-            user32.EnumDesktopWindows(h_desk, cb, 0)
-            user32.CloseDesktop(h_desk)
+            try:
+                user32.EnumDesktopWindows(h_desk, cb, 0)
+            finally:
+                user32.CloseDesktop(h_desk)
 
         # Also enumerate top-level windows via EnumWindows
         user32.EnumWindows(cb, 0)

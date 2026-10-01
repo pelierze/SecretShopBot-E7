@@ -99,6 +99,9 @@ class UnifiedDevice:
             return None
 
         self._last_raw_frame = raw_frame
+        hwnd = getattr(self.capture_backend, 'hwnd', None)
+        if hwnd is not None and hwnd != getattr(self.input_backend, 'hwnd', hwnd):
+            self.input_backend.set_hwnd(hwnd)
         normalized, game_area = self.normalizer.normalize(raw_frame)
         self._last_normalized_frame = normalized
         self._last_game_area = game_area
@@ -172,6 +175,7 @@ class UnifiedDevice:
     def close(self) -> None:
         self.capture_backend.close()
         self.input_backend.close()
+        self._last_raw_frame = self._last_normalized_frame = None
 
     def disconnect(self) -> None:
         """Alias for close() to maintain full ADBController interface compatibility."""
