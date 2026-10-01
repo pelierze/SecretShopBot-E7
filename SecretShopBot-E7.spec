@@ -6,7 +6,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # Keep packaging policy in a testable module; do not bundle whole image trees.
 import sys
 sys.path.insert(0, SPECPATH)
-from build_support.release_assets import collect_images as collect_release_images
+from build_support.release_assets import collect_images as collect_release_images, collect_runtime_files
 
 def collect_images():
     return collect_release_images(SPECPATH)
@@ -31,14 +31,11 @@ def collect_event_data():
     return datas
 
 
-datas = collect_images() + collect_event_data() + [
-    ('tools', 'tools'),
-    ('images/equipment_options/README.txt', 'images/equipment_options'),
+datas = collect_images() + collect_event_data() + collect_runtime_files(SPECPATH) + [
     ('update_config.json', '.'),
     ('remote_script.json', '.'),
     ('src/chaos/recruitment_layout.json', 'src/chaos'),
     ('src/chaos/node_layout.json', 'src/chaos'),
-    ('assets/ocr', 'assets/ocr'),
 ] + collect_icons() + collect_data_files(
     'rapidocr_onnxruntime',
     includes=['config.yaml', 'models/*.onnx'],

@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "v1.5.1"
+    [string]$Version = "v1.5.3"
 )
 
 $ErrorActionPreference = "Stop"
@@ -132,19 +132,10 @@ if (Test-Path $StagingPackageDir) {
 }
 Copy-Item -LiteralPath $BuiltDir -Destination $StagingPackageDir -Recurse
 
-$ReadmeSource = Join-Path $ProjectRoot "README.md"
-if (Test-Path $ReadmeSource) {
-    Copy-Item -LiteralPath $ReadmeSource -Destination (Join-Path $StagingPackageDir "README.md")
-}
-
-$DeploySource = Join-Path $ProjectRoot "DEPLOY.md"
-if (Test-Path $DeploySource) {
-    Copy-Item -LiteralPath $DeploySource -Destination (Join-Path $StagingPackageDir "DEPLOY.md")
-}
-
-$SecuritySource = Join-Path $ProjectRoot "SECURITY.md"
-if (Test-Path $SecuritySource) {
-    Copy-Item -LiteralPath $SecuritySource -Destination (Join-Path $StagingPackageDir "SECURITY.md")
+Write-Host "Validating runtime files and excluding development files..."
+python -m build_support.release_assets --validate $StagingPackageDir
+if ($LASTEXITCODE -ne 0) {
+    throw "Release package validation failed. Zip creation was skipped."
 }
 
 Write-Host "Creating zip package..."

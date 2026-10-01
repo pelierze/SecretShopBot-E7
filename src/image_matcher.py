@@ -3,6 +3,8 @@
 OpenCV를 사용하여 화면에서 이미지 찾기
 """
 import os
+import threading
+from collections import OrderedDict
 import cv2
 import numpy as np
 from typing import Optional, Tuple, List
@@ -44,12 +46,67 @@ def read_image(path: str, flags: int = cv2.IMREAD_COLOR):
 class ImageMatcher:
     """화면에서 이미지를 찾는 클래스"""
     
-    def __init__(self, threshold: float = 0.8):
+    def __init__(self, threshold: float = 0.8, template_cache_bytes: int = 16 * 1024 * 1024):
         """
         Args:
             threshold: 이미지 매칭 임계값 (0.0 ~ 1.0)
         """
         self.threshold = threshold
+        self._template_cache = OrderedDict()
+        self._template_cache_bytes = max(0, template_cache_bytes)
+        self._cached_bytes = 0
+        self._template_lock = threading.RLock()
+
+    @staticmethod
+    def _file_signature(path):
+        stat = os.stat(path)
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+    def _discard_template(self, path):
+        entry = self._template_cache.pop(path, None)
+        if entry is not None:
+            self._cached_bytes -= entry[1].nbytes
+
+    def clear_template_cache(self):
+        with self._template_lock:
+            self._template_cache.clear()
+            self._cached_bytes = 0
+
+    def _read_template(self, path):
+        if not self._template_cache_bytes:
+            return read_image(path, cv2.IMREAD_COLOR)
+        normalized = os.path.normcase(os.path.abspath(os.fspath(path)))
+        # Only immutable templates are cached. Screenshots are always re-read.
+        # Serialize lookup/replacement/eviction when a matcher is shared.
+        with self._template_lock:
+            for _ in range(2):
+                try:
+                    signature = self._file_signature(normalized)
+                except OSError:
+                    self._discard_template(normalized)
+                    return None
+                entry = self._template_cache.get(normalized)
+                if entry is not None and entry[0] == signature:
+                    self._template_cache.move_to_end(normalized)
+                    return entry[1]
+                self._discard_template(normalized)
+                image = read_image(path, cv2.IMREAD_COLOR)
+                if image is None:
+                    return None
+                try:
+                    if self._file_signature(normalized) != signature:
+                        continue  # Do not cache a file replaced during decoding.
+                except OSError:
+                    return None
+                image.setflags(write=False)
+                if image.nbytes <= self._template_cache_bytes:
+                    self._template_cache[normalized] = (signature, image)
+                    self._cached_bytes += image.nbytes
+                    while self._cached_bytes > self._template_cache_bytes or len(self._template_cache) > 64:
+                        oldest = next(iter(self._template_cache))
+                        self._discard_template(oldest)
+                return image
+        return None
         
     def find_image(self, screen_img_path: str, template_img_path: str, 
                    threshold: Optional[float] = None) -> Optional[Tuple[int, int, int, int]]:
@@ -67,7 +124,7 @@ class ImageMatcher:
         try:
             # 이미지 로드
             screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
-            template = read_image(template_img_path, cv2.IMREAD_COLOR)
+            template = self._read_template(template_img_path)
             
             if screen is None:
                 logger.error(f"스크린샷 이미지를 불러올 수 없음: {screen_img_path}")
@@ -115,7 +172,7 @@ class ImageMatcher:
         try:
             # 이미지 로드
             screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
-            template = read_image(template_img_path, cv2.IMREAD_COLOR)
+            template = self._read_template(template_img_path)
             
             if screen is None or template is None:
                 logger.error("이미지를 불러올 수 없음")
@@ -162,7 +219,7 @@ class ImageMatcher:
         try:
             # 이미지 로드
             screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
-            template = read_image(template_img_path, cv2.IMREAD_COLOR)
+            template = self._read_template(template_img_path)
             
             if screen is None or template is None:
                 return 0.0
@@ -193,7 +250,7 @@ class ImageMatcher:
         try:
             # 이미지 로드
             screen = read_image(screen_img_path, cv2.IMREAD_COLOR)
-            template = read_image(template_img_path, cv2.IMREAD_COLOR)
+            template = self._read_template(template_img_path)
             
             if screen is None or template is None:
                 return 0.0

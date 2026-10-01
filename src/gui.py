@@ -7,6 +7,7 @@ import copy
 import json
 import logging
 import os
+import queue
 import shutil
 import sys
 import tempfile
@@ -122,23 +123,62 @@ class TextHandler(logging.Handler):
         super().__init__()
         self.text_widget = text_widget
         self.session_name = session_name
+        self._messages = queue.Queue(maxsize=2000)
+        self._gui_closed = False
+        self._poll_id = self.text_widget.after(50, self._drain)
+        self.text_widget.bind('<Destroy>', self._on_destroy, add='+')
 
     def emit(self, record):
         record_session = getattr(record, "session_name", "App")
         if record_session not in (self.session_name, "App"):
             return
 
-        msg = self.format(record)
+        if self._gui_closed:
+            return
+        # Handler.emit runs with the logging lock held. Never call Tk here:
+        # a worker waiting for Tk can deadlock a GUI thread writing a log.
+        try:
+            self._messages.put_nowait(self.format(record))
+        except queue.Full:
+            pass  # The file handler still retains the complete log.
 
-        def append():
-            is_at_bottom = self.text_widget.yview()[1] >= 0.99
-            self.text_widget.configure(state="normal")
-            self.text_widget.insert(tk.END, msg + "\n")
-            self.text_widget.configure(state="disabled")
-            if is_at_bottom:
-                self.text_widget.yview(tk.END)
+    def _drain(self):
+        self._poll_id = None
+        if self._gui_closed:
+            return
+        messages = []
+        for _ in range(100):
+            try:
+                messages.append(self._messages.get_nowait())
+            except queue.Empty:
+                break
+        try:
+            if messages:
+                is_at_bottom = self.text_widget.yview()[1] >= 0.99
+                self.text_widget.configure(state='normal')
+                self.text_widget.insert(tk.END, '\n'.join(messages) + '\n')
+                self.text_widget.configure(state='disabled')
+                if is_at_bottom:
+                    self.text_widget.yview(tk.END)
+            self._poll_id = self.text_widget.after(50, self._drain)
+        except tk.TclError:
+            self.close()
 
-        self.text_widget.after(0, append)
+    def _on_destroy(self, event):
+        if event.widget is not self.text_widget:
+            return
+        if self._poll_id is not None:
+            try:
+                self.text_widget.after_cancel(self._poll_id)
+            except tk.TclError:
+                pass
+            self._poll_id = None
+        logging.getLogger().removeHandler(self)
+        self.close()
+
+    def close(self):
+        self._gui_closed = True
+        super().close()
 
 class SessionView:
     """하나의 앱플레이어/봇 세션을 관리합니다."""

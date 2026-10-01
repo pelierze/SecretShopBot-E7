@@ -71,9 +71,9 @@ class Win32InputBackend(InputBackend):
         try:
             l_param = _make_lparam(x, y)
             
-            # Post mouse move
+            # Keep coordinate and button messages adjacent. A real mouse move
+            # during a sleep here can overwrite the game's cached cursor position.
             user32.PostMessageW(self.hwnd, WM_MOUSEMOVE, 0, l_param)
-            time.sleep(0.01)
 
             # Button down
             user32.PostMessageW(self.hwnd, WM_LBUTTONDOWN, MK_LBUTTON, l_param)
@@ -81,7 +81,10 @@ class Win32InputBackend(InputBackend):
             # Hold button briefly (30-50ms) to ensure game engine processes the touch
             time.sleep(0.04)
 
-            # Button up
+            # Refresh the position before release as well: the user's mouse may
+            # have moved during the hold. This reduces interference but cannot
+            # isolate the game's message queue from real mouse input.
+            user32.PostMessageW(self.hwnd, WM_MOUSEMOVE, MK_LBUTTON, l_param)
             user32.PostMessageW(self.hwnd, WM_LBUTTONUP, 0, l_param)
 
             logger.debug(f"Win32 Click: ({x}, {y}) on hwnd=0x{self.hwnd:X}")
