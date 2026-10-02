@@ -207,6 +207,11 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 if self.observer.summary_boss_count(screen) == 3:
                     self.stats['outcome'] = 'victory'
                 return
+            if self.event_context and state in ('event', 'unknown_event'):
+                # An event battle can return directly to another choice page.
+                # Let the event flow re-observe and validate the next choice.
+                logger.info('이벤트 전투 후 선택 화면 복귀: %s', state)
+                return
             if state in ('victory', 'battle_rank_complete', 'levelup', 'event_loot_popup', 'rank_result', 'rank_reward',
                          'rank_menu', 'recruit_reward', 'loot', 'event_result', 'unknown_event_result', 'map'):
                 self.auto_verified = True

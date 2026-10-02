@@ -14,6 +14,44 @@ RAW = ROOT / 'images/chaos/node_progression/raw'
 
 
 class EventTraversalTest(unittest.TestCase):
+    def test_battle_returns_to_choices_and_completes_event_once(self):
+        for choice_state in ('event', 'unknown_event'):
+            with self.subTest(choice_state=choice_state):
+                with tempfile.TemporaryDirectory() as tmp:
+                    observer = Mock()
+                    observer.config = {'battle_timeout_seconds': 24,
+                                       'progress_difference': 8,
+                                       'initial_stall_seconds': 4,
+                                       'battle_stall_seconds': 8}
+                    bot = NodeProgressionBot(Mock(), ROOT, tmp, observer)
+                    bot.stats['nodes'] = 4
+                    bot._state = Mock(side_effect=['battle', choice_state, 'map'])
+                    bot._capture = Mock(return_value=object())
+                    bot._classify = Mock(side_effect=['battle', choice_state])
+                    bot._event_signature = Mock(return_value='stable')
+                    bot._event = Mock()
+                    bot._guarded_tap = Mock()
+                    observer.progress_signature.return_value = np.array([0.])
+                    bot.stop_event = Mock()
+                    bot.stop_event.wait.return_value = False
+                    bot._check_stop = Mock()
+                    clock = [0]
+
+                    def wait(seconds):
+                        clock[0] += seconds
+                        return False
+
+                    bot.stop_event.wait.side_effect = wait
+                    with patch('src.chaos.exploration.time.monotonic',
+                               side_effect=lambda: clock[0]):
+                        self.assertEqual(run_event_flow(bot), 'map')
+                    bot._event.assert_called_once_with()
+                    bot._guarded_tap.assert_not_called()
+                    bot.adb.tap.assert_not_called()
+                    self.assertEqual(bot.stats['nodes'], 5)
+                    self.assertFalse(bot.event_context)
+                    self.assertEqual(clock[0], 2)
+
     def bot(self, states):
         bot = Mock()
         bot.stats = {'nodes': 4}
