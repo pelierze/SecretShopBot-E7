@@ -1,4 +1,4 @@
-"""Independent scrollable options and persistent, resizable log pane."""
+"""Fixed connection header, scrollable functions and resizable log pane."""
 import json
 import logging
 from pathlib import Path
@@ -22,6 +22,9 @@ class LogSplitView(ttk.Frame):
         self.expanded = saved.get('expanded') is True
         self._dragging = False
         self._pending_resize = None
+        self.header = ttk.Frame(self, style='App.TFrame')
+        self.header.pack(side=tk.TOP, fill=tk.X)
+        ttk.Separator(self, orient=tk.HORIZONTAL).pack(side=tk.TOP, fill=tk.X)
         self.panes = ttk.Panedwindow(self, orient=tk.VERTICAL)
         self.panes.pack(fill=tk.BOTH, expand=True)
         self.options = ScrollableFrame(self.panes)

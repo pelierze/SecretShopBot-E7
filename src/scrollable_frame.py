@@ -62,8 +62,12 @@ class ScrollableFrame(ttk.Frame):
 
     def _focus(self, event):
         widget = event.widget
-        if widget in (self.content, self.canvas) or not widget.winfo_ismapped():
+        containers = (tk.Frame, tk.LabelFrame, tk.PanedWindow,
+                      ttk.Frame, ttk.LabelFrame, ttk.Panedwindow, ttk.Notebook)
+        if widget in (self.content, self.canvas) or isinstance(widget, containers) or not widget.winfo_ismapped():
             return
+        # Tk can focus the page frame after selecting a tab. Revealing that
+        # entire container scrolls to its bottom; only reveal actual controls.
         # Keyboard traversal should reveal controls that are outside the viewport.
         for axis, position, size, viewport, extent in (
             ('x', widget.winfo_rootx() - self.content.winfo_rootx(), widget.winfo_width(), self.canvas.winfo_width(), self.content.winfo_width()),

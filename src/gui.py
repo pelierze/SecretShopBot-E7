@@ -42,6 +42,7 @@ if __package__ in (None, ""):
     from src.adb_controller import ADBController
     from src.backend.manager import BackendFactory
     from src.finder.window_finder import WindowFinder
+    from src.finder.window_resizer import WindowResizer
     from src.app_updater import prepare_update, launch_update, release_assets
     from src.log_split_view import LogSplitView
     from src.auto_update import get_runtime_root
@@ -61,6 +62,7 @@ else:
     from .adb_controller import ADBController
     from .backend.manager import BackendFactory
     from .finder.window_finder import WindowFinder
+    from .finder.window_resizer import WindowResizer
     from .app_updater import prepare_update, launch_update, release_assets
     from .log_split_view import LogSplitView
     from .auto_update import get_runtime_root
@@ -281,7 +283,7 @@ class SessionView:
             self.root.after(300, self._on_backend_type_changed)
 
     def _create_widgets(self):
-        self.connection_frame = ttk.LabelFrame(self.frame.options.content, text="연결 설정 (ADB)", padding=10)
+        self.connection_frame = ttk.LabelFrame(self.frame.header, text="연결 설정 (ADB)", padding=10)
         self.connection_frame.pack(fill=tk.X, padx=10, pady=5)
 
         # Row 0: 실행 환경 선택 & 공통 제어 버튼
@@ -383,6 +385,10 @@ class SessionView:
 
         self.stove_scan_btn = ttk.Button(self.stove_ctrl_frame, text="창 새로고침", command=self._scan_stove_windows)
         self.stove_scan_btn.grid(row=0, column=2, padx=5)
+        self.stove_resize_btn = ttk.Button(self.stove_ctrl_frame, text="1280×720으로 맞추기", command=self._resize_stove_window)
+        self.stove_resize_btn.grid(row=0, column=3, sticky=tk.W, padx=5)
+        self.stove_resize_status = ttk.Label(self.stove_ctrl_frame, text="")
+        self.stove_resize_status.grid(row=0, column=4, sticky=tk.W, padx=5)
 
         import ctypes
         is_admin_user = bool(ctypes.windll.shell32.IsUserAnAdmin()) if sys.platform == "win32" else True
@@ -392,7 +398,7 @@ class SessionView:
                 text="⚠️ 관리자 권한으로 재실행",
                 command=self._restart_as_admin,
             )
-            self.stove_admin_btn.grid(row=0, column=3, padx=8)
+            self.stove_admin_btn.grid(row=0, column=5, padx=8)
 
         # 초기 실행 환경에 맞춰 컨트롤 프레임 표시
         if self.backend_type_var.get() == "stove":
@@ -647,12 +653,21 @@ class SessionView:
     def _resize_mode_tab(self, _event=None):
         selected = self.mode_notebook.select()
         if selected:
+            changed = selected != getattr(self, '_last_mode_tab', None)
+            self._last_mode_tab = selected
             tab = self.mode_notebook.nametowidget(selected)
             height = tab.winfo_reqheight()
             if int(self.mode_notebook.cget('height')) != height:
                 self.mode_notebook.configure(height=height)
             if hasattr(self, 'frame') and hasattr(self.frame, 'options'):
-                self.root.after_idle(self.frame.options._resize)
+                self.root.after_idle(self._show_mode_top if changed else self.frame.options._resize)
+
+    def _show_mode_top(self):
+        area = self.frame.options
+        if area.canvas.winfo_exists():
+            area._resize()
+            area.canvas.yview_moveto(0)
+            area.canvas.xview_moveto(0)
 
     def _apply_session_visual_style(self):
         self.frame.configure(style="App.TFrame")
@@ -1605,6 +1620,70 @@ class SessionView:
                 logger.info("STOVE 창 감지 완료: %s", options[0])
                 return True
 
+    def _resize_stove_window(self):
+        if getattr(self, '_stove_resize_pending', False):
+            return
+        try:
+            if self.backend_type_var.get() != 'stove':
+                return
+            if self.is_running or (self.bot_thread and self.bot_thread.is_alive()):
+                raise ValueError('봇을 중지한 뒤 크기를 조정하세요.')
+            index = self.stove_combo.current()
+            if not 0 <= index < len(self.scanned_stove_windows):
+                raise ValueError('창 새로고침 후 에픽세븐 창을 선택하세요.')
+            hwnd = self.scanned_stove_windows[index].hwnd
+            info = WindowFinder.get_window_info(hwnd)
+            if not info or info.class_name != 'GLFW30' or info.process_name.lower() not in ('epicseven.exe', 'epic7.exe'):
+                raise ValueError('선택한 게임 창을 확인할 수 없습니다. 창을 다시 검색하세요.')
+            for session in self.app.sessions:
+                device = session.adb_controller
+                backend = getattr(device, 'capture_backend', None)
+                if getattr(backend, 'hwnd', None) == hwnd:
+                    if session.is_running or (session.bot_thread and session.bot_thread.is_alive()):
+                        raise ValueError('이 게임 창을 사용하는 봇을 중지한 뒤 크기를 조정하세요.')
+            resizer = WindowResizer()
+            resizer.request(hwnd)
+        except (OSError, ValueError) as exc:
+            self.stove_resize_status.config(text=str(exc))
+            logger.warning('STOVE 창 크기 조정 실패: %s', exc)
+            return
+        self._stove_resize_pending = True
+        self._stove_resize_sessions = [self]
+        for session in self.app.sessions:
+            backend = getattr(session.adb_controller, 'capture_backend', None)
+            if session is not self and getattr(backend, 'hwnd', None) == hwnd:
+                session._stove_resize_pending = True
+                self._stove_resize_sessions.append(session)
+        self.stove_resize_btn.config(state=tk.DISABLED)
+        self.stove_resize_status.config(text='게임 화면 크기 확인 중…')
+        self.root.after(250, lambda: self._verify_stove_size(resizer, hwnd, 0))
+
+    def _verify_stove_size(self, resizer, hwnd, attempt):
+        try:
+            size = resizer.client_size(hwnd)
+            if size != resizer.TARGET_SIZE and attempt < 7:
+                self.root.after(250, lambda: self._verify_stove_size(resizer, hwnd, attempt + 1))
+                return
+            text = '게임 화면 1280×720 확인' if size == resizer.TARGET_SIZE else f'현재 {size[0]}×{size[1]} — 크기 조정이 적용되지 않았습니다.'
+            if size == resizer.TARGET_SIZE:
+                selected = self.stove_combo.current()
+                for window in self.scanned_stove_windows:
+                    if window.hwnd == hwnd:
+                        window.client_size = size
+                self.stove_combo.config(values=[
+                    f"에픽세븐{' [최소화됨]' if w.is_minimized else ''} (HWND: 0x{w.hwnd:X}, {w.client_size[0]}x{w.client_size[1]})"
+                    for w in self.scanned_stove_windows])
+                if selected >= 0:
+                    self.stove_combo.current(selected)
+            self.stove_resize_status.config(text=text)
+            logger.info('STOVE 창 크기 조정: %s', text)
+        except (OSError, ValueError) as exc:
+            self.stove_resize_status.config(text=str(exc))
+            logger.warning('STOVE 창 크기 확인 실패: %s', exc)
+        for session in self._stove_resize_sessions:
+            session._stove_resize_pending = False
+        self.stove_resize_btn.config(state=tk.NORMAL)
+
     def _restart_as_admin(self):
         import ctypes
         logger.info("관리자 권한(UAC) 재실행을 요청합니다...")
@@ -1743,7 +1822,7 @@ class SessionView:
 
     def _start_bot(self):
         with log_session(self.name):
-            if self.is_running:
+            if self.is_running or getattr(self, '_stove_resize_pending', False):
                 return
             if not self.adb_controller:
                 messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
@@ -1827,7 +1906,7 @@ class SessionView:
 
     def _start_reroll_bot(self):
         with log_session(self.name):
-            if self.is_running:
+            if self.is_running or getattr(self, '_stove_resize_pending', False):
                 return
             if not self.adb_controller:
                 messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
@@ -1916,7 +1995,7 @@ class SessionView:
 
     def _start_penguin_bot(self):
         with log_session(self.name):
-            if self.is_running:
+            if self.is_running or getattr(self, '_stove_resize_pending', False):
                 return
             if not self.adb_controller:
                 messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
@@ -1952,7 +2031,7 @@ class SessionView:
 
     def _start_chaos_bot(self):
         with log_session(self.name):
-            if self.is_running or (self.bot_thread and self.bot_thread.is_alive()):
+            if self.is_running or getattr(self, '_stove_resize_pending', False) or (self.bot_thread and self.bot_thread.is_alive()):
                 return
             if not self.adb_controller:
                 messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")
@@ -2038,7 +2117,7 @@ class SessionView:
 
     def _start_event_bot(self):
         with log_session(self.name):
-            if self.is_running:
+            if self.is_running or getattr(self, '_stove_resize_pending', False):
                 return
             if not self.adb_controller:
                 messagebox.showerror("오류", "장치(ADB/STOVE)가 연결되지 않았습니다.")

@@ -58,6 +58,35 @@ class SmallWindowTest(unittest.TestCase):
         self.assertEqual(combo.get(), value)
         self.assertEqual(self.app.sessions[1].frame.options.canvas.yview(), other)
 
+    def test_connection_header_stays_fixed_while_functions_scroll(self):
+        session = self.session
+        area = session.frame.options
+        self.assertIs(session.connection_frame.master, session.frame.header)
+        self.assertNotIn(area._tag, session.scan_btn.bindtags())
+        self.assertNotIn(area._tag, session.stove_resize_btn.bindtags())
+        header_position = session.connection_frame.winfo_rooty()
+        log_position = session.log_frame.winfo_rooty()
+        area.canvas.yview_moveto(0)
+        self.root.update()
+        function_position = session.mode_notebook.winfo_rooty()
+        session.start_btn.event_generate('<MouseWheel>', delta=-120)
+        self.root.update()
+        self.assertGreater(area.canvas.yview()[0], 0)
+        self.assertLess(session.mode_notebook.winfo_rooty(), function_position)
+        self.assertEqual(session.connection_frame.winfo_rooty(), header_position)
+        self.assertEqual(session.log_frame.winfo_rooty(), log_position)
+        self.assertLessEqual(session.connection_frame.winfo_rooty() + session.connection_frame.winfo_height(), area.winfo_rooty())
+
+    def test_log_expansion_keeps_connection_header_visible(self):
+        session = self.session
+        height = session.connection_frame.winfo_height()
+        session._toggle_log()
+        self.root.update()
+        self.assertTrue(session.connection_frame.winfo_ismapped())
+        self.assertFalse(session.frame.options.winfo_ismapped())
+        self.assertEqual(session.connection_frame.winfo_height(), height)
+        self.assertGreaterEqual(session.log_frame.winfo_rooty(), session.connection_frame.winfo_rooty() + height)
+
     def test_log_wheel_and_keyboard_focus(self):
         area = self.session.frame.options
         text = self.session.log_text
@@ -89,6 +118,37 @@ class SmallWindowTest(unittest.TestCase):
             heights.append(session.mode_notebook.winfo_height())
             self.assertEqual(session.log_frame.winfo_height(), log_height)
         self.assertGreater(max(heights), min(heights))
+
+    def test_tab_switch_starts_at_top_and_notebook_focus_does_not_scroll_down(self):
+        session = self.session
+        area = session.frame.options
+        area.canvas.yview_moveto(1)
+        self.root.update()
+        self.assertGreater(area.canvas.yview()[0], 0)
+        session.mode_notebook.select(session.chaos_tab)
+        self.root.update()
+        self.assertEqual(area.canvas.yview()[0], 0)
+        session.mode_notebook.focus_force()
+        self.root.update()
+        self.assertEqual(area.canvas.yview()[0], 0)
+        area.canvas.yview_moveto(.4)
+        self.root.update()
+        position = area.canvas.yview()[0]
+        session._resize_mode_tab()
+        self.root.update()
+        self.assertAlmostEqual(area.canvas.yview()[0], position, places=2)
+
+    def test_focus_on_tall_tab_container_keeps_tab_strip_visible(self):
+        session = self.session
+        area = session.frame.options
+        for tab in (session.shop_tab, session.chaos_tab):
+            with self.subTest(tab=tab):
+                session.mode_notebook.select(tab)
+                self.root.update()
+                area.canvas.yview_moveto(0)
+                tab.focus_force()
+                self.root.update()
+                self.assertEqual(area.canvas.yview()[0], 0)
 
     def test_tab_switching_does_not_squish_buttons(self):
         session = self.session
