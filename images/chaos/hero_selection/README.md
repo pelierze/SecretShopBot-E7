@@ -1,6 +1,6 @@
 # 자동 탐사 — 영웅 선택 단계 이미지
 
-테마 선택부터 네 직업의 영웅 선택 완료까지 사용하는 자료를 준비하는 공간입니다. 현재 등록 조합은 그림자 로제, 불사형 오공, 데스티나, 제뉴아입니다. 탐사 진입 화면은 다음 단계로 넘어갔는지 확인하는 용도로 함께 보관합니다.
+테마 선택부터 네 직업의 영웅 선택 완료까지 사용하는 자료를 준비하는 공간입니다. 기본 조합은 그림자 로제, 불사형 오공, 데스티나, 제뉴아입니다. 기사 후보로 화염속성 모험가 라스와 광속성 자유의 기사 아로웰도 선택할 수 있습니다. 탐사 진입 화면은 다음 단계로 넘어갔는지 확인하는 용도로 함께 보관합니다.
 
 현재 네 직업의 영입 흐름은 앱에 연결되어 있습니다. 실제 사용 파일과 원본 영역은 `src/chaos/recruitment_layout.json`에 명시합니다. 새 이미지를 폴더에 넣는 것만으로 후보가 자동 등록되지는 않습니다.
 
@@ -58,6 +58,8 @@
 |---|---|---|---|---|---|---|---|
 | hero_recruitment_screen | 기사·전사·정령사·도적 영입권 전체 화면 | `raw/Screenshot_2026.09.24_10.44.15.754.png` | 미정 | 전체 화면 1280×720 | 원본 자체는 클릭 대상 아님 | 직업별 목록 화면은 `raw/` 및 설정 파일 참조 | 원본 준비 |
 | knight_shadow_rose | 실제 사용할 암속성 기사 그림자 로제, 목록 내 선택용 | `raw/knight_dark_filter.png` | `templates/heroes/knight_Shadow_Rose.png` | `(491, 296, 141, 44)` | 예, 목록 항목 선택 | `raw/knight_hero_selected_menu.png` | 인식 및 실제 영입 확인 |
+| knight_ras | 화염속성 기사 모험가 라스 | `raw/knight_ras_full.png` | `templates/heroes/knight_ras.png` | `(499, 84, 135, 47)` | 예 | `raw/knight_ras_selected.png` | 제공 이미지 인식 검증 완료 |
+| knight_arowell | 광속성 기사 자유의 기사 아로웰 | `raw/knight_Arowell_full_2.png` | `templates/heroes/Arowell.png` | `(1148, 295, 113, 47)` | 예 | `raw/knight_Arowell_selected.png` | 제공 이미지 인식 검증 완료 |
 | warrior_wukong | 자연속성 전사 불사형 오공 | `raw/warrier_wukong_full.png` | `templates/heroes/warrier_wukong.png` | `(831, 191, 132, 45)` | 예 | `raw/warrier_wukong_full_selected.png` | 인식 및 실제 영입 확인 |
 | soul_weaver_destina | 자연속성 정령사 데스티나 | `raw/soul_weaver_destina_full.png` | `templates/heroes/soul_Weaver_destina.png` | `(835, 190, 131, 49)` | 예 | `raw/soul_weaver_destina_full_selected.png` | 인식 및 실제 영입 확인 |
 | soul_weaver_lisette | 광속성 정령사 리제트 | `raw/soul_weaver_Lisette_selected.png` | `templates/heroes/soul_Weaver_Lisette.png` | `(505, 504, 130, 48)` | 예 | `raw/soul_weaver_Lisette_selected.png` | 인식 및 설정 등록 완료 |
@@ -84,3 +86,9 @@ Git에 등록된 이미지의 이전 버전은 Git 이력으로 관리합니다.
 | 2026-09-24 | `raw/knight_dark_filter_selected_live.png` | 실제 ADB 캡처, 1280×720 / DPI 240 | `dark_2` 유사도 1.000, 이후 그림자 로제 영입 완료까지 확인. 단계별 실기 결과는 계획 문서의 검증 보고서 참조 |
 
 관련 계획: [자동 탐사 기능 계획](../../../docs/chaos/auto-exploration-plan.md)
+
+## 가로 목록 탐색 (2026-10-02)
+
+모든 직업에서 목표 이미지가 같은 위치에 연속 두 프레임 나타나면 선택합니다. 목록 제목이 확인되고 필터가 닫힌 화면에서 세 번 연속 찾지 못하면 왼쪽으로 드래그하여 오른쪽 열을 노출합니다. 오른쪽으로 최대 8회 탐색하고, 시작 위치가 중간일 가능성을 고려해 반대 방향으로 최대 16회 탐색합니다. 횟수·좌표·대기 시간은 `recruitment_layout.json`의 `hero_list_scroll`로 관리합니다. 각 이동 후 새 화면을 확인하며, 로딩·알 수 없는 화면에서는 스크롤하지 않습니다. 제한 횟수까지 찾지 못한 뒤 기존 대체 영웅/미소지 안내를 적용합니다.
+
+아로웰은 `knight_Arowell_full_1.png`에서는 이미지가 잘려 검출되지 않고, `knight_Arowell_full_2.png`에서 검출됩니다. 라스 자료에는 동일 얼굴 카드가 맨 위와 맨 아래에 있어 목록 인식 영역을 맨 위 행으로 한정합니다. 이는 `knight_ras_selected.png`에서 선택된 카드와 같습니다. 두 영웅의 선택 이름과 영입 완료 이름은 제공된 원본에서 별도로 인식합니다. 실제 게임에서 신규 영웅 영입과 드래그를 실행한 검증은 아직 수행하지 않았습니다.

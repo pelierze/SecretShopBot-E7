@@ -542,6 +542,84 @@
       ],
       "threshold": 0.75,
       "max_color_error": 0.15
+    },
+    "ras": {
+      "file": "templates/heroes/knight_ras.png",
+      "region": [
+        330,
+        70,
+        950,
+        115
+      ]
+    },
+    "ras_selected": {
+      "file": "raw/knight_ras_selected.png",
+      "crop": [
+        125,
+        82,
+        117,
+        25
+      ],
+      "region": [
+        100,
+        72,
+        175,
+        45
+      ]
+    },
+    "ras_completed": {
+      "file": "raw/knight_ras_selectd_complete.png",
+      "crop": [
+        172,
+        468,
+        105,
+        27
+      ],
+      "region": [
+        140,
+        458,
+        170,
+        50
+      ]
+    },
+    "arowell": {
+      "file": "templates/heroes/Arowell.png",
+      "region": [
+        330,
+        70,
+        950,
+        535
+      ]
+    },
+    "arowell_selected": {
+      "file": "raw/knight_Arowell_selected.png",
+      "crop": [
+        115,
+        82,
+        140,
+        25
+      ],
+      "region": [
+        100,
+        72,
+        175,
+        45
+      ]
+    },
+    "arowell_completed": {
+      "file": "raw/knight_Arowell_selectd_complete.png",
+      "crop": [
+        150,
+        468,
+        140,
+        27
+      ],
+      "region": [
+        140,
+        458,
+        170,
+        50
+      ]
     }
   },
   "button_offset": [
@@ -646,6 +724,35 @@
       "completed_name": "rhianna_luciella_completed",
       "cost": "high",
       "fallback": "savior_adin"
+    },
+    "ras": {
+      "name": "모험가 라스",
+      "class": "knight",
+      "element": "fire",
+      "portrait": "ras",
+      "selected": "ras_selected",
+      "completed_name": "ras_completed"
+    },
+    "arowell": {
+      "name": "자유의 기사 아로웰",
+      "class": "knight",
+      "element": "light",
+      "portrait": "arowell",
+      "selected": "arowell_selected",
+      "completed_name": "arowell_completed"
     }
+  },
+  "hero_list_scroll": {
+    "max_swipes_per_direction": 8,
+    "start": [
+      1170,
+      335
+    ],
+    "end": [
+      650,
+      335
+    ],
+    "duration_ms": 350,
+    "settle_seconds": 0.5
   }
 }

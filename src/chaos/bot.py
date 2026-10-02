@@ -350,40 +350,59 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
         self._return_to_cards()
         raise PartyCostExceededError(old_name, self.active_hero.get("class"), fallback)
 
-    def _wait_hero_portrait(self):
-        """Wait for target hero portrait or detect hero missing (not owned / cost exceeded)."""
-        self.stats["phase"] = f"{self.hero_name} 찾기 (스크롤 없음)"
-        logger.info("자동 탐사: %s", self.stats["phase"])
-        timeout = self.observer.config.get("timeout_seconds", 30)
-        poll = self.observer.config.get("poll_seconds", 0.3)
-        deadline = time.monotonic() + timeout
-        missing_count = 0
-        max_missing_checks = 3
+    def _scroll_hero_list(self, reverse=False):
+        """Reveal later columns; reverse sweeps back toward the first column."""
+        self._check_stop()
+        config = self.observer.config.get("hero_list_scroll", {})
+        start = config.get("start", [1170, 335])
+        end = config.get("end", [650, 335])
+        if reverse:
+            start, end = end, start
+        self._record("before_scroll")
+        if not self.adb.swipe(*start, *end, duration=config.get("duration_ms", 350), delay=0):
+            raise RuntimeError("영웅 목록 스크롤 입력 실패 — 중지합니다.")
+        logger.info("자동 탐사: %s 목록 %s 탐색", self.hero_name, "왼쪽" if reverse else "오른쪽")
+        if self.stop_event.wait(config.get("settle_seconds", 0.5)):
+            raise _Stopped()
 
+    def _wait_hero_portrait(self):
+        """Search stable list pages before treating a hero as unavailable."""
+        self.stats["phase"] = f"{self.hero_name} 찾기 (가로 목록 탐색)"
+        logger.info("자동 탐사: %s", self.stats["phase"])
+        config = self.observer.config
+        deadline = time.monotonic() + config.get("timeout_seconds", 30)
+        poll = config.get("poll_seconds", 0.3)
+        stable_frames = config.get("stable_frames", 2)
+        limit = config.get("hero_list_scroll", {}).get("max_swipes_per_direction", 8)
+        # Starting partway through a list requires a longer return sweep.
+        directions = [False] * limit + [True] * (2 * limit)
+        previous, count, missing_count, swipes = None, 0, 0, 0
         while time.monotonic() < deadline:
             screen = self._capture()
             self._check_stop()
-
             portrait = self._target_portrait(screen)
             if portrait:
-                return portrait
-
-            # Check if hero list is actively displayed (header present, filter panel closed)
-            if self.observer.header(screen, self.active_hero) and not self.observer.find(screen, "filter_panel"):
-                missing_count += 1
-                if missing_count >= max_missing_checks:
-                    logger.warning(
-                        "영웅 '%s' 목록 미노출 (영웅 미소지 또는 파티 코스트 초과)",
-                        self.hero_name
-                    )
-                    return None
+                count = count + 1 if portrait == previous else 1
+                previous, missing_count = portrait, 0
+                if count >= stable_frames:
+                    return portrait
             else:
-                missing_count = 0
-
+                previous, count = None, 0
+                if self.observer.header(screen, self.active_hero) and not self.observer.find(screen, "filter_panel"):
+                    missing_count += 1
+                    if missing_count >= max(3, stable_frames):
+                        if swipes >= len(directions):
+                            return None
+                        self._scroll_hero_list(reverse=directions[swipes])
+                        swipes += 1
+                        deadline = time.monotonic() + config.get("timeout_seconds", 30)
+                        missing_count = 0
+                else:
+                    missing_count = 0
             if self.stop_event.wait(poll):
                 raise _Stopped()
-
-        return None
+        # Loading/unknown screens do not establish that the hero is missing.
+        raise RecognitionTimeout(f"{self.hero_name} 목록 탐색: 대기 시간 초과.")
 
     def _handle_hero_not_found(self):
         """Handle missing hero: fallback to alternative hero or raise error with clear guidance."""

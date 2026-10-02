@@ -88,6 +88,50 @@ class PartyObserverTest(unittest.TestCase):
         self.assertIsNotNone(obs.header(screen_full, weaver))
         self.assertIsNotNone(obs.header(screen_sel, weaver))
 
+    def test_new_knights_selection_and_completion(self):
+        for hero_id, prefix in (("ras", "knight_ras"), ("arowell", "knight_Arowell")):
+            with self.subTest(hero=hero_id):
+                obs = RecruitmentObserver(ROOT, [hero_id])
+                hero = obs.heroes[0]
+                full = self.screen(prefix + ("_full.png" if hero_id == "ras" else "_full_2.png"))
+                selected = self.screen(prefix + "_selected.png")
+                done = self.screen(prefix + "_selectd_complete.png")
+                self.assertIsNotNone(obs.header(full, hero))
+                self.assertIsNotNone(obs.find(full, hero["portrait"]))
+                self.assertIsNone(obs.find(full, hero["selected"]))
+                self.assertIsNotNone(obs.find(selected, hero["portrait"]))
+                self.assertIsNotNone(obs.find(selected, hero["selected"]))
+                self.assertIsNotNone(obs.find(selected, "recruit_active"))
+                self.assertFalse(obs.hero_completed(selected, hero))
+                self.assertIsNotNone(obs.find(done, hero["completed_name"]))
+                self.assertTrue(obs.hero_completed(done, hero))
+                other = "knight_ras" if hero_id == "arowell" else "knight_Arowell"
+                self.assertIsNone(obs.find(self.screen(other + "_selected.png"), hero["selected"]))
+
+    def test_arowell_requires_scroll_to_reveal_full_portrait(self):
+        obs = RecruitmentObserver(ROOT, ["arowell"])
+        self.assertIsNone(obs.find(self.screen("knight_Arowell_full_1.png"), "arowell"))
+        self.assertIsNotNone(obs.find(self.screen("knight_Arowell_full_2.png"), "arowell"))
+
+    def test_arowell_scroll_search_with_supplied_screenshots(self):
+        obs = RecruitmentObserver(ROOT, ["arowell", "wukong", "destina", "jenua"])
+        obs.config.update(poll_seconds=0)
+        obs.config["hero_list_scroll"]["settle_seconds"] = 0
+        with tempfile.TemporaryDirectory() as runtime:
+            adb = Mock()
+            bot = PartyRecruitmentBot(adb, ROOT, runtime, observer=obs)
+            bot.hero_name = bot.active_hero["name"]
+            page = [self.screen("knight_Arowell_full_1.png")]
+            def swipe(*args, **kwargs):
+                page[0] = self.screen("knight_Arowell_full_2.png")
+                return True
+            adb.swipe.side_effect = swipe
+            bot._capture = lambda: page[0]
+            self.assertEqual(bot._wait_hero_portrait(), (1148, 295, 113, 47))
+            adb.swipe.assert_called_once()
+            self.assertIsNotNone(bot._recruit(self.screen("knight_Arowell_selected.png")))
+            self.assertTrue(bot._current_completed(self.screen("knight_Arowell_selectd_complete.png")))
+
     def test_fallback_templates_loaded_for_high_cost_heroes(self):
         obs = RecruitmentObserver(ROOT, ['shadow_rose', 'wukong', 'lisette', 'rhianna_luciella'])
         # Fallback for lisette is destina
@@ -106,7 +150,8 @@ class PartyObserverTest(unittest.TestCase):
 class ReplayObserver:
     config = {'timeout_seconds': .06, 'poll_seconds': 0, 'stable_frames': 2,
               'popup_dismiss_point': (640, 590), 'filter_dismiss_point': (960, 590),
-              'back_button_point': (42, 35)}
+              'back_button_point': (42, 35),
+              'hero_list_scroll': {'max_swipes_per_direction': 1, 'settle_seconds': 0}}
 
     def get_fallback_hero(self, hero):
         if hero.get('fallback'):
@@ -182,6 +227,53 @@ class PartyFlowTest(unittest.TestCase):
         self.assertEqual(result['recruited'],4)
         self.assertEqual(self.adb.tap.call_count,27)
         self.assertEqual(self.index,len(self.frames)-1)
+
+    def test_every_class_can_find_hero_after_horizontal_scroll(self):
+        for hero in self.observer.heroes:
+            with self.subTest(hero=hero["id"]):
+                self.bot.active_hero = hero
+                self.bot.hero_name = hero["name"]
+                missing = {hero["class"] + "_header": (10, 10, 20, 20)}
+                found = {**missing, hero["portrait"]: (500, 200, 100, 40)}
+                page = [missing]
+                self.bot._capture = lambda: page[0]
+                self.adb.swipe.reset_mock()
+                self.adb.swipe.side_effect = lambda *a, **k: page.__setitem__(0, found) or True
+                self.assertEqual(self.bot._wait_hero_portrait(), found[hero["portrait"]])
+                self.adb.swipe.assert_called_once_with(1170, 335, 650, 335, duration=350, delay=0)
+
+    def test_search_returns_left_before_declaring_missing(self):
+        self.bot._capture = lambda: {"knight_header": (10, 10, 20, 20)}
+        self.adb.swipe.return_value = True
+        self.assertIsNone(self.bot._wait_hero_portrait())
+        self.assertEqual(self.adb.swipe.call_count, 3)
+        self.assertEqual(self.adb.swipe.call_args.args, (650, 335, 1170, 335))
+        self.adb.tap.assert_not_called()
+
+    def test_unknown_screen_never_scrolls_or_triggers_missing_fallback(self):
+        self.bot._capture = lambda: {}
+        from src.chaos.bot import RecognitionTimeout
+        with self.assertRaises(RecognitionTimeout):
+            self.bot._wait_hero_portrait()
+        self.adb.swipe.assert_not_called()
+
+    def test_failed_scroll_stops_immediately(self):
+        self.bot._capture = lambda: {"knight_header": (10, 10, 20, 20)}
+        self.adb.swipe.return_value = False
+        with self.assertRaisesRegex(RuntimeError, "스크롤 입력 실패"):
+            self.bot._wait_hero_portrait()
+        self.adb.swipe.assert_called_once()
+
+    def test_stop_after_scroll_prevents_selection(self):
+        self.bot._capture = lambda: {"knight_header": (10, 10, 20, 20)}
+        def stop(*args, **kwargs):
+            self.bot.set_user_action("stop")
+            return True
+        self.adb.swipe.side_effect = stop
+        from src.chaos.bot import _Stopped
+        with self.assertRaises(_Stopped):
+            self.bot._wait_hero_portrait()
+        self.adb.tap.assert_not_called()
 
     def test_resume_skips_verified_completed_knight(self):
         self.index=9
