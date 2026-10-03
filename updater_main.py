@@ -10,6 +10,7 @@ import sys
 import time
 
 from src.app_identity import APP_EXECUTABLE, UPDATER_EXECUTABLE
+from src.runtime_diagnostics import diagnostic_logger, diagnostic_path
 
 MANAGED = (APP_EXECUTABLE, UPDATER_EXECUTABLE, '_internal',
            'README.md', 'DEPLOY.md', 'SECURITY.md', 'RELEASE_NOTES.md')
@@ -38,7 +39,45 @@ def start_app(target, ready=None):
     args = [str(target / APP_EXECUTABLE)]
     if ready is not None:
         args += ['--update-ready', str(ready)]
-    return subprocess.Popen(args, cwd=str(target), env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'})
+    logger = diagnostic_logger('updater')
+    logger.info('Starting application: %s; cwd=%s', args, target)
+    try:
+        return subprocess.Popen(args, cwd=str(target), env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'})
+    except OSError:
+        logger.exception('Application launch failed')
+        log_permissions(target, logger)
+        raise
+
+
+def icacls(*args):
+    executable = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/icacls.exe'
+    return subprocess.run([str(executable), *map(str, args)], capture_output=True,
+                          text=True, errors='replace', timeout=180,
+                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+
+
+def log_permissions(target, logger):
+    if os.name != 'nt':
+        return
+    for path in (Path(target), Path(target) / APP_EXECUTABLE, Path(target) / '_internal'):
+        try:
+            result = icacls(path)
+            logger.info('Permissions %s (exit=%s): %s %s', path, result.returncode,
+                        result.stdout.strip(), result.stderr.strip())
+        except Exception:
+            logger.exception('Could not inspect permissions: %s', path)
+
+
+def inherit_install_permissions(path):
+    """Remove staging ACLs after a same-volume move; inherit installation ACLs."""
+    if os.name != 'nt':
+        return
+    result = icacls(path, '/reset', '/T', '/Q')
+    diagnostic_logger('updater').info('Reset permissions: %s; exit=%s; %s %s',
+                                    path, result.returncode, result.stdout.strip(),
+                                    result.stderr.strip())
+    if result.returncode:
+        raise RuntimeError(f'설치 파일 접근 권한 설정 실패: {path}; {result.stdout} {result.stderr}')
 
 
 def move_file(source, destination):
@@ -70,6 +109,9 @@ def apply_update(target, package, workspace, launcher=start_app, health=await_st
     backup.mkdir()  # Never overwrite a previous recovery directory.
     moved, installed = [], []
     process = None
+    logger = diagnostic_logger('updater')
+    logger.info('Applying update: target=%s; package=%s; workspace=%s', target, package, workspace)
+    log_permissions(target, logger)
     try:
         # Older builds wrote logs inside _internal. Preserve those too.
         for name in ('logs', 'updates'):
@@ -84,9 +126,13 @@ def apply_update(target, package, workspace, launcher=start_app, health=await_st
             if new.exists():
                 move_file(new, target / name)
                 installed.append(name)
+                inherit_install_permissions(target / name)
+        log_permissions(target, logger)
         process = launcher(target, workspace / 'app-ready')
         health(process, workspace / 'app-ready')
+        logger.info('Updated application acknowledged startup')
     except Exception as original:
+        logger.exception('Update failed; restoring previous installation')
         if process is not None and process.poll() is None:
             process.terminate()
             process.wait(timeout=15)
@@ -99,7 +145,9 @@ def apply_update(target, package, workspace, launcher=start_app, health=await_st
             for name in reversed(moved):
                 move_file(backup / name, target / name)
         except Exception as rollback_error:
+            logger.exception('Rollback failed; backup=%s', backup)
             raise RuntimeError(f'자동 복구 실패. 백업 위치: {backup}; {rollback_error}') from original
+        logger.info('Previous installation restored')
         launcher(target)
         raise RuntimeError(f'이전 버전으로 복구했습니다: {original}') from original
     return process.pid
@@ -147,10 +195,13 @@ exit 1
 
 
 def main():
-    plan_path = Path(sys.argv[1]).resolve()
-    workspace = plan_path.parent
-    result = workspace / 'result.json'
+    logger = diagnostic_logger('updater')
+    logger.info('Updater started: executable=%s; arguments=%s', sys.executable, sys.argv[1:])
+    result = None
     try:
+        plan_path = Path(sys.argv[1]).resolve()
+        workspace = plan_path.parent
+        result = workspace / 'result.json'
         plan = json.loads(plan_path.read_text(encoding='utf-8'))
         target = Path(plan['target']).resolve()
         package = Path(plan['package']).resolve()
@@ -162,14 +213,21 @@ def main():
         pid = apply_update(target, package, workspace)
         result.write_text(json.dumps({'ok': True, 'pid': pid}), encoding='utf-8')
     except Exception as exc:
-        result.write_text(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False), encoding='utf-8')
+        logger.exception('Updater failed')
+        if result is not None:
+            try:
+                result.write_text(json.dumps({'ok': False, 'error': str(exc)}, ensure_ascii=False), encoding='utf-8')
+            except OSError:
+                logger.exception('Could not write update result: %s', result)
         if os.name == 'nt':
-            ctypes.windll.user32.MessageBoxW(None, str(exc) + '\n\n기록: ' + str(result), '업데이트 실패', 0x10)
+            ctypes.windll.user32.MessageBoxW(None, str(exc) + '\n\n기록: ' + str(result)
+                                           + '\n진단 로그: ' + diagnostic_path(logger), '업데이트 실패', 0x10)
         return 1
     # Cleanup failure must never turn a healthy installation into a failed update.
     try:
         schedule_cleanup(workspace, target)
     except Exception as exc:
+        logger.exception('Update staging cleanup could not be started')
         result.write_text(json.dumps({'ok': True, 'pid': pid, 'cleanup_error': str(exc)},
                                      ensure_ascii=False), encoding='utf-8')
     return 0

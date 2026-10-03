@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import numpy as np
+
 from src.chaos.bot import PartyRecruitmentBot
 from src.chaos.observer import RecruitmentObserver
 from src.image_matcher import read_image
@@ -131,6 +133,74 @@ class PartyObserverTest(unittest.TestCase):
             adb.swipe.assert_called_once()
             self.assertIsNotNone(bot._recruit(self.screen("knight_Arowell_selected.png")))
             self.assertTrue(bot._current_completed(self.screen("knight_Arowell_selectd_complete.png")))
+
+    def test_duplicate_portraits_choose_one_for_every_hero(self):
+        catalog = RecruitmentObserver.load_config(ROOT)
+        for hero_id in catalog["heroes"]:
+            with self.subTest(hero=hero_id):
+                obs = RecruitmentObserver(ROOT, [hero_id])
+                marker = obs.heroes[0]["portrait"]
+                template = obs.templates[marker]
+                height, width = template.shape[:2]
+                screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+                for x, y in ((400, 100), (800, 300)):
+                    screen[y:y + height, x:x + width] = template
+                self.assertEqual(obs.find(screen, marker), (400, 100, width, height))
+
+    def test_duplicate_portraits_use_leftmost_card_when_on_same_row(self):
+        obs = RecruitmentObserver(ROOT, ["arowell"])
+        template = obs.templates["arowell"]
+        height, width = template.shape[:2]
+        screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+        screen[200:200 + height, 450:450 + width] = template
+        screen[200:200 + height, 800:800 + width] = template
+        self.assertEqual(obs.find(screen, "arowell"), (450, 200, width, height))
+
+    def test_duplicate_buttons_are_still_rejected(self):
+        obs = RecruitmentObserver(ROOT, ["ras"])
+        template = obs.templates["recruit_card"]
+        height, width = template.shape[:2]
+        screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+        for x in (400, 800):
+            screen[200:200 + height, x:x + width] = template
+        self.assertIsNone(obs.find(screen, "recruit_card", (330, 70, 950, 535)))
+
+    def test_portrait_candidates_still_require_matching_colors(self):
+        obs = RecruitmentObserver(ROOT, ["arowell"])
+        template = obs.templates["arowell"]
+        height, width = template.shape[:2]
+        screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+        # Shape correlation stays high despite a clearly incorrect color palette.
+        screen[100:100 + height, 400:400 + width] = (template * 0.2 + 200).astype(np.uint8)
+        self.assertIsNone(obs.find(screen, "arowell"))
+        screen[300:300 + height, 800:800 + width] = template
+        self.assertEqual(obs.find(screen, "arowell"), (800, 300, width, height))
+
+    def test_duplicate_ras_cards_continue_to_recruit_button(self):
+        obs = RecruitmentObserver(ROOT, ["ras", "wukong", "destina", "jenua"])
+        obs.config["poll_seconds"] = 0
+        with tempfile.TemporaryDirectory() as runtime:
+            adb = Mock()
+            bot = PartyRecruitmentBot(adb, ROOT, runtime, observer=obs)
+            bot.hero_name = bot.active_hero["name"]
+            page = [self.screen("knight_ras_full.png")]
+            bot._capture = lambda: page[0]
+            def tap(*args, **kwargs):
+                page[0] = self.screen("knight_ras_selected.png")
+                return True
+            adb.tap.side_effect = tap
+            bot._tap(bot._wait_hero_portrait())
+            adb.tap.assert_called_once_with(566, 107, delay=0)
+            action, bounds = bot._wait_recruit_action()
+            self.assertEqual(action, "active")
+            self.assertIsNotNone(bounds)
+            adb.swipe.assert_not_called()
+
+    def test_ras_can_be_selected_when_only_lower_duplicate_is_visible(self):
+        obs = RecruitmentObserver(ROOT, ["ras"])
+        screen = self.screen("knight_ras_full.png")
+        screen[70:185, 330:1280] = 0
+        self.assertEqual(obs.find(screen, "ras"), (499, 504, 135, 47))
 
     def test_fallback_templates_loaded_for_high_cost_heroes(self):
         obs = RecruitmentObserver(ROOT, ['shadow_rose', 'wukong', 'lisette', 'rhianna_luciella'])

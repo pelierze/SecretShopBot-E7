@@ -11,7 +11,7 @@ import zipfile
 
 from src.app_updater import extract_verified, release_assets, prepare_update, MANAGED
 from src.release_checker import ReleaseInfo, fetch_latest_release
-from updater_main import apply_update, schedule_cleanup, main as updater_main
+from updater_main import apply_update, schedule_cleanup, main as updater_main, icacls
 
 
 class PackageTest(unittest.TestCase):
@@ -154,6 +154,30 @@ class TransactionTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, '복구'):
                 apply_update(self.target, self.package, self.work, self.launcher, Mock())
         self.verify_old()
+
+    def test_permission_repair_failure_restores_previous_installation(self):
+        with patch('updater_main.inherit_install_permissions', side_effect=PermissionError('ACL denied')):
+            with self.assertRaisesRegex(RuntimeError, 'ACL denied'):
+                apply_update(self.target, self.package, self.work, self.launcher, Mock())
+        self.verify_old()
+        # Only the restored app may be launched, never the partially repaired one.
+        self.assertEqual(self.launcher.call_count, 1)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows NTFS permissions integration')
+    def test_moved_update_files_inherit_installation_access(self):
+        # Staging was created beneath mkdtemp and lacks this installation ACE.
+        result = icacls(self.target, '/grant', '*S-1-5-32-545:(OI)(CI)(RX)')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        def acl_sddl(path):
+            saved = self.root / 'saved-acl.txt'
+            result = icacls(path, '/save', saved, '/Q')
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            return saved.read_text(encoding='utf-16-le')
+        # BU is the language-independent SDDL alias for Builtin Users.
+        self.assertNotIn(';;;BU)', acl_sddl(self.package / 'SecretShopBot-E7.exe'))
+        apply_update(self.target, self.package, self.work, self.launcher, Mock())
+        for name in ('SecretShopBot-E7.exe', 'SecretShopBot-Updater.exe', '_internal/new.png'):
+            self.assertIn(';;;BU)', acl_sddl(self.target / name), name)
 
 
 class CleanupTest(unittest.TestCase):

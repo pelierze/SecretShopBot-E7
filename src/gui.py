@@ -3261,12 +3261,17 @@ class SecretShopGUI:
             self.root.after(0, lambda error=str(exc): self._app_update_failed(error))
 
     def _app_update_failed(self, error):
+        from .runtime_diagnostics import diagnostic_logger, diagnostic_path
+        update_logger = diagnostic_logger('updater')
+        update_logger.error('GUI update failed: %s', error)
         self.update_in_progress = False
         self.update_plan = None
         self.update_progress.stop()
         self.update_window.grab_release()
         self.update_window.destroy()
-        messagebox.showerror('업데이트 실패', f'{error}\n\n현재 버전은 그대로 사용할 수 있습니다.', parent=self.root)
+        messagebox.showerror('업데이트 실패',
+            f'{error}\n\n현재 버전은 그대로 사용할 수 있습니다.\n진단 로그: {diagnostic_path(update_logger)}',
+            parent=self.root)
 
     def _app_update_downloaded(self, plan):
         self.update_plan = plan

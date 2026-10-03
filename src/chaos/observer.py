@@ -29,6 +29,7 @@ class RecruitmentObserver:
         self.assets = root / "images/chaos/hero_selection"
         self.theme = ThemeSelectionDetector(self.assets / "templates/themes")
         self.templates = {}
+        self.portrait_markers = {hero["portrait"] for hero in self.config["heroes"].values()}
         sources = {}
         needed = {"start", "unlock", "confirm_theme", "recruit_card", "filter", "filter_panel", "recruit_active", "completed"}
         for element in ("dark", "fire", "ice", "forest", "light"):
@@ -75,8 +76,23 @@ class RecruitmentObserver:
             return None
         sample = screen[y:y + h, x:x + w]
         result = cv2.matchTemplate(sample, template, cv2.TM_CCOEFF_NORMED)
-        _, score, _, (mx, my) = cv2.minMaxLoc(result)
         threshold = definition.get("threshold", 0.90)
+        if name in self.portrait_markers:
+            # Multiple owned copies of the requested hero are interchangeable.
+            # Use screen order so minor score changes do not move the target.
+            candidates = []
+            while True:
+                _, score, _, (mx, my) = cv2.minMaxLoc(result)
+                if score < threshold:
+                    break
+                matched = sample[my:my + th, mx:mx + tw]
+                error = float(np.abs(matched.astype(np.float32) - template).mean() / 255)
+                if error <= definition.get("max_color_error", 0.09):
+                    candidates.append((x + mx, y + my, tw, th))
+                result[max(0, my - th // 2):my + th // 2 + 1,
+                       max(0, mx - tw // 2):mx + tw // 2 + 1] = -1
+            return min(candidates, key=lambda bounds: (bounds[1], bounds[0])) if candidates else None
+        _, score, _, (mx, my) = cv2.minMaxLoc(result)
         if score < threshold:
             return None
         matched = sample[my:my + th, mx:mx + tw]

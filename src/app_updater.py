@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import zipfile
 
 from .app_identity import UPDATE_PACKAGE_NAME, APP_EXECUTABLE, UPDATER_EXECUTABLE, RELEASE_REPOSITORY
+from .runtime_diagnostics import diagnostic_logger
 
 APP = UPDATE_PACKAGE_NAME
 MANAGED = (APP_EXECUTABLE, UPDATER_EXECUTABLE, '_internal',
@@ -99,6 +100,8 @@ def extract_verified(archive, checksum, destination):
 
 
 def prepare_update(release, target, progress=lambda text: None):
+    logger = diagnostic_logger('updater')
+    logger.info('Preparing update: version=%s; target=%s', release.version, target)
     name, zip_url, checksum_url = release_assets(release)
     target = Path(target).resolve()
     # Same volume staging permits directory renames and tests write access early.
@@ -121,12 +124,19 @@ def prepare_update(release, target, progress=lambda text: None):
         path.write_text(json.dumps(plan), encoding='utf-8')
         return path
     except Exception:
+        logger.exception('Update preparation failed')
         shutil.rmtree(workspace, ignore_errors=True)
         raise
 
 
 def launch_update(plan):
     plan = Path(plan)
-    return subprocess.Popen([str(plan.parent / 'updater.exe'), str(plan)],
+    logger = diagnostic_logger('updater')
+    logger.info('Launching update worker: plan=%s', plan)
+    try:
+        return subprocess.Popen([str(plan.parent / 'updater.exe'), str(plan)],
                             cwd=str(plan.parent), env={**os.environ, 'PYINSTALLER_RESET_ENVIRONMENT': '1'},
                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+    except OSError:
+        logger.exception('Update worker launch failed')
+        raise
