@@ -180,6 +180,49 @@ class NodeProgressionBot(KnightRecruitmentBot):
             logger.warning('%s: 클릭 직전 화면 변경, 입력 없이 재확인', phase)
         raise RecognitionTimeout('클릭 직전 화면 변경이 반복되어 중지했습니다.')
 
+    def _dismiss_popup(self, phase, state, marker, allowed, max_retries=2, wait_seconds=3):
+        """Retry only a freshly recognized close control, never a prior click."""
+        self._guarded_tap(phase, state, marker, exiting=True)
+        sent_at = time.monotonic()
+        retries = 0
+        changed_before_retry = 0
+        allowed = allowed - {state}
+
+        def outcome(screen):
+            kind = self._classify(screen)
+            if kind in allowed:
+                return ('closed', kind)
+            if kind == state and retries < max_retries and time.monotonic() - sent_at >= wait_seconds:
+                bounds = self.observer.find(screen, marker)
+                if bounds:
+                    return ('retry', bounds)
+            return None
+
+        while True:
+            try:
+                action, value = self._wait(phase + ' 후속 화면 확인', outcome)
+            except RecognitionTimeout as exc:
+                screen = self._capture()
+                if self._classify(screen) == state and self.observer.find(screen, marker):
+                    raise RecognitionTimeout(f'{phase}: 닫기 입력 후에도 결과창이 남아 있습니다.') from exc
+                raise
+            if action == 'closed':
+                return value
+            # A transition can start after stable retry frames. Recheck both
+            # the source screen and its control immediately before any input.
+            screen = self._capture()
+            if self._classify(screen) != state or self.observer.find(screen, marker) != value:
+                changed_before_retry += 1
+                if changed_before_retry >= max_retries + 1:
+                    # Allow a newly observed destination to stabilize even if
+                    # the final retry candidate became stale.
+                    return self._state(phase + ' 재입력 취소 후 화면 확인', allowed)
+                continue
+            retries += 1
+            logger.warning('%s: 결과창과 닫기 버튼 재확인, 닫기 재입력 %d/%d', phase, retries, max_retries)
+            self._tap(value)
+            sent_at = time.monotonic()
+
     def _story(self, state):
         if state == 'story':
             self._guarded_tap('스토리 건너뛰기', 'story', 'skip')
@@ -302,10 +345,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
             return state
         # Completion uses shared arrow + RANK UP text, independent of hero art
         # and the card's rank-number position. _state requires stable frames.
-        close_btn = self._wait('랭크업 결과 닫기 확인', lambda s: self.observer.find(s, 'rank_close') if self.observer.classify(s) == 'rank_result' else None)
-        def closed(after, before):
-            return (self.observer.classify(after) != 'rank_result'), None
-        self._tap_with_verify(close_btn, '랭크업 결과 닫기', closed, expected_state='rank_result')
+        return self._dismiss_popup('랭크업 결과 닫기', 'rank_result', 'rank_close', EVENT_FOLLOWUPS | {'rest'})
 
     def _rest(self):
         screen = self._capture()
@@ -616,15 +656,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         return state
 
     def _close_event_popup(self, state, marker):
-        screen = self._capture()
-        signature = self._event_signature(screen)
-        self._guarded_tap('이벤트 보상 결과 닫기', state, marker, exiting=True)
-        def changed(frame):
-            after = self._classify(frame)
-            if after == state and self._event_signature(frame) == signature:
-                return None
-            return (after,) if after in EVENT_FOLLOWUPS else None
-        after = self._wait('보상 결과 다음 화면 확인', changed)[0]
+        after = self._dismiss_popup('이벤트 보상 결과 닫기', state, marker, EVENT_FOLLOWUPS | {'rest'})
         if state == 'rank_result':
             after = self._leave_used_rank_reward(after)
         return after
@@ -952,9 +984,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     self._event_result()
                 elif state in ('event_loot_popup', 'rank_result'):
                     close_marker = 'rank_close' if state == 'rank_result' else 'event_loot_close'
-                    self._guarded_tap('전리품/결과 닫기', state, close_marker, exiting=True)
-                    allowed = EVENT_FOLLOWUPS
-                    next_state = self._state('결과 닫기 후 복귀', allowed)
+                    next_state = self._dismiss_popup('전리품/결과 닫기', state, close_marker, EVENT_FOLLOWUPS | {'rest'})
                     if state == 'rank_result' and next_state == 'rank_reward':
                         # Resuming on an already completed rank result must not
                         # try to spend the same reward a second time.
@@ -965,12 +995,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 elif state == 'event_loot_consume':
                     self._handle_loot_consume()
                 elif state == 'levelup':
-                    close_btn = self._wait('레벨업 팝업 닫기 확인', lambda s: self.observer.find(s, 'level_close') if self.observer.classify(s) == 'levelup' else None)
-                    def closed(after, before):
-                        return (self.observer.classify(after) != 'levelup'), None
-                    self._tap_with_verify(close_btn, '레벨업 팝업 닫기', closed, expected_state='levelup')
-                    allowed = EVENT_FOLLOWUPS
-                    self._state('레벨업 닫기 후 복귀', allowed)
+                    self._dismiss_popup('레벨업 팝업 닫기', state, 'level_close', EVENT_FOLLOWUPS)
                 elif state == 'victory':
                     self._victory()
                 elif state == 'recruit_reward':

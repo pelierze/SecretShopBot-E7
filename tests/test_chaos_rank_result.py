@@ -60,7 +60,7 @@ class RankResultTests(unittest.TestCase):
             bot._capture = lambda: menu if current[0] < 2 else result
             bot._rank_target = Mock(return_value=('unregistered_hero', 1, 10, 20, 30, 40))
             bot._tap = lambda bounds: current.__setitem__(0, current[0]+1)
-            bot._tap_with_verify = Mock()
+            bot._dismiss_popup = Mock()
             original_classify = self.observer.classify
             original_find = self.observer.find
             with patch.object(self.observer, 'classify', side_effect=lambda s: 'rank_menu' if s is menu else original_classify(s)), \
@@ -69,8 +69,9 @@ class RankResultTests(unittest.TestCase):
                  patch.object(self.observer, 'read_rank_digit') as digit:
                 bot._rankup()
                 digit.assert_not_called()
-                bot._tap_with_verify.assert_called_once()
-                self.assertEqual(bot._tap_with_verify.call_args.kwargs['expected_state'], 'rank_result')
+                bot._dismiss_popup.assert_called_once()
+                self.assertEqual(bot._dismiss_popup.call_args.args[1:3], ('rank_result', 'rank_close'))
+                self.assertIn('rest', bot._dismiss_popup.call_args.args[3])
 
     def test_resume_result_continues_reward_without_second_rankup(self):
         with tempfile.TemporaryDirectory() as tmp:

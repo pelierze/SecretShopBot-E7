@@ -3138,6 +3138,40 @@
       ],
       "threshold": 0.9,
       "max_color_error": 0.1
+    },
+    "event_rusted_bars": {
+      "file": "images/chaos/node_progression/raw/event_rusted_bars_live.png",
+      "crop": [
+        280,
+        463,
+        720,
+        48
+      ],
+      "region": [
+        270,
+        453,
+        740,
+        68
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.08
+    },
+    "event_rusted_bars_choice_2": {
+      "file": "images/chaos/node_progression/raw/event_rusted_bars_live.png",
+      "crop": [
+        476,
+        587,
+        326,
+        90
+      ],
+      "region": [
+        468,
+        579,
+        342,
+        106
+      ],
+      "threshold": 0.87,
+      "max_color_error": 0.1
     }
   },
   "loot_cards": [
@@ -4568,6 +4602,43 @@
         ]
       ],
       "source_report": "20260928_114847_921700"
+    },
+    {
+      "id": "rusted_bars",
+      "state_marker": "event_rusted_bars",
+      "choices": [
+        {
+          "choice_marker": "event_rusted_bars_choice_2",
+          "effect": "battle_reward",
+          "bounds": [
+            458,
+            556,
+            362,
+            131
+          ]
+        }
+      ],
+      "choice_regions": [
+        [
+          78,
+          556,
+          362,
+          131
+        ],
+        [
+          458,
+          556,
+          362,
+          131
+        ],
+        [
+          838,
+          556,
+          362,
+          131
+        ]
+      ],
+      "source_report": "20261001_101505_157600"
     }
   ],
   "event_result_markers": [

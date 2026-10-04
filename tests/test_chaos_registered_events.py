@@ -35,12 +35,23 @@ class RegisteredEventTests(unittest.TestCase):
     def test_new_events_choose_reviewed_safe_outcome(self):
         expected = {'blood_shelter':78, 'open_spellbook':838, 'broken_stele':268,
                     'bent_bars':838, 'sharp_teeth':648, 'wind_prayer':648,
-                    'feuding_tablet':648, 'torn_map':648, 'wandering_ghost':268}
+                    'feuding_tablet':648, 'torn_map':648, 'wandering_ghost':268,
+                    'rusted_bars':458}
         for name, x in expected.items():
             with self.subTest(event=name):
                 frame = read_image(str(ROOT/f'images/chaos/node_progression/raw/event_{name}_live.png'))
                 self.assertEqual(self.observer.known_event(frame), name)
                 self.assertEqual(self.observer.event_choice(frame), (x,556,362,131))
+
+    def test_rusted_bars_does_not_choose_when_reviewed_choice_changes(self):
+        frame = read_image(str(ROOT/'images/chaos/node_progression/raw/event_rusted_bars_live.png'))
+        frame[587:677,476:802] = 0
+        self.assertEqual(self.observer.known_event(frame), 'rusted_bars')
+        self.assertIsNone(self.observer.event_choice(frame))
+
+    def test_rusted_bars_does_not_fall_back_to_unreviewed_choices(self):
+        frame = read_image(str(ROOT/'images/chaos/node_progression/raw/event_rusted_bars_live.png'))
+        self.assertIsNone(self.observer.event_choice(frame, excluded=[(458,556,362,131)]))
 
     def test_late_registration_discards_random_candidate(self):
         cards = [(268,556,362,131), (648,556,362,131)]
