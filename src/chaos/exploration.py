@@ -23,6 +23,8 @@ EVENT_FOLLOWUPS = {'map', 'battle_setup', 'battle', 'story', 'story_confirm',
     'rank_menu', 'rank_result', 'rank_reward', 'event', 'unknown_event', 'event_result',
     'unknown_event_result', 'loot', 'event_loot_popup', 'event_loot_consume',
     'recruit_reward', 'unclaimed_reward', 'event_warning', 'levelup', 'victory', 'battle_rank_complete'} | TERMINALS
+REWARD_POPUPS = {'rank_result': 'rank_close', 'event_loot_popup': 'event_loot_close', 'levelup': 'level_close'}
+POPUP_FOLLOWUPS = EVENT_FOLLOWUPS | {'rest', 'supply', 'shop'}
 
 HERO_NAMES = {
     'wukong': '오공',
@@ -203,7 +205,10 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 action, value = self._wait(phase + ' 후속 화면 확인', outcome)
             except RecognitionTimeout as exc:
                 screen = self._capture()
-                if self._classify(screen) == state and self.observer.find(screen, marker):
+                observed = self._classify(screen)
+                logger.warning('%s: 후속 화면 확인 실패, 현재 화면=%s, 기대 화면=%s',
+                               phase, observed or '미인식', ', '.join(sorted(allowed)))
+                if observed == state and self.observer.find(screen, marker):
                     raise RecognitionTimeout(f'{phase}: 닫기 입력 후에도 결과창이 남아 있습니다.') from exc
                 raise
             if action == 'closed':
@@ -232,6 +237,15 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 return state
         self._guarded_tap('스토리 건너뛰기 확인', 'story_confirm', 'story_confirm')
         self._wait('스토리 팝업 닫힘', lambda s: ('closed',) if not self.observer.find(s, 'story_dialog') else None)
+
+    def _settle_reward_popups(self, state, allowed):
+        for _ in range(3):
+            if state not in REWARD_POPUPS:
+                return state
+            state = self._dismiss_popup('획득 결과 닫기', state, REWARD_POPUPS[state], allowed | set(REWARD_POPUPS))
+        if state in REWARD_POPUPS:
+            raise RecognitionTimeout('획득 결과창 반복 — 추가 입력 없이 중지')
+        return state
 
     def _battle(self):
         self.stats['phase'] = '전투 진행 확인'
@@ -421,19 +435,43 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 loot_entered = False
                 for attempt in range(1, 4):
                     fresh = self._capture()
-                    if self._classify(fresh) == 'loot':
+                    fresh_state = self._classify(fresh)
+                    if fresh_state == 'loot':
                         loot_entered = True
                         break
+                    # A delayed transition or an unrecognized loot page must
+                    # not replay supply coordinates on another screen.
+                    if fresh_state != 'supply' or self.observer.find(fresh, 'supply_done'):
+                        break
                     if attempt < 3:
-                        if self.stop_event.wait(0.5):
+                        if self.stop_event.wait(3):
                             raise _Stopped()
-                        self._tap(target_loot_btn)
+                        fresh = self._capture()
+                        fresh_state = self._classify(fresh)
+                        if fresh_state == 'loot':
+                            loot_entered = True
+                            break
+                        if fresh_state != 'supply' or self.observer.find(fresh, 'supply_done'):
+                            break
+                        retry_btn = self.observer.find(fresh, 'supply_loot')
+                        verified = self._capture()
+                        if (not retry_btn or self._classify(verified) != 'supply'
+                                or self.observer.find(verified, 'supply_done')
+                                or self.observer.find(verified, 'supply_loot') != retry_btn):
+                            break
+                        logger.warning('보급 전리품 획득: 현재 버튼 재확인 후 재입력 %d/2', attempt)
+                        self._tap(retry_btn)
                 if loot_entered or self._classify(self._capture()) == 'loot':
-                    self._loot()
+                    state = 'loot'
                 else:
                     state = self._state('보급 전리품 목록 진입 대기', {'loot', 'supply'})
-                    if state == 'loot':
-                        self._loot()
+                if state == 'loot':
+                    state = self._settle_reward_popups(self._loot(), {'supply', 'map'})
+                    if state == 'map':
+                        self.stats['nodes'] += 1
+                        return state
+                    if state != 'supply':
+                        return state
 
         leave_btn = self._wait('보급 떠나기 확인', lambda s: self.observer.find(s, 'leave') if self._classify(s) == 'supply' or self.observer.find(s, 'leave') else None)
         self._tap(leave_btn)
@@ -460,8 +498,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
     def _shop(self):
         if self._classify(self._capture()) == 'shop_purchase_confirm':
             # A resumed confirmation has no verified originating selection.
-            self._guarded_tap('기존 상점 구매 확인 취소', 'shop_purchase_confirm', 'shop_purchase_cancel', exiting=True)
-            self._state('구매 취소 후 상점', {'shop'})
+            self._dismiss_popup('기존 상점 구매 확인 취소', 'shop_purchase_confirm', 'shop_purchase_cancel', {'shop'})
         if self.buy_future_investment:
             self._purchase_future_investment()
         self._guarded_tap('상점 나가기', 'shop', 'shop_exit', exiting=True)
@@ -503,17 +540,25 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if confirm(self._capture()) != action:
             raise RecognitionTimeout('구매 확정 직전 화면 변경')
         if action[0] == 'cancel':
-            self._guarded_tap('상품 불일치 구매 취소', 'shop_purchase_confirm', 'shop_purchase_cancel', exiting=True)
-            self._state('구매 취소 후 상점', {'shop'})
+            self._dismiss_popup('상품 불일치 구매 취소', 'shop_purchase_confirm', 'shop_purchase_cancel', {'shop'})
             return
         self._tap(action[1:])
         def completed(screen):
-            if self._classify(screen) != 'shop': return None
+            state = self._classify(screen)
+            if state in REWARD_POPUPS:
+                return ('popup', state)
+            if state != 'shop': return None
             if self.observer.find(screen, 'shop_insufficient_notice'): return ('insufficient',)
             if not self.observer.find(screen, 'shop_purchase_done', region=(x,y,164,240)): return None
             remaining = self.observer.shop_number(screen, self.observer.config['shop_purchase']['currency_region'])
             return ('done',) if remaining == balance-price else None
-        outcome = self._wait('미래 투자 구매 완료·파편 차감 확인', completed)
+        for _ in range(4):
+            outcome = self._wait('미래 투자 구매 완료·파편 차감 확인', completed)
+            if outcome[0] != 'popup':
+                break
+            self._settle_reward_popups(outcome[1], {'shop'})
+        else:
+            raise RecognitionTimeout('구매 후 결과창 반복 — 구매 재입력 없이 중지')
         if outcome[0] == 'insufficient':
             logger.info('미래 투자 구매 실패: 재화 부족 안내 — 재클릭 없이 퇴장')
             return
@@ -521,8 +566,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         logger.info('미래 투자 구매 완료: 파편 %d → %d', balance, balance-price)
 
     def _shop_confirm(self):
-        self._guarded_tap('상점 구매 없이 퇴장 확인', 'shop_exit_confirm', 'story_confirm', exiting=True)
-        self._state('상점 퇴장 후 지도 복귀', {'map'})
+        self._dismiss_popup('상점 구매 없이 퇴장 확인', 'shop_exit_confirm', 'story_confirm', {'map'})
         self.stats['nodes'] += 1
 
     def _defeat(self):
@@ -656,7 +700,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
         return state
 
     def _close_event_popup(self, state, marker):
-        after = self._dismiss_popup('이벤트 보상 결과 닫기', state, marker, EVENT_FOLLOWUPS | {'rest'})
+        after = self._dismiss_popup('이벤트 보상 결과 닫기', state, marker, POPUP_FOLLOWUPS)
         if state == 'rank_result':
             after = self._leave_used_rank_reward(after)
         return after
@@ -858,7 +902,10 @@ class NodeProgressionBot(KnightRecruitmentBot):
         if self.observer.find(self._capture(), 'loot_reward'):
             self._guarded_tap('전투 보상 전리품 선택', 'victory', 'loot_reward')
             self._state('전투 보상 전리품 목록', {'loot'})
-            self._loot()
+            state = self._settle_reward_popups(self._loot(), EVENT_FOLLOWUPS)
+            if state != 'victory':
+                if state == 'map': self.stats['nodes'] += 1
+                return state
         # A hero reward is not part of the configured party; do not recruit it.
         skip_hero = bool(self.observer.find(self._capture(), 'reward_hero'))
         self._guarded_tap('계속 탐사하기', 'victory', 'continue', exiting=True)
@@ -984,7 +1031,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     self._event_result()
                 elif state in ('event_loot_popup', 'rank_result'):
                     close_marker = 'rank_close' if state == 'rank_result' else 'event_loot_close'
-                    next_state = self._dismiss_popup('전리품/결과 닫기', state, close_marker, EVENT_FOLLOWUPS | {'rest'})
+                    next_state = self._dismiss_popup('전리품/결과 닫기', state, close_marker, POPUP_FOLLOWUPS)
                     if state == 'rank_result' and next_state == 'rank_reward':
                         # Resuming on an already completed rank result must not
                         # try to spend the same reward a second time.
@@ -995,7 +1042,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 elif state == 'event_loot_consume':
                     self._handle_loot_consume()
                 elif state == 'levelup':
-                    self._dismiss_popup('레벨업 팝업 닫기', state, 'level_close', EVENT_FOLLOWUPS)
+                    self._dismiss_popup('레벨업 팝업 닫기', state, 'level_close', POPUP_FOLLOWUPS)
                 elif state == 'victory':
                     self._victory()
                 elif state == 'recruit_reward':

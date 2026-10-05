@@ -87,6 +87,71 @@ class ShopTests(unittest.TestCase):
             self.assertEqual(taps[-1],self.observer.find(confirm,'shop_purchase_cancel'))
             self.assertEqual(bot.stats.get('shop_purchases',0),0)
 
+    def test_purchase_reward_popup_is_closed_before_verifying_and_exiting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer, buy_future_investment=True)
+            frames = [self.image('future_investment_available'), self.image('future_investment_confirm'),
+                      read_image(str(RAW/'event_loot_popup_live.png')), self.image('future_investment_purchased'),
+                      read_image(str(RAW/'shop_exit_confirm_live.png')), read_image(str(RAW/'boss_map_live.png'))]
+            current = [0]
+            taps = []
+            bot._capture = lambda: frames[current[0]]
+            def tap(bounds):
+                taps.append(tuple(bounds))
+                current[0] += 1
+            bot._tap = tap
+            bot._shop()
+            self.assertEqual(len(taps), 5)
+            self.assertEqual(taps[2], self.observer.find(frames[2], 'event_loot_close'))
+            self.assertEqual(taps.count(self.observer.find(frames[1], 'shop_purchase_button')), 1)
+            self.assertEqual(bot.stats['shop_purchases'], 1)
+            self.assertEqual(bot.stats['nodes'], 1)
+
+    def test_popup_close_does_not_replace_purchase_verification(self):
+        from src.chaos.bot import RecognitionTimeout
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer, buy_future_investment=True)
+            frames = [self.image('future_investment_available'), self.image('future_investment_confirm'),
+                      read_image(str(RAW/'event_loot_popup_live.png')), self.image('future_investment_purchased')]
+            frames[-1][290:319, 445:525] = 0  # Remove the purchased acknowledgement.
+            current = [0]
+            taps = []
+            bot._capture = lambda: frames[current[0]]
+            def tap(bounds):
+                taps.append(tuple(bounds))
+                current[0] += 1
+            bot._tap = tap
+            wait = bot._wait
+            def fail_missing_acknowledgement(phase, predicate):
+                if current[0] == 3 and phase == '미래 투자 구매 완료·파편 차감 확인':
+                    self.assertIsNone(predicate(frames[3]))
+                    raise RecognitionTimeout('구매 완료 미확인')
+                return wait(phase, predicate)
+            bot._wait = fail_missing_acknowledgement
+            with self.assertRaises(RecognitionTimeout):
+                bot._purchase_future_investment()
+            self.assertEqual(len(taps), 3)
+            self.assertEqual(bot.stats.get('shop_purchases', 0), 0)
+
+    def test_exit_confirmation_recovers_a_dropped_close(self):
+        import itertools
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer)
+            frames = [read_image(str(RAW/'shop_exit_confirm_live.png')), read_image(str(RAW/'boss_map_live.png'))]
+            current = [0]
+            taps = []
+            bot._capture = lambda: frames[current[0]]
+            def tap(bounds):
+                taps.append(tuple(bounds))
+                if len(taps) == 2:
+                    current[0] = 1
+            bot._tap = tap
+            ticks = itertools.count()
+            with patch('src.chaos.exploration.time.monotonic', side_effect=lambda: next(ticks)):
+                bot._shop_confirm()
+            self.assertEqual(len(taps), 2)
+            self.assertEqual(bot.stats['nodes'], 1)
+
     def test_option_default_off_and_repeat_preserves_enabled(self):
         with tempfile.TemporaryDirectory() as tmp:
             bot=NodeProgressionBot(Mock(),ROOT,tmp,self.observer)

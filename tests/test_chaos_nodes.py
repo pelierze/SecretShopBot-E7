@@ -369,7 +369,7 @@ class NodeFlowTest(unittest.TestCase):
         dummy = np.zeros((720, 1280, 3), dtype=np.uint8)
         b._capture = Mock(return_value=dummy)
         b._tap = Mock()
-        b._loot = Mock()
+        b._loot = Mock(return_value='supply')
         b._classify = Mock(side_effect=['supply', 'loot', 'supply', 'map'])
         b._wait = Mock(side_effect=[
             ('btn', 930, 400, 160, 31),
@@ -388,7 +388,7 @@ class NodeFlowTest(unittest.TestCase):
         b._capture = Mock(return_value=None)
         b._tap = Mock()
         b._tap_with_verify = Mock()
-        b._loot = Mock()
+        b._loot = Mock(return_value='supply')
         b._wait = Mock(side_effect=[
             ('already_done',),
             (930, 620, 320, 80),
@@ -409,7 +409,7 @@ class NodeFlowTest(unittest.TestCase):
         dummy = np.zeros((720, 1280, 3), dtype=np.uint8)
         b._capture = Mock(return_value=dummy)
         b._tap = Mock()
-        b._loot = Mock()
+        b._loot = Mock(return_value='supply')
         b._classify = Mock(side_effect=['unclaimed_reward', 'supply', 'loot', 'supply', 'map'])
         b._wait = Mock(side_effect=[
             ('btn', 930, 400, 160, 31),

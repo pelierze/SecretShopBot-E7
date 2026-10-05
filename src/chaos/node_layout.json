@@ -864,8 +864,8 @@
         330,
         80
       ],
-      "threshold": 0.9,
-      "max_color_error": 0.06
+      "threshold": 0.88,
+      "max_color_error": 0.08
     },
     "loot_button_dim": {
       "file": "images/chaos/node_progression/raw/loot_cards_live.png",
