@@ -134,6 +134,9 @@ class NodeObserver:
         return results
 
     def find(self, screen, name, region=None):
+        if name in ('levelup', 'level_close') and region is None:
+            controls = self.levelup_controls(screen)
+            return controls.get(name) if controls else None
         if name == 'rank_close':
             return tuple(self.config['rank_result_close_bounds']) if self.is_rank_result(screen) else None
         if name in self.config['markers']:
@@ -146,6 +149,31 @@ class NodeObserver:
                 scan = self.scan_rank_menu_heroes(screen)
                 if target_class in scan:
                     return scan[target_class]['bounds']
+        return None
+
+    def levelup_controls(self, screen):
+        """Require both the level-up title and its close button at one scale."""
+        names = ('levelup', 'level_close')
+        for scale in (1., .95, 1.05, .9, 1.1):
+            controls = {}
+            for name in names:
+                definition = self.config['markers'][name]
+                template = self.templates[name]
+                if scale != 1:
+                    template = cv2.resize(template, None, fx=scale, fy=scale)
+                x, y, w, h = definition['region']
+                margin = 20 if scale != 1 else 0
+                bounds = self.matches(screen, template,
+                    [x-margin, y-margin, w+2*margin, h+2*margin],
+                    definition['threshold'], definition['max_color_error'])
+                if len(bounds) != 1:
+                    break
+                controls[name] = bounds[0]
+            if len(controls) == 2:
+                tx, ty, tw, th = controls['levelup']
+                cx, cy, cw, ch = controls['level_close']
+                if abs(tx+tw/2-cx-cw/2) <= 40 and 430 <= cy+ch/2-ty-th/2 <= 550:
+                    return controls
         return None
 
     def forbidden(self, screen):
@@ -281,7 +309,7 @@ class NodeObserver:
         if self.find(screen, 'recruit_reward_title') and self.find(screen, 'recruit_continue'): return 'recruit_reward'
         if self.find(screen, 'story_dialog'): return 'story_confirm'
         if self.find(screen, 'story_confirm'): return 'event_warning'
-        if self.find(screen, 'levelup') and self.find(screen, 'level_close'): return 'levelup'
+        if self.levelup_controls(screen): return 'levelup'
         if self.is_rank_result(screen): return 'rank_result'
         if self.find(screen, 'event_loot_close'): return 'event_loot_popup'
         if self.find(screen, 'event_loot_consume'): return 'event_loot_consume'

@@ -149,6 +149,38 @@ class PopupCloseTests(unittest.TestCase):
             self.close()
         self.assertEqual(len(self.taps), 1)
 
+    def test_event_reward_transition_to_rank_result_is_dispatched_without_stale_click(self):
+        # Reported frame: rank animation has finished after initial generic popup recognition.
+        self.assertEqual(self.bot._dismiss_popup('이벤트 닫기', 'event_loot_popup',
+                         'event_loot_close', {'rank_result', 'map'}), 'rank_result')
+        self.assertEqual(self.taps, [])
+        def tap(bounds):
+            self.taps.append(bounds)
+            self.screen = 'map'
+        self.bot._tap = tap
+        self.assertEqual(self.close(), 'map')
+        self.assertEqual(self.taps, [self.bounds])
+
+    def test_popup_transition_immediately_before_first_click_is_reobserved(self):
+        self.screen = 'event_loot_popup'
+        self.observer.config['recognition_attempts'] = 3
+        self.observer.find.side_effect = lambda screen, marker: self.bounds
+        wait = self.bot._wait
+        def transition(phase, predicate):
+            value = wait(phase, predicate)
+            self.screen = 'rank_result'
+            return value
+        self.bot._wait = transition
+        self.assertEqual(self.bot._dismiss_popup('닫기', 'event_loot_popup', 'event_loot_close',
+                         {'rank_result', 'map'}), 'rank_result')
+        self.assertEqual(self.taps, [])
+
+    def test_unexpected_screen_before_first_click_does_not_authorize_input(self):
+        self.screen = 'shop'
+        with self.assertRaises(RecognitionTimeout):
+            self.bot._dismiss_popup('닫기', 'event_loot_popup', 'event_loot_close', {'rank_result', 'map'})
+        self.assertEqual(self.taps, [])
+
 
 if __name__ == '__main__':
     unittest.main()

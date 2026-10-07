@@ -54,10 +54,12 @@ if __package__ in (None, ""):
     from src.json_macro_engine import JsonMacroEngine
     from src.penguin_bot import PenguinBot
     from src.release_checker import get_available_update
+    from src.update_dialog import UpdateConfirmationDialog
     from src.remote_script import RemoteScriptUpdater
     from src.secret_shop_bot import SecretShopBot
     from src.app_identity import APP_WINDOW_TITLE, UPDATER_EXECUTABLE, resolve_window_title
     from src.version import APP_VERSION
+    from src.failure_report import save_failure_report
 else:
     from .adb_controller import ADBController
     from .backend.manager import BackendFactory
@@ -74,10 +76,12 @@ else:
     from .json_macro_engine import JsonMacroEngine
     from .penguin_bot import PenguinBot
     from .release_checker import get_available_update
+    from .update_dialog import UpdateConfirmationDialog
     from .remote_script import RemoteScriptUpdater
     from .secret_shop_bot import SecretShopBot
     from .app_identity import APP_WINDOW_TITLE, UPDATER_EXECUTABLE, resolve_window_title
     from .version import APP_VERSION
+    from .failure_report import save_failure_report
 
 logger = logging.getLogger(__name__)
 LOG_SESSION = contextvars.ContextVar("log_session", default="App")
@@ -2086,6 +2090,10 @@ class SessionView:
             except Exception as exc:
                 logger.exception("자동 탐사 실행 오류")
                 result = {"status": "failed", "phase": "실행 오류", "reason": str(exc)}
+            if (result.get('status') == 'failed' or
+                    (result.get('status') == 'stopped' and result.get('reason') not in
+                     ('사용자 중지', '패배 결과 처리 후 중지'))):
+                self._save_failure_report(result)
             if not self.app.is_closing:
                 self.root.after(0, lambda stats=result: self._finish_chaos_run(stats))
             else:
@@ -2246,6 +2254,16 @@ class SessionView:
         self.selected_macro_id = macro.get("id", "secret_shop")
         return macro
 
+    def _save_failure_report(self, result):
+        if getattr(self, 'was_stopped_by_user', False):
+            return
+        try:
+            return save_failure_report(
+                Path(self.runtime_dir).parent, get_resource_root() / 'logs' / 'bot.log',
+                result, self.bot, self.name, self.current_mode, self.adb_controller)
+        except Exception:
+            logger.exception('비정상 종료 보고서 준비 실패')
+
     def _run_bot(self, refresh_count, buy_count, natural_refresh=False):
         with log_session(self.name):
             has_error = False
@@ -2255,11 +2273,15 @@ class SessionView:
                     final_stats = self.bot.run_natural_refresh(buy_count)
                 else:
                     final_stats = self.bot.run(refresh_count, buy_count)
+                if final_stats.get('status') == 'failed':
+                    has_error = True
+                    self._save_failure_report(final_stats)
                 self.root.after(0, lambda: self._update_stats(final_stats))
-                self.log(self._format_stats_summary("✅ 자동화 완료", final_stats))
+                self.log(self._format_stats_summary("자동화 중지" if has_error else "✅ 자동화 완료", final_stats))
             except Exception as e:
                 has_error = True
                 logger.error("봇 실행 중 오류: %s", e, exc_info=True)
+                self._save_failure_report({'status': 'failed', 'reason': str(e)})
                 if not self.app.is_closing:
                     self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 실행 중 오류 발생:\n{str(e)}"))
             finally:
@@ -2279,12 +2301,15 @@ class SessionView:
                 self.root.after(500, self._update_running_state)
                 final_stats = self.bot.run()
                 stopped_for_safety = bool(final_stats.get('stop_reason'))
+                if stopped_for_safety:
+                    self._save_failure_report(final_stats)
                 self.root.after(0, lambda: self._update_reroll_stats(final_stats))
                 title = '장비 리롤 안전 중지' if stopped_for_safety else '장비 리롤 완료'
                 self.log(self._format_reroll_summary(title, final_stats))
             except Exception as e:
                 has_error = True
                 logger.error("장비 리롤 실행 중 오류: %s", e, exc_info=True)
+                self._save_failure_report({'status': 'failed', 'reason': str(e)})
                 if not self.app.is_closing:
                     self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 장비 리롤 중 오류 발생:\n{str(e)}"))
             finally:
@@ -2304,10 +2329,14 @@ class SessionView:
                 self.root.after(500, self._update_running_state)
                 final_stats = self.bot.run()
                 self.root.after(0, lambda: self._update_penguin_stats(final_stats))
-                self.log(self._format_penguin_summary("펭귄 구매 완료", final_stats))
+                if final_stats.get('status') == 'failed':
+                    has_error = True
+                    self._save_failure_report(final_stats)
+                self.log(self._format_penguin_summary("펭귄 구매 중지" if has_error else "펭귄 구매 완료", final_stats))
             except Exception as e:
                 has_error = True
                 logger.error("펭귄 구매 실행 중 오류: %s", e, exc_info=True)
+                self._save_failure_report({'status': 'failed', 'reason': str(e)})
                 if not self.app.is_closing:
                     self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 펭귄 구매 중 오류 발생:\n{str(e)}"))
             finally:
@@ -2330,6 +2359,7 @@ class SessionView:
             except Exception as e:
                 has_error = True
                 logger.error("이벤트 자동화 중 오류: %s", e, exc_info=True)
+                self._save_failure_report({'status': 'failed', 'reason': str(e)})
                 if not self.app.is_closing:
                     self.root.after(0, lambda: messagebox.showerror("오류", f"{self.name} 이벤트 자동화 중 오류 발생:\n{str(e)}"))
             finally:
@@ -3234,9 +3264,8 @@ class SecretShopGUI:
             if messagebox.askyesno('자동 업데이트 안내', f'{exc}\n\n다운로드 페이지를 여시겠습니까?', parent=self.root):
                 self._open_release_page()
             return
-        if not messagebox.askyesno('업데이트 안내',
-                f'새 버전 {self.release_info.version}을 설치하고 재시작할까요?\n'
-                '다운로드가 끝나면 실행 중인 봇을 중지합니다.\n설정과 로그는 유지되며 봇은 자동 재개하지 않습니다.', parent=self.root):
+        if not UpdateConfirmationDialog(self.root, self.release_info, APP_VERSION,
+                                        self._open_release_page).confirmed:
             return
         self.update_in_progress = True
         self.update_window = tk.Toplevel(self.root)

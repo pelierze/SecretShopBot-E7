@@ -100,12 +100,15 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 return super()._wait(f'{phase} ({attempt}/{attempts})', predicate)
             except RecognitionTimeout:
                 if attempt == attempts:
+                    self._save_failure_diagnostic('recognition_timeout', phase)
                     raise
                 logger.warning('%s: 화면 인식 재시도 %d/%d (입력 없음)', phase, attempt+1, attempts)
                 if self.stop_event.wait(self.observer.config.get('recognition_retry_seconds', 1)):
                     raise _Stopped()
 
     def _record(self, label):
+        if label == 'failed':
+            self._save_failure_diagnostic('failure', self.stats.get('phase'))
         if self.diagnostic_capture: super()._record(label)
         if label == 'failed' and self.last_screen is not None:
             if self.event_context and self.report_dir is None:
@@ -113,6 +116,34 @@ class NodeProgressionBot(KnightRecruitmentBot):
                     'stage': 'unrecognized_event', 'reason': self.stats.get('reason','')})
             self._report('failed', self.last_screen, {'phase': self.stats.get('phase'),
                 'reason': self.stats.get('reason'), 'registered_event': self.pending_event_id})
+
+    def _save_failure_diagnostic(self, label, phase=None):
+        # Capture only bounded failure evidence, even when continuous capture is off.
+        if not isinstance(self.last_screen, np.ndarray):
+            return
+        try:
+            path = self.runtime_dir / label
+            success, encoded = cv2.imencode('.png', self.last_screen)
+            if not success:
+                raise OSError('진단 화면 인코딩 실패')
+            encoded.tofile(str(path.with_suffix('.png')))
+            markers = ('levelup', 'level_close', 'victory', 'continue', 'supply_loot',
+                       'supply_done', 'loot_button', 'loot_button_dim', 'event_loot_close')
+            metadata = {'phase': phase, 'reason': self.stats.get('reason'), 'markers': {}}
+            try:
+                metadata['state'] = self.observer.classify(self.last_screen)
+            except Exception as exc:
+                metadata['classification_error'] = str(exc)
+            for name in markers:
+                try:
+                    metadata['markers'][name] = self.observer.find(self.last_screen, name)
+                except Exception as exc:
+                    metadata.setdefault('marker_errors', {})[name] = str(exc)
+            path.with_suffix('.json').write_text(json.dumps(metadata, ensure_ascii=False,
+                indent=2), encoding='utf-8')
+            logger.warning('탐사 진단 기록: %s (.png, .json)', path)
+        except Exception:
+            logger.exception('탐사 진단 기록 저장 실패 — 기존 오류를 유지합니다.')
 
     def _report(self, label, screen, metadata=None):
         if not self.save_unknown_events or self.report_dir is None or self.report_sequence >= 12: return
@@ -166,9 +197,12 @@ class NodeProgressionBot(KnightRecruitmentBot):
         # must never replay a previous screen's coordinates.
         return self._wait(phase, lambda s: (kind,) if (kind := self._classify(s)) in allowed else None)[0]
 
-    def _guarded_tap(self, phase, state, marker, *, exiting=False):
+    def _guarded_tap(self, phase, state, marker, *, exiting=False, followups=None):
         def ready(screen):
-            if self.observer.classify(screen) != state:
+            kind = self.observer.classify(screen)
+            if followups and kind in followups:
+                return ('followup', kind)
+            if kind != state:
                 return None
             if self.observer.forbidden(screen) and not exiting:
                 raise RuntimeError('금지 항목이 발견되어 입력을 중지했습니다.')
@@ -176,6 +210,9 @@ class NodeProgressionBot(KnightRecruitmentBot):
         for attempt in range(self.observer.config.get('recognition_attempts', 3)):
             bounds = self._wait(phase, ready)
             if ready(self._capture()) == bounds:
+                if bounds[0] == 'followup':
+                    logger.info('%s: 닫기 전 화면 전환 확인 (%s → %s), 새 화면 처리', phase, state, bounds[1])
+                    return bounds[1]
                 self._tap(bounds)
                 return
             self._check_stop()
@@ -184,11 +221,13 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
     def _dismiss_popup(self, phase, state, marker, allowed, max_retries=2, wait_seconds=3):
         """Retry only a freshly recognized close control, never a prior click."""
-        self._guarded_tap(phase, state, marker, exiting=True)
+        allowed = allowed - {state}
+        next_state = self._guarded_tap(phase, state, marker, exiting=True, followups=allowed)
+        if next_state in allowed:
+            return next_state
         sent_at = time.monotonic()
         retries = 0
         changed_before_retry = 0
-        allowed = allowed - {state}
 
         def outcome(screen):
             kind = self._classify(screen)
@@ -464,7 +503,11 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 if loot_entered or self._classify(self._capture()) == 'loot':
                     state = 'loot'
                 else:
-                    state = self._state('보급 전리품 목록 진입 대기', {'loot', 'supply'})
+                    state = self._state('보급 전리품 목록 진입 대기', {'loot', 'supply', 'map'} | set(REWARD_POPUPS))
+                state = self._settle_reward_popups(state, {'loot', 'supply', 'map'})
+                if state == 'map':
+                    self.stats['nodes'] += 1
+                    return state
                 if state == 'loot':
                     state = self._settle_reward_popups(self._loot(), {'supply', 'map'})
                     if state == 'map':

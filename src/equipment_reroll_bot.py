@@ -320,10 +320,12 @@ class EquipmentRerollBot:
         self.stats["start_time"] = time.time()
         if self.startup_error:
             logger.error(self.startup_error)
+            self.stats['stop_reason'] = self.startup_error
             return self._finish_stats()
 
         images = self._validate_images()
         if not images:
+            self.stats['stop_reason'] = '장비 리롤 필수 이미지 없음'
             return self._finish_stats()
 
         target_summary = ", ".join(self._format_target_spec(spec) for spec in self.target_specs)
@@ -434,6 +436,7 @@ class EquipmentRerollBot:
                     return self._finish_stats()
             else:
                 logger.error("보조 능력치 변경 버튼을 %s회 확인했지만 찾지 못해 중지합니다.", self.REROLL_BUTTON_RETRY_COUNT)
+                self.stats['stop_reason'] = '보조 능력치 변경 버튼 인식 실패'
                 return self._finish_stats()
 
         return self._finish_stats()

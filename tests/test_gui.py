@@ -418,15 +418,17 @@ class UpdateLifecycleTest(unittest.TestCase):
             self.assertEqual(session.chaos_hero_combos['knight'].get(), 'Rose')
         finally: root.destroy()
 
-    @patch('src.gui.messagebox.askyesno', return_value=False)
+    @patch('src.gui.UpdateConfirmationDialog')
     def test_declining_update_does_not_start_download(self, prompt):
         from src.release_checker import ReleaseInfo
         app = self.app(); app.update_in_progress = False
         app.release_info = ReleaseInfo('v9.0.0', '', '')
+        prompt.return_value.confirmed = False
         with patch('src.gui.sys.frozen', True, create=True), patch('src.gui.release_assets'), patch('src.gui.Path.is_file', return_value=True), patch('src.gui.threading.Thread') as thread:
             app._request_app_update()
         thread.assert_not_called()
         self.assertFalse(app.update_in_progress)
+        self.assertIs(prompt.call_args.args[1], app.release_info)
 
     def test_worker_ack_is_required_before_closing_app(self):
         import tempfile

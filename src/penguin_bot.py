@@ -105,6 +105,7 @@ class PenguinBot:
             logger.info("펭귄런 사이클 %s/%s", cycle_index, self.cycle_count)
             if not self._run_single_cycle_with_retry(cycle_index):
                 logger.error("펭귄런 사이클 %s에서 재시도 후에도 진행하지 못해 중지합니다.", cycle_index)
+                self.stats.update(status='failed', reason=f'펭귄런 {cycle_index}회차 진행 실패')
                 return self._finish_stats()
             self.stats["cycles_completed"] = cycle_index
 

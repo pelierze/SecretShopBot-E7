@@ -302,6 +302,7 @@ class SecretShopBot:
                     else:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
+                        self.stats.update(status='failed', reason='구매 검증 실패 (골드 부족 가능성)')
                         return self._finish_stats()
             
             # 첫 페이지 처리 완료 → 드래그하여 두 번째 페이지로 이동
@@ -328,6 +329,7 @@ class SecretShopBot:
                     else:
                         # 구매 실패 (골드 부족 등) - 중지
                         logger.error("⚠️  구매 검증 실패! 골드 부족 가능성. 매크로를 중지합니다.")
+                        self.stats.update(status='failed', reason='구매 검증 실패 (골드 부족 가능성)')
                         return self._finish_stats()
             else:
                 logger.debug("두 번째 페이지에도 아이템 없음")
@@ -339,6 +341,7 @@ class SecretShopBot:
                     time.sleep(self._timing("after_refresh", 1.0))  # 리프레시 후 대기
                 else:
                     logger.error("Refresh recovery failed; stopping to avoid repeated scroll-only loops.")
+                    self.stats.update(status='failed', reason='상점 갱신 복구 실패')
                     return self._finish_stats()
         
         self._finish_stats()
@@ -377,6 +380,7 @@ class SecretShopBot:
                         return self._finish_stats()
                     if not self._purchase_item(item_name, location, buy_count_per_item):
                         logger.error("구매 검증 실패 - 자연 갱신 구매를 중지합니다.")
+                        self.stats.update(status='failed', reason='자연 갱신 구매 검증 실패')
                         return self._finish_stats()
             self.stats["completed_runs"] += 1
             logger.info("자연 갱신 상품 확인 완료 (%s회) - 다음 확인까지 대기", self.stats["completed_runs"])
