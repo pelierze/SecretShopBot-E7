@@ -51,3 +51,6 @@ tools/adb/*.exe
 tools/adb/*.dll
 platform-tools/
 platform-tools.zip
+
+# Local matching screenshots
+images/raws/
