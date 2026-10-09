@@ -133,6 +133,22 @@ class TestStoveBotCompatibility(unittest.TestCase):
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_equipment_reroll_bot_compatibility(self):
+        from src.equipment_reroll_bot import EquipmentRerollBot
+        bot = EquipmentRerollBot(
+            adb_controller=self.dev,
+            target_specs=[{"option": "speed", "value": 4, "is_percent": False}],
+            target_mode="exact",
+            required_match_count=1,
+            max_rerolls=5,
+            delay_before_reroll=0.1,
+            runtime_dir=self.temp_dir,
+        )
+        screen = bot._capture_screen()
+        self.assertIsNotNone(screen)
+        self.assertEqual(screen.shape, (720, 1280, 3))
+        bot.set_user_action("stop")
+        self.assertEqual(bot.user_action, "stop")
 
     def test_penguin_bot_compatibility(self):
         from src.penguin_bot import PenguinBot
@@ -211,5 +227,3 @@ class TestProcessGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-

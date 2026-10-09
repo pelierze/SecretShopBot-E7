@@ -303,6 +303,33 @@ class SessionViewFormattingTest(unittest.TestCase):
         self.assertEqual(SessionView._format_draw_efficiency(view, draw_count=0, sky_stone_usage=10), "-")
         self.assertEqual(SessionView._format_draw_efficiency(view, draw_count=5, sky_stone_usage=0), "-")
 
+    def test_reroll_duplicate_key_distinguishes_flat_and_percent_options(self):
+        view = object.__new__(SessionView)
+
+        flat_key = SessionView._get_reroll_duplicate_target_key(view, "공격력", False)
+        percent_key = SessionView._get_reroll_duplicate_target_key(view, "공격력", True)
+
+        self.assertNotEqual(flat_key, percent_key)
+        self.assertEqual(flat_key, ("공격력", False))
+        self.assertEqual(percent_key, ("공격력", True))
+
+    def test_reroll_percent_ranges_match_supported_substat_rolls(self):
+        view = object.__new__(SessionView)
+
+        for option_name in ("공격력", "생명력", "방어력"):
+            self.assertEqual(SessionView._get_reroll_target_range(view, option_name, True), (4, 8))
+
+    def test_reroll_option_label_only_shows_option_name(self):
+        view = object.__new__(SessionView)
+
+        self.assertEqual(SessionView._format_reroll_option_label(view, "공격력", True), "공격력")
+        self.assertEqual(SessionView._format_reroll_option_label(view, "생명력", False), "생명력")
+
+    def test_reroll_option_name_accepts_legacy_range_label(self):
+        view = object.__new__(SessionView)
+
+        self.assertEqual(SessionView._extract_reroll_option_name(view, "방어력 (4~8%)"), "방어력")
+
 
 class CheckboxIndicatorStyleTest(unittest.TestCase):
     def test_checkbox_custom_indicator_images_and_layout(self):
@@ -416,6 +443,35 @@ class UpdateLifecycleTest(unittest.TestCase):
             app._wait_update_worker()
         self.assertTrue(app.is_closing)
         app._finish_closing.assert_called_once()
+
+
+
+class RerollSafetySummaryTest(unittest.TestCase):
+    def test_safety_stop_summary_includes_reason(self):
+        view = object.__new__(SessionView)
+        summary = view._format_reroll_summary('장비 리롤 안전 중지', {
+            'stop_reason': '옵션 또는 숫자 재확인 불일치', 'goal_achieved': False,
+        })
+        self.assertIn('중지 사유: 옵션 또는 숫자 재확인 불일치', summary)
+
+    def test_safety_stop_uses_stopped_sound(self):
+        view = object.__new__(SessionView)
+        view.name = 'test'
+        view.root = Mock()
+        view.app = Mock(is_closing=False)
+        view.bot = Mock()
+        view.bot.run.return_value = {'stop_reason': '숫자 재확인 불일치'}
+        view.reroll_sound_var = Mock()
+        view.reroll_sound_var.get.return_value = True
+        view.was_stopped_by_user = False
+        view._play_stopped_sound = Mock()
+        view._play_complete_sound = Mock()
+        view.log = Mock()
+        view._run_reroll_bot()
+        self.assertIn('안전 중지', view.log.call_args.args[0])
+        callbacks = [c.args[1] for c in view.root.after.call_args_list]
+        self.assertTrue(any(c is view._play_stopped_sound for c in callbacks))
+        self.assertFalse(any(c is view._play_complete_sound for c in callbacks))
 
 
 if __name__ == '__main__':

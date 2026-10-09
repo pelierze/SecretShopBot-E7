@@ -29,7 +29,7 @@ def used_images(root):
     used.update(m['file'] for m in node['markers'].values())
     rec = json.loads((root/'src/chaos/recruitment_layout.json').read_text(encoding='utf-8'))
     needed = {'start', 'unlock', 'confirm_theme', 'recruit_card', 'filter',
-              'filter_panel', 'filter_element_label', 'recruit_active', 'completed'}
+              'filter_panel', 'recruit_active', 'completed'}
     needed.update(e+'_2' for e in ('dark','fire','ice','forest','light'))
     for hero in rec['heroes'].values():
         role = rec['classes'][hero['class']]
@@ -45,6 +45,7 @@ def used_images(root):
         'images/buttons': ['src/secret_shop_bot.py','src/json_macro_engine.py'],
         'images/items': ['src/secret_shop_bot.py','src/json_macro_engine.py'],
         'images/penguin': ['src/penguin_bot.py'],
+        'images/equipment_options': ['src/equipment_reroll_bot.py'],
         'images/2026_summer_event': ['src/event/events/2026_summer_event/observer.py'],
     }
     remote = json.loads((root/'remote_script.json').read_text(encoding='utf-8'))

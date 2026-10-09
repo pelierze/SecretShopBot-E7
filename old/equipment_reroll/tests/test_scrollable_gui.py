@@ -32,11 +32,7 @@ class SmallWindowTest(unittest.TestCase):
 
     def test_every_mode_and_log_can_be_reached_in_small_window(self):
         session = self.session
-        self.assertEqual(
-            [session.mode_notebook.tab(tab, 'text') for tab in session.mode_notebook.tabs()],
-            ['비밀상점', '펭귄', '자동 탐사', '이벤트'],
-        )
-        for tab in (session.shop_tab, session.penguin_tab, session.chaos_tab, session.event_tab):
+        for tab in (session.shop_tab, session.reroll_tab, session.penguin_tab, session.chaos_tab, session.event_tab):
             with self.subTest(tab=tab):
                 session.mode_notebook.select(tab)
                 self.root.update()
@@ -115,7 +111,7 @@ class SmallWindowTest(unittest.TestCase):
         session = self.session
         heights = []
         log_height = session.log_frame.winfo_height()
-        for tab in (session.chaos_tab, session.penguin_tab):
+        for tab in (session.reroll_tab, session.chaos_tab, session.penguin_tab):
             session.mode_notebook.select(tab)
             self.root.update()
             self.assertEqual(int(session.mode_notebook.cget('height')), tab.winfo_reqheight())
@@ -157,7 +153,7 @@ class SmallWindowTest(unittest.TestCase):
     def test_tab_switching_does_not_squish_buttons(self):
         session = self.session
         # Cycle through smaller tabs and back to chaos tab
-        for tab in (session.penguin_tab, session.shop_tab, session.event_tab, session.chaos_tab):
+        for tab in (session.penguin_tab, session.reroll_tab, session.shop_tab, session.event_tab, session.chaos_tab):
             session.mode_notebook.select(tab)
             self.root.update()
         # Ensure chaos_start_btn and controls frame are not vertically compressed

@@ -129,7 +129,7 @@ class WindowResizeGuiTests(unittest.TestCase):
         self.assertIn('적용되지', view.stove_resize_status.config.call_args.kwargs['text'])
 
     def test_resize_pending_blocks_all_macro_starts(self):
-        for method in ('_start_bot', '_start_penguin_bot',
+        for method in ('_start_bot', '_start_reroll_bot', '_start_penguin_bot',
                        '_start_chaos_bot', '_start_event_bot'):
             with self.subTest(method=method):
                 view = self.view()

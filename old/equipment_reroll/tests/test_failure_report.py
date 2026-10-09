@@ -76,6 +76,7 @@ class FailureReportLifecycleTests(unittest.TestCase):
         view.app = SimpleNamespace(is_closing=False)
         view.bot = Mock(run=Mock(return_value=result))
         view.log = Mock()
+        view.reroll_sound_var = Mock()
         return view
 
     @patch('src.gui.save_failure_report')
@@ -106,7 +107,7 @@ class FailureReportLifecycleTests(unittest.TestCase):
 
     @patch('src.gui.save_failure_report')
     def test_other_automation_exceptions_create_reports(self, save):
-        for method, args in [('_run_bot', (1, 1)),
+        for method, args in [('_run_bot', (1, 1)), ('_run_reroll_bot', ()),
                              ('_run_penguin_bot', ()), ('_run_event_bot', ())]:
             with self.subTest(method=method):
                 save.reset_mock()
@@ -126,11 +127,12 @@ class FailureReportLifecycleTests(unittest.TestCase):
     @patch('src.gui.save_failure_report')
     def test_returned_failure_and_safety_stop_create_reports(self, save):
         for method, args, result in [('_run_bot', (1, 1), {'status': 'failed'}),
-                                     ('_run_penguin_bot', (), {'status': 'failed'})]:
+                                     ('_run_penguin_bot', (), {'status': 'failed'}),
+                                     ('_run_reroll_bot', (), {'stop_reason': '인식 실패'})]:
             with self.subTest(method=method):
                 save.reset_mock()
                 view = self.view(result)
-                for formatter in ('_format_stats_summary', '_format_penguin_summary'):
+                for formatter in ('_format_stats_summary', '_format_penguin_summary', '_format_reroll_summary'):
                     setattr(view, formatter, Mock(return_value='중지'))
                 getattr(view, method)(*args)
                 save.assert_called_once()
