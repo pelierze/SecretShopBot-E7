@@ -845,7 +845,8 @@ class SessionView:
         options_row = ttk.Frame(settings, style="CardInner.TFrame")
         options_row.grid(row=2, column=0, columnspan=8, sticky=tk.W, padx=5, pady=(4, 2))
         self.chaos_cost_fallback = tk.BooleanVar(value=True)
-        ttk.Checkbutton(options_row, text="코스트 초과 시 대체 영웅 자동 영입", variable=self.chaos_cost_fallback).pack(side=tk.LEFT)
+        ttk.Checkbutton(options_row, text="코스트 초과 시 대체 영웅 자동 영입", variable=self.chaos_cost_fallback,
+                        command=self._save_chaos_preset).pack(side=tk.LEFT)
         self.chaos_cost_warning_label = ttk.Label(options_row, text="", foreground="#d97706", font=("맑은 고딕", 9))
         self.chaos_cost_warning_label.pack(side=tk.LEFT, padx=10)
 
@@ -868,7 +869,6 @@ class SessionView:
         self.chaos_save_unknown = tk.BooleanVar(value=False)
         self.chaos_buy_future_investment = tk.BooleanVar(value=True)
         self.chaos_event_controls = [
-            ttk.Radiobutton(event_settings,text="문구 판단 (랭크업·전투 우선)",variable=self.chaos_event_mode,value="ocr"),
             ttk.Radiobutton(event_settings,text="무작위 선택 (선택지 내용 미판독)",variable=self.chaos_event_mode,value="random"),
             ttk.Checkbutton(event_settings,text="미확인 이벤트 저장(제보용)",variable=self.chaos_save_unknown),
         ]
@@ -893,6 +893,67 @@ class SessionView:
         ttk.Label(controls, text="회").pack(side=tk.LEFT, padx=(2, 10))
         self.chaos_status_label = ttk.Label(controls, text="대기 중", wraplength=520)
         self.chaos_status_label.pack(side=tk.LEFT, padx=5)
+        self._restore_chaos_preset()
+        for combo in (*self.chaos_hero_combos.values(), *self.chaos_rank_priority_combos.values()):
+            combo.bind('<<ComboboxSelected>>', lambda event: self._save_chaos_preset(), add='+')
+
+    @staticmethod
+    def _chaos_preset_path():
+        base = Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData/Local')
+        return base / 'SecretShopBot-E7' / 'exploration-presets.json'
+
+    def _restore_chaos_preset(self):
+        try:
+            path = self._chaos_preset_path()
+            if not path.exists():
+                return
+            saved = json.loads(path.read_text(encoding='utf-8'))['sessions'].get(self.session_id, {})
+            for role, combo in self.chaos_hero_combos.items():
+                hero = saved.get('heroes', {}).get(role)
+                choices = self.chaos_hero_choices[role]
+                if hero in choices:
+                    combo.current(choices.index(hero))
+            for role, combo in self.chaos_rank_priority_combos.items():
+                priority = saved.get('rank_priorities', {}).get(role)
+                if priority in ('1순위', '2순위', '3순위', '4순위', '제외'):
+                    combo.set(priority)
+            fallback = saved.get('auto_fallback')
+            if isinstance(fallback, bool):
+                self.chaos_cost_fallback.set(fallback)
+            self._check_chaos_hero_cost_warning()
+        except Exception:
+            logger.exception('탐사 영웅 프리셋 복원 실패 — 기본 설정을 사용합니다.')
+
+    def _save_chaos_preset(self):
+        temporary = None
+        try:
+            path = self._chaos_preset_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                data = json.loads(path.read_text(encoding='utf-8'))
+                if not isinstance(data, dict) or not isinstance(data.get('sessions'), dict):
+                    data = {'sessions': {}}
+            except (FileNotFoundError, ValueError):
+                data = {'sessions': {}}
+            data['sessions'][self.session_id] = {
+                'heroes': {role: self.chaos_hero_choices[role][combo.current()]
+                           for role, combo in self.chaos_hero_combos.items()
+                           if 0 <= combo.current() < len(self.chaos_hero_choices[role])},
+                'rank_priorities': {role: combo.get() for role, combo in self.chaos_rank_priority_combos.items()},
+                'auto_fallback': self.chaos_cost_fallback.get(),
+            }
+            fd, temporary = tempfile.mkstemp(dir=path.parent, suffix='.tmp')
+            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+                json.dump(data, stream, ensure_ascii=False, indent=2)
+            os.replace(temporary, path)
+        except Exception:
+            logger.exception('탐사 영웅 프리셋 저장 실패')
+        finally:
+            if temporary and Path(temporary).exists():
+                try:
+                    Path(temporary).unlink()
+                except OSError:
+                    logger.warning('탐사 프리셋 임시 파일 정리 실패: %s', temporary)
 
     def _create_event_widgets(self):
         self.event_settings_frame = ttk.LabelFrame(self.event_tab, text="2026 여름 이벤트 설정", padding=10)
@@ -1625,7 +1686,7 @@ class SessionView:
                 auto_fb = self.chaos_cost_fallback.get() if hasattr(self, "chaos_cost_fallback") else True
                 self.bot = ExplorationBot(self.adb_controller, get_resource_root(), self.runtime_dir, hero_ids=hero_ids,
                                           rank_priority=rank_priority, target_clears=target_clears,
-                                          event_mode=self.chaos_event_mode.get(),save_unknown_events=self.chaos_save_unknown.get(),
+                                          event_mode="random",save_unknown_events=self.chaos_save_unknown.get(),
                                           auto_fallback=auto_fb,
                                           buy_future_investment=self.chaos_buy_future_investment.get() if hasattr(self, 'chaos_buy_future_investment') else False)
             except Exception as exc:
@@ -2872,6 +2933,7 @@ class SecretShopGUI:
                     var.configure(state=state)
             session._update_macro_dependent_controls()
             session._check_chaos_hero_cost_warning()
+            session._restore_chaos_preset()
 
     def _open_support_page(self):
         try:

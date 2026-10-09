@@ -33,7 +33,7 @@ def used_images(root):
     needed.update(e+'_2' for e in ('dark','fire','ice','forest','light'))
     for hero in rec['heroes'].values():
         role = rec['classes'][hero['class']]
-        needed.update((role['anchor'],role['header'],hero['portrait'],hero['selected'],
+        needed.update((role['anchor'],role['header'],role['completed_icon'],hero['portrait'],hero['selected'],
                        hero['completed_name'],hero['element']+'_1'))
     used.update('images/chaos/hero_selection/'+rec['markers'][name]['file'] for name in needed)
     used.update(f'images/chaos/hero_selection/templates/themes/select_supply_{i}.png' for i in (1,2))

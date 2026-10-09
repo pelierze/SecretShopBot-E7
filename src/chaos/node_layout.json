@@ -135,14 +135,14 @@
       ]
     },
     "detail_rest": {
-      "file": "images/chaos/node_progression/raw/rest_menu_live.png",
+      "file": "images/chaos/node_progression/raw/rest_menu_local_live.png",
       "threshold": 0.9,
       "max_color_error": 0.055,
       "crop": [
-        932,
-        181,
-        173,
-        28
+        987,
+        184,
+        37,
+        26
       ],
       "region": [
         920,
@@ -407,20 +407,20 @@
       ]
     },
     "level_close": {
-      "file": "images/chaos/node_progression/raw/battle/victory_levelup_live.png",
+      "file": "images/chaos/node_progression/raw/battle/victory_levelup_arrow_live.png",
       "threshold": 0.85,
       "max_color_error": 0.1,
       "crop": [
-        582,
-        624,
-        116,
-        28
+        626,
+        658,
+        28,
+        23
       ],
       "region": [
-        560,
-        610,
-        170,
-        60
+        590,
+        635,
+        100,
+        65
       ]
     },
     "victory": {
@@ -800,12 +800,12 @@
       "max_color_error": 0.06
     },
     "supply_loot": {
-      "file": "images/chaos/node_progression/raw/supply_menu_live.png",
+      "file": "images/chaos/node_progression/raw/supply_menu_local_live.png",
       "crop": [
         930,
-        400,
-        160,
-        31
+        402,
+        55,
+        28
       ],
       "region": [
         920,
@@ -836,10 +836,10 @@
     "loot_reroll": {
       "file": "images/chaos/node_progression/raw/loot_cards_live.png",
       "crop": [
-        300,
-        541,
-        82,
-        29
+        203,
+        539,
+        28,
+        32
       ],
       "region": [
         180,
@@ -1123,12 +1123,12 @@
       "max_color_error": 0.07
     },
     "event_loot_close": {
-      "file": "images/chaos/node_progression/raw/event_loot_popup_live.png",
+      "file": "images/chaos/node_progression/raw/event_loot_popup_local_live.png",
       "crop": [
-        582,
-        683,
-        118,
-        22
+        584,
+        684,
+        20,
+        20
       ],
       "region": [
         550,
@@ -1312,10 +1312,10 @@
     "summary_close": {
       "file": "images/chaos/node_progression/raw/expedition_summary_live.png",
       "crop": [
-        594,
-        683,
-        119,
-        22
+        596,
+        685,
+        15,
+        15
       ],
       "region": [
         570,
@@ -1965,23 +1965,6 @@
       ],
       "threshold": 0.92,
       "max_color_error": 0.07
-    },
-    "event_loot_consume": {
-      "file": "images/chaos/node_progression/raw/event_loot_consume_live.png",
-      "crop": [
-        795,
-        485,
-        203,
-        30
-      ],
-      "region": [
-        780,
-        470,
-        230,
-        60
-      ],
-      "threshold": 0.9,
-      "max_color_error": 0.06
     },
     "event_two_paths": {
       "file": "images/chaos/node_progression/raw/event_two_paths_live.png",
@@ -3006,9 +2989,9 @@
     "shop_investment_confirm_item": {
       "file": "images/chaos/node_progression/raw/shop/future_investment_confirm.png",
       "crop": [
-        506,
+        505,
         313,
-        234,
+        74,
         75
       ],
       "region": [
@@ -3171,6 +3154,23 @@
         106
       ],
       "threshold": 0.87,
+      "max_color_error": 0.1
+    },
+    "event_loot_consume_selected_slot": {
+      "file": "images/chaos/node_progression/raw/event_loot_consume_leaf_selected_live.png",
+      "crop": [
+        849,
+        510,
+        28,
+        28
+      ],
+      "region": [
+        840,
+        502,
+        44,
+        44
+      ],
+      "threshold": 0.9,
       "max_color_error": 0.1
     }
   },
@@ -4712,5 +4712,37 @@
       48,
       34
     ]
-  }
+  },
+  "levelup_close_bounds": [
+    582,
+    624,
+    116,
+    28
+  ],
+  "blocked_choice_crops": {
+    "dont_select_1.png": [
+      53,
+      7,
+      75,
+      74
+    ],
+    "dont_select_2.png": [
+      69,
+      5,
+      89,
+      88
+    ],
+    "dont_select_3.png": [
+      40,
+      6,
+      81,
+      65
+    ]
+  },
+  "event_loot_consume_plus_region": [
+    868,
+    528,
+    55,
+    55
+  ]
 }

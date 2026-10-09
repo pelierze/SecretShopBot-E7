@@ -32,6 +32,14 @@ class NodeObserver:
             source = read_image(str(path))
             if source is None:
                 raise ValueError(f'금지 이미지 읽기 실패: {path}')
+            crop = self.config.get('blocked_choice_crops', {}).get(path.name)
+            if crop:
+                x, y, w, h = crop
+                if min(x, y) < 0 or min(w, h) <= 0 or x+w > source.shape[1] or y+h > source.shape[0]:
+                    raise ValueError(f'금지 아이템 아이콘 영역 오류: {path.name}')
+                source = source[y:y+h, x:x+w]
+            # Registry images added later should contain only the item icon.
+            # Legacy files retain their original text but never match that text.
             self.blocked.append((path.stem, source))
         if not self.blocked:
             raise ValueError('금지 이미지 목록이 비어 있습니다.')
@@ -152,7 +160,7 @@ class NodeObserver:
         return None
 
     def levelup_controls(self, screen):
-        """Require both the level-up title and its close button at one scale."""
+        """Pair the title with a moving down arrow; return a stable tap area."""
         names = ('levelup', 'level_close')
         for scale in (1., .95, 1.05, .9, 1.1):
             controls = {}
@@ -172,7 +180,12 @@ class NodeObserver:
             if len(controls) == 2:
                 tx, ty, tw, th = controls['levelup']
                 cx, cy, cw, ch = controls['level_close']
-                if abs(tx+tw/2-cx-cw/2) <= 40 and 430 <= cy+ch/2-ty-th/2 <= 550:
+                if abs(tx+tw/2-cx-cw/2) <= 40 and 490 <= cy+ch/2-ty-th/2 <= 565:
+                    # Animation changes the arrow position every frame. The
+                    # popup close area stays fixed, so stable-frame checks and
+                    # the final pre-tap observation must use that area instead.
+                    controls['level_close_arrow'] = controls['level_close']
+                    controls['level_close'] = tuple(self.config['levelup_close_bounds'])
                     return controls
         return None
 
@@ -248,6 +261,34 @@ class NodeObserver:
         cards=[tuple(b) for b in self.config['loot_cards'] if abs(b[0]-x)<22]
         return cards[0] if len(cards)==1 else None
 
+    def loot_consume_plus(self, screen):
+        x, y, w, h = self.config['event_loot_consume_plus_region']
+        sample = screen[y:y+h, x:x+w]
+        if sample.shape[:2] != (h, w):
+            return False
+        hsv = cv2.cvtColor(sample, cv2.COLOR_BGR2HSV)
+        mask = ((hsv[:, :, 1] < 80) & (hsv[:, :, 2] >= 190)).astype(np.uint8)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            cx, cy, cw, ch = cv2.boundingRect(contour)
+            if not (24 <= cw <= 40 and 24 <= ch <= 40 and abs(cw-ch) <= 4):
+                continue
+            if abs(cx+cw/2-w/2) > 5 or abs(cy+ch/2-h/2) > 5:
+                continue
+            cross = mask[cy:cy+ch, cx:cx+cw]
+            horizontal = cross[ch//2-2:ch//2+3].any(axis=0).mean()
+            vertical = cross[:, cw//2-2:cw//2+3].any(axis=1).mean()
+            if horizontal >= .85 and vertical >= .85 and cross.mean() <= .35:
+                return True
+        return False
+
+    def is_loot_consume(self, screen):
+        # A plus identifies the empty slot. Selection replaces it with an item
+        # and its remove control; inventory geometry is required in both cases.
+        slot = (self.loot_consume_plus(screen)
+                or self.find(screen, 'event_loot_consume_selected_slot'))
+        return bool(slot and self.loot_consume_choices(screen))
+
     def loot_consume_choices(self, screen):
         sub = screen[145:470, 650:1140]
         gray = cv2.cvtColor(sub, cv2.COLOR_BGR2GRAY)
@@ -312,7 +353,7 @@ class NodeObserver:
         if self.levelup_controls(screen): return 'levelup'
         if self.is_rank_result(screen): return 'rank_result'
         if self.find(screen, 'event_loot_close'): return 'event_loot_popup'
-        if self.find(screen, 'event_loot_consume'): return 'event_loot_consume'
+        if self.is_loot_consume(screen): return 'event_loot_consume'
         if len(self.all(screen,'loot_reroll')) == 3 and (self.find(screen,'loot_button') or self.find(screen,'loot_button_dim')): return 'loot'
         if self.find(screen, 'victory') and self.find(screen, 'continue'):
             if self.find(screen, 'battle_rank_complete'): return 'battle_rank_complete'
@@ -461,6 +502,28 @@ class NodeObserver:
         rows, _ = self.ocr(cv2.resize(screen[y:y+h, x:x+w], None, fx=2, fy=2),
                            use_det=False, use_cls=False)
         return bool(rows and len(rows) == 1 and self.rank_up_text_matches(*rows[0]))
+
+    def shop_currency_mask(self, screen):
+        """Extract bright neutral digit strokes without reading their value."""
+        x, y, w, h = self.config['shop_purchase']['currency_region']
+        sample = screen[y:y+h, x:x+w]
+        if sample.shape[:2] != (h, w):
+            return None
+        hsv = cv2.cvtColor(sample, cv2.COLOR_BGR2HSV)
+        mask = (hsv[:, :, 1] < 80) & (hsv[:, :, 2] >= 175)
+        if not 15 <= np.count_nonzero(mask) <= mask.size * .5:
+            return None
+        return mask
+
+    @staticmethod
+    def shop_currency_changed(before, after):
+        union = np.count_nonzero(before | after)
+        return np.count_nonzero(before != after) >= max(12, union * .1)
+
+    @staticmethod
+    def shop_currency_stable(before, after):
+        union = np.count_nonzero(before | after)
+        return np.count_nonzero(before != after) <= max(3, union * .03)
 
     def shop_number(self, screen, region):
         x,y,w,h = region

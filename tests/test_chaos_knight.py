@@ -66,8 +66,11 @@ class ScriptedObserver:
     def __init__(self):
         self.theme = SimpleNamespace(observe=lambda s: SimpleNamespace(state=s.get('theme', 'unknown'), bounds=(100, 140, 120, 145) if 'theme' in s else None))
 
-    def find(self, screen, name):
+    def find(self, screen, name, region=None):
         return screen.get(name)
+
+    def hero_selected(self, screen, portrait):
+        return bool(screen.get('rose_selected'))
 
     def completed(self, screen):
         return screen.get('done', False)

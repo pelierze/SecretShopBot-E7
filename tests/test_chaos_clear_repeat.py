@@ -24,6 +24,42 @@ class ClearRepeatTests(unittest.TestCase):
     def image(self, name):
         return read_image(str(RAW/name))
 
+    def test_reported_clear_summary_exits_battle_and_counts_clear(self):
+        bot = NodeProgressionBot(Mock(), ROOT, self.tmp.name, self.observer)
+        frames = [self.image('expedition_clear_summary_local_live.png'), self.image('entry_after_defeat_live.png')]
+        current = [0]
+        bot._capture = lambda: frames[current[0]]
+        bot._tap = lambda bounds: current.__setitem__(0, 1)
+        bot._battle()
+        result = bot.run()
+        self.assertEqual(result['status'], 'round_cleared')
+        self.assertEqual(result['summary_boss_count'], 3)
+        self.assertEqual(current[0], 1)
+
+    def test_resumed_incomplete_summary_closes_without_counting_clear(self):
+        for bosses in (0, 1, 2):
+            with self.subTest(bosses=bosses):
+                bot = NodeProgressionBot(Mock(), ROOT, self.tmp.name, self.observer)
+                frames = [self.image('expedition_summary_live.png'), self.image('entry_after_defeat_live.png')]
+                current = [0]
+                bot._capture = lambda: frames[current[0]]
+                bot._tap = lambda bounds: current.__setitem__(0, 1)
+                with patch.object(self.observer, 'summary_boss_count', return_value=bosses):
+                    result = bot.run()
+                self.assertEqual(result['status'], 'round_failed')
+                self.assertEqual(result['outcome'], 'incomplete')
+                self.assertEqual(result['summary_boss_count'], bosses)
+                self.assertEqual(current[0], 1)
+
+    def test_reported_summary_requires_title_and_close_icon(self):
+        frame = self.image('expedition_clear_summary_local_live.png')
+        self.assertEqual(self.observer.classify(frame), 'expedition_summary')
+        frame[670:715, 570:740] = 0
+        self.assertNotEqual(self.observer.classify(frame), 'expedition_summary')
+        frame = self.image('expedition_clear_summary_local_live.png')
+        frame[20:100, 550:730] = 0
+        self.assertNotEqual(self.observer.classify(frame), 'expedition_summary')
+
     def test_final_boss_direct_summary_exits_battle_and_finishes(self):
         bot = NodeProgressionBot(Mock(),ROOT,self.tmp.name,self.observer)
         frames = [self.image('expedition_clear_summary_live.png'), self.image('entry_after_defeat_live.png')]
@@ -166,4 +202,4 @@ class ClearRepeatTests(unittest.TestCase):
         current=[0]
         bot._capture=lambda:frames[current[0]]
         bot._tap=lambda bounds:current.__setitem__(0,1)
-        self.assertEqual(bot.run()['status'],'stopped')
+        self.assertEqual(bot.run()['status'],'round_failed')

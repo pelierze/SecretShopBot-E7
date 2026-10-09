@@ -157,8 +157,30 @@ class KnightRecruitmentBot:
         return None
 
     def _recruit(self, screen):
-        if (self._target_portrait(screen) and self.observer.find(screen, "rose_selected")):
+        if self._selected_portrait(screen):
             return self.observer.find(screen, "recruit_active")
+        return None
+
+    def _select_hero(self, portrait):
+        self._selection_target = portrait
+        self._tap(portrait)
+
+    def _selected_portrait(self, screen):
+        target = getattr(self, '_selection_target', None)
+        if target is None:
+            portrait = self._target_portrait(screen)
+        else:
+            # Verify the clicked copy even when several copies are visible.
+            if self.observer.find(screen, 'filter_panel'):
+                return None
+            x, y, w, h = target
+            x1, y1 = max(0, x - 12), max(0, y - 12)
+            x2, y2 = min(1280, x + w + 12), min(720, y + h + 12)
+            hero = getattr(self, 'active_hero', None)
+            marker = hero['portrait'] if hero else 'rose'
+            portrait = self.observer.find(screen, marker, (x1, y1, x2-x1, y2-y1))
+        if portrait and self.observer.hero_selected(screen, portrait):
+            return portrait
         return None
 
     def _class_button(self, screen):
@@ -168,6 +190,7 @@ class KnightRecruitmentBot:
         return self.observer.completed(screen)
 
     def _recruit_one(self):
+        self._selection_target = None
         self._tap(self._wait(f"{self.hero_name}: 직업 영입권 확인", self._class_button))
         self._tap(self._wait(f"{self.hero_name}: 목록 및 필터 버튼 확인", self._filter_button))
         element = self._wait("속성 필터 메뉴 확인", self._element_state)
@@ -185,7 +208,7 @@ class KnightRecruitmentBot:
 
         self._wait("속성 선택 완료 확인", selected_at_target)
         self._point("filter_dismiss_point")
-        self._tap(self._wait(f"{self.hero_name} 찾기 (스크롤 없음)", self._target_portrait))
+        self._select_hero(self._wait(f"{self.hero_name} 찾기 (스크롤 없음)", self._target_portrait))
         self._tap(self._wait(f"{self.hero_name} 선택 및 영입 버튼 확인", self._recruit))
         self._wait(f"{self.hero_name} 영입 완료 확인", lambda s: ("done",) if self._current_completed(s) else None)
 
@@ -280,7 +303,7 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
         return None
 
     def _recruit(self, screen):
-        if self._target_portrait(screen) and self.observer.find(screen, self.active_hero["selected"]):
+        if self._selected_portrait(screen):
             return self.observer.find(screen, "recruit_active")
         return None
 
@@ -304,6 +327,8 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
         poll = self.observer.config.get("poll_seconds", 0.3)
         deadline = time.monotonic() + timeout
         disabled_count = 0
+        active_count = 0
+        previous_button = None
         max_disabled_checks = 3
 
         while time.monotonic() < deadline:
@@ -312,15 +337,21 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
 
             recruit_btn = self._recruit(screen)
             if recruit_btn:
-                return ("active", recruit_btn)
-
-            if self._target_portrait(screen) and self.observer.find(screen, self.active_hero["selected"]):
+                active_count = active_count + 1 if recruit_btn == previous_button else 1
+                previous_button = recruit_btn
+                disabled_count = 0
+                if active_count >= self.observer.config.get('stable_frames', 2):
+                    logger.info("자동 탐사: %s 카드 금색 선택 테두리 및 영입 버튼 확인 완료", self.hero_name)
+                    return ("active", recruit_btn)
+            elif self._selected_portrait(screen):
+                active_count, previous_button = 0, None
                 disabled_count += 1
                 if disabled_count >= max_disabled_checks:
                     logger.warning("영웅 '%s' 선택 확인되었으나 영입 버튼 비활성화 (파티 코스트 초과 감지)", self.hero_name)
                     return ("cost_exceeded", None)
             else:
                 disabled_count = 0
+                active_count, previous_button = 0, None
 
             if self.stop_event.wait(poll):
                 raise _Stopped()
@@ -430,6 +461,7 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
         raise PartyCostExceededError(old_name, self.active_hero.get("class"), fallback, message=error_msg)
 
     def _recruit_one(self):
+        self._selection_target = None
         self._tap(self._wait(f"{self.hero_name}: 직업 영입권 확인", self._class_button))
         self._tap(self._wait(f"{self.hero_name}: 목록 및 필터 버튼 확인", self._filter_button))
         element = self._wait("속성 필터 메뉴 확인", self._element_state)
@@ -453,7 +485,7 @@ class PartyRecruitmentBot(KnightRecruitmentBot):
             self._handle_hero_not_found()
             return
 
-        self._tap(portrait)
+        self._select_hero(portrait)
 
         action = self._wait_recruit_action()
         if action[0] == "cost_exceeded":

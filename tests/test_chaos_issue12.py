@@ -45,6 +45,60 @@ class Issue12Tests(unittest.TestCase):
         self.assertIsNone(self.observer.find(screen, 'level_close'))
         self.assertNotEqual(self.observer.classify(screen), 'levelup')
 
+    def test_latest_and_original_popups_are_recognized_by_arrow(self):
+        for filename in ('victory_levelup_live.png', 'victory_levelup_arrow_live.png'):
+            with self.subTest(filename=filename):
+                screen = read_image(str(ROOT / 'images/chaos/node_progression/raw/battle' / filename))
+                self.assertEqual(self.observer.classify(screen), 'levelup')
+                self.assertEqual(self.observer.find(screen, 'level_close'), (582, 624, 116, 28))
+                # Recognition is independent of the close instruction text.
+                screen[620:651, 560:730] = 0
+                self.assertEqual(self.observer.classify(screen), 'levelup')
+
+    def moving_arrow_frames(self):
+        frames = []
+        for top in (635, 645, 658, 675):
+            screen = self.resized_popup(1.)
+            screen[635:700, 590:690] = 0
+            arrow = self.observer.templates['level_close']
+            h, w = arrow.shape[:2]
+            screen[top:top+h, 626:626+w] = arrow
+            frames.append(screen)
+        return frames
+
+    def test_moving_arrow_has_stable_close_bounds(self):
+        arrow_positions = []
+        for screen in self.moving_arrow_frames():
+            controls = self.observer.levelup_controls(screen)
+            self.assertIsNotNone(controls)
+            arrow_positions.append(controls['level_close_arrow'][1])
+            self.assertEqual(controls['level_close'], (582, 624, 116, 28))
+        self.assertEqual(arrow_positions, [635, 645, 658, 675])
+
+    def test_moving_arrow_does_not_prevent_guarded_popup_click(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bot = NodeProgressionBot(Mock(), ROOT, directory, self.observer)
+            bot._capture = Mock(side_effect=self.moving_arrow_frames())
+            bot._tap = Mock()
+            with patch.dict(self.observer.config, poll_seconds=0, stable_frames=2):
+                bot._guarded_tap('레벨업 팝업 닫기', 'levelup', 'level_close', exiting=True)
+            bot._tap.assert_called_once_with((582, 624, 116, 28))
+
+    def test_title_without_arrow_does_not_authorize_close(self):
+        screen = self.resized_popup(1.)
+        screen[635:700, 590:690] = 0
+        self.assertIsNone(self.observer.find(screen, 'level_close'))
+
+    def test_latest_popup_ends_battle_wait_without_toggling_auto(self):
+        screen = read_image(str(ROOT / 'images/chaos/node_progression/raw/battle/victory_levelup_arrow_live.png'))
+        with tempfile.TemporaryDirectory() as directory:
+            bot = NodeProgressionBot(Mock(), ROOT, directory, self.observer)
+            bot._capture = Mock(return_value=screen)
+            bot._tap = Mock()
+            bot._battle()
+            self.assertTrue(bot.stats['auto_verified'])
+            bot._tap.assert_not_called()
+
     def test_failure_screen_is_saved_without_continuous_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             bot = NodeProgressionBot(Mock(), ROOT, directory, self.observer)

@@ -36,7 +36,7 @@ class PartyObserverTest(unittest.TestCase):
                 self.assertIsNone(self.observer.find(self.screen(raw + '_full.png'), hero['selected']))
                 self.assertIsNotNone(self.observer.find(self.screen(raw + '_full_selected.png'), hero['selected']))
 
-    def test_completion_requires_all_four_names_in_their_own_slots(self):
+    def test_completion_requires_all_four_class_icons_in_their_own_slots(self):
         for count, filename in enumerate(('knight_select_finish.png', 'warrior_wukong_recruited_live.png', 'soul_weaver_destina_recruited_live.png', 'thief_jenua_recruited_live.png'), 1):
             with self.subTest(count=count):
                 screen = self.screen(filename)
@@ -243,8 +243,11 @@ class ReplayObserver:
                        for key, element in (('knight','dark'), ('warrior','forest'), ('soul_weaver','forest'), ('thief','fire'))]
         self.theme = SimpleNamespace(observe=lambda s: SimpleNamespace(state=s.get('theme', 'unknown'), bounds=(100,140,120,145) if 'theme' in s else None))
 
-    def find(self, screen, name):
+    def find(self, screen, name, region=None):
         return screen.get(name)
+
+    def hero_selected(self, screen, portrait):
+        return any(value for key, value in screen.items() if key.endswith('_selected'))
 
     def class_button(self, screen, hero):
         return screen.get(hero.get('class', hero['id'])+'_card')

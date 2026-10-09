@@ -3,9 +3,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import numpy as np
-
-from src.chaos.event_policy import interpret_effect, choose_read_choice, KoreanEventReader
 from src.chaos.exploration import NodeProgressionBot
 from src.chaos.node_observer import NodeObserver
 from src.image_matcher import read_image
@@ -14,31 +11,18 @@ ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / 'images/chaos/node_progression/raw'
 
 
-class EventPolicyTest(unittest.TestCase):
-    def test_complete_effects_only_and_harm_excluded(self):
-        self.assertEqual(interpret_effect('', '차원의 파편 100 소모 영웅 랭크 1단계 상승'), ('rank_up', 0, 100))
-        self.assertEqual(interpret_effect('', '전투 후 차원의 파편 100 획득'), ('battle_reward', 1, 0))
-        self.assertEqual(interpret_effect('', '40% 확률로 무작위 전리품 1개 획득'), ('random_loot', 4, 0))
-        for text in ('영웅 이탈', '영웅 랭크 1단계 상승 생명력 30% 감소', '무언가 좋은 일이 발생한다', '전리품 1개 소모 모든 영웅 생명력 100% 회복'):
-            self.assertIsNone(interpret_effect('', text))
-
-    def test_unaffordable_rank_falls_back_to_random_reward(self):
-        rows = [dict(bounds=(0,0,10,10), rule=('rank_up',0,100)),
-                dict(bounds=(20,0,10,10), rule=('random_loot',4,0))]
-        self.assertIs(choose_read_choice(rows,99), rows[1])
-        self.assertIs(choose_read_choice(rows,100), rows[0])
-        self.assertIs(choose_read_choice(rows), rows[1])
-
-    def test_low_confidence_does_not_authorize_effect(self):
-        engine = Mock(return_value=([([[0,70],[100,70],[100,90],[0,90]],'영웅 랭크 1단계 상승',.89)],None))
-        reader = KoreanEventReader(ROOT,engine)
-        self.assertIsNone(reader.choices(np.zeros((720,1280,3),np.uint8),[(78,556,362,131)])[0]['rule'])
-
-
 class EventModesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.observer = NodeObserver(ROOT)
+
+    def test_default_and_legacy_ocr_call_use_random_selection(self):
+        for mode in (None, 'ocr', 'random'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:
+                kwargs = {} if mode is None else {'event_mode': mode}
+                bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer, **kwargs)
+                self.assertEqual(bot.event_mode, 'random')
+                self.assertFalse(hasattr(bot, 'event_reader'))
 
     def screen(self, name='event_magic_circle_live.png'):
         return read_image(str(RAW/name))
@@ -111,7 +95,8 @@ class EventModesTest(unittest.TestCase):
                 bot.pending_event_id = 'library_book'
                 bot.last_screen = self.screen('event_library_book_live.png')
                 bot._record('failed')
-                self.assertEqual(bool(list(Path(tmp).rglob('*.png'))), enabled)
+                self.assertEqual(bool(list(bot.report_root.rglob('*.png'))), enabled)
+                self.assertTrue((bot.runtime_dir/'failure.png').is_file())
 
     def test_choice_wait_routes_common_reward_screens_without_input(self):
         observer = NodeObserver(ROOT)
@@ -180,19 +165,22 @@ class EventModesTest(unittest.TestCase):
         with patch.object(self.observer,'forbidden',return_value=[('ban',(90,600,10,10))]):
             self.assertEqual(self.observer.available_event_cards(frame,cards),[cards[2]])
 
-    def test_default_capture_and_failure_do_not_save_event_images(self):
+    def test_default_capture_does_not_save_events_but_failure_keeps_diagnostic(self):
         with tempfile.TemporaryDirectory() as tmp:
             bot=NodeProgressionBot(Mock(capture_frame=Mock(return_value=self.screen())),ROOT,tmp,self.observer)
             bot._capture()
             bot._start_report(bot.last_screen,{})
-            bot._record('failed')
             self.assertEqual(list(Path(tmp).rglob('*.png')),[])
-            self.assertEqual(list(Path(tmp).rglob('*.json')),[])
+            bot._record('failed')
+            self.assertEqual(list(bot.report_root.rglob('*.png')),[])
+            self.assertEqual(list(bot.report_root.rglob('*.json')),[])
+            self.assertTrue((bot.runtime_dir/'failure.png').is_file())
+            self.assertTrue((bot.runtime_dir/'failure.json').is_file())
 
     def test_opt_in_report_is_bounded(self):
         with tempfile.TemporaryDirectory() as tmp:
             bot=NodeProgressionBot(Mock(),ROOT,tmp,self.observer,save_unknown_events=True)
-            bot._start_report(self.screen(),{'mode':'ocr'})
+            bot._start_report(self.screen(),{'mode':'random'})
             for _ in range(20): bot._report('result',self.screen())
             self.assertEqual(len(list(Path(tmp).rglob('*.png'))),12)
             self.assertEqual(len(list(Path(tmp).rglob('*.json'))),12)
@@ -220,10 +208,9 @@ class EventModesTest(unittest.TestCase):
             bot._wait=lambda phase,predicate: predicate(bot._capture())
             bot._tap=Mock()
             bot._event_transition=Mock(return_value='map')
-            bot.event_reader=Mock()
             bot._unknown_event()
             bot._tap.assert_called_once()
-            bot.event_reader.choices.assert_not_called()
+            self.assertFalse(hasattr(bot, 'event_reader'))
             bot._event_transition.assert_called_once_with(bot._event_signature(self.screen()))
 
     def test_registered_event_bypasses_random_mode(self):
@@ -238,20 +225,18 @@ class EventModesTest(unittest.TestCase):
             bot._tap.assert_called_once_with((78,556,362,131))
             bot._unknown_event.assert_not_called()
 
-    def test_screen_changed_during_second_ocr_blocks_click(self):
+    def test_screen_changed_before_random_input_blocks_click(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None), patch.object(self.observer,'known_event_candidates',return_value=[]):
             bot=NodeProgressionBot(Mock(),ROOT,tmp,self.observer)
             bot.event_context=True
             original=self.screen()
             changed=original.copy()
             changed[580:640,100:300]=255
-            bot._capture=Mock(side_effect=[original,original,changed])
+            bot._capture=Mock(side_effect=[original,changed])
             cards=tuple(self.observer.event_cards(original))
             bot._wait=Mock(return_value=(cards,bot._event_signature(original)))
-            row=dict(bounds=cards[0],title='전투',effect='전투 후 차원의 파편 100 획득',rule=('battle_reward',1,0))
-            bot.event_reader=Mock(choices=Mock(return_value=[row]))
             bot._tap=Mock()
-            with self.assertRaisesRegex(RuntimeError,'재확인 중 화면 변경'):
+            with self.assertRaisesRegex(RuntimeError,'입력 직전 선택지 변경'):
                 bot._unknown_event()
             bot._tap.assert_not_called()
 

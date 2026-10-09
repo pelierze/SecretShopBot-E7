@@ -6,7 +6,12 @@
   "timeout_seconds": 30,
   "poll_seconds": 0.3,
   "stable_frames": 2,
-  "filter_panel_bounds": [65, 65, 870, 335],
+  "filter_panel_bounds": [
+    65,
+    65,
+    870,
+    335
+  ],
   "filter_dismiss_point": [
     960,
     590
@@ -101,7 +106,12 @@
     },
     "filter_element_label": {
       "file": "raw/filter_element_label.png",
-      "region": [415, 75, 90, 50],
+      "region": [
+        415,
+        75,
+        90,
+        50
+      ],
       "threshold": 0.9
     },
     "dark_1": {
@@ -602,6 +612,70 @@
         170,
         50
       ]
+    },
+    "knight_completed_icon": {
+      "file": "raw/knight_select_finish.png",
+      "crop": [
+        300,
+        505,
+        28,
+        28
+      ],
+      "region": [
+        292,
+        498,
+        45,
+        45
+      ],
+      "threshold": 0.9
+    },
+    "warrior_completed_icon": {
+      "file": "raw/warrior_wukong_recruited_live.png",
+      "crop": [
+        580,
+        505,
+        28,
+        28
+      ],
+      "region": [
+        572,
+        498,
+        45,
+        45
+      ],
+      "threshold": 0.9
+    },
+    "soul_weaver_completed_icon": {
+      "file": "raw/soul_weaver_destina_recruited_live.png",
+      "crop": [
+        860,
+        505,
+        28,
+        28
+      ],
+      "region": [
+        852,
+        498,
+        45,
+        45
+      ],
+      "threshold": 0.9
+    },
+    "thief_completed_icon": {
+      "file": "raw/thief_jenua_recruited_live.png",
+      "crop": [
+        1140,
+        505,
+        28,
+        28
+      ],
+      "region": [
+        1132,
+        498,
+        45,
+        45
+      ],
+      "threshold": 0.9
     }
   },
   "button_offset": [
@@ -622,28 +696,32 @@
       "anchor": "knight",
       "header": "knight_header",
       "slot": 0,
-      "default_hero": "shadow_rose"
+      "default_hero": "shadow_rose",
+      "completed_icon": "knight_completed_icon"
     },
     "warrior": {
       "label": "전사",
       "anchor": "warrior",
       "header": "warrior_header",
       "slot": 1,
-      "default_hero": "wukong"
+      "default_hero": "wukong",
+      "completed_icon": "warrior_completed_icon"
     },
     "soul_weaver": {
       "label": "정령사",
       "anchor": "soul_weaver",
       "header": "soul_weaver_header",
       "slot": 2,
-      "default_hero": "destina"
+      "default_hero": "destina",
+      "completed_icon": "soul_weaver_completed_icon"
     },
     "thief": {
       "label": "도적",
       "anchor": "thief",
       "header": "thief_header",
       "slot": 3,
-      "default_hero": "jenua"
+      "default_hero": "jenua",
+      "completed_icon": "thief_completed_icon"
     }
   },
   "heroes": {

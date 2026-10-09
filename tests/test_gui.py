@@ -86,6 +86,7 @@ class ChaosSessionLifecycleTest(unittest.TestCase):
         _, kwargs = mock_exploration_bot.call_args
         self.assertEqual(kwargs.get("rank_priority"), ["jenua", "wukong", "shadow_rose"])
         self.assertEqual(kwargs.get("target_clears"), 1)
+        self.assertEqual(kwargs.get("event_mode"), "random")
 
     @patch("src.gui.ExplorationBot")
     def test_chaos_start_passes_configured_target_clears(self, mock_exploration_bot):

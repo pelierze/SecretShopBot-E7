@@ -37,7 +37,7 @@ class RecruitmentObserver:
             needed.add(element + "_2")
         for hero in self.heroes:
             role = self.config["classes"][hero["class"]]
-            needed.update((role["anchor"], role["header"], hero["portrait"], hero["selected"], hero["completed_name"], hero["element"] + "_1"))
+            needed.update((role["anchor"], role["header"], role["completed_icon"], hero["portrait"], hero["selected"], hero["completed_name"], hero["element"] + "_1"))
             fallback_id = hero.get("fallback") or role.get("default_hero")
             if fallback_id and fallback_id in self.config["heroes"]:
                 fb = self.config["heroes"][fallback_id]
@@ -127,14 +127,34 @@ class RecruitmentObserver:
         return (x + mx, y + my, tw, th)
 
     def hero_completed(self, screen, hero):
-        slot = self.config["classes"][hero["class"]]["slot"]
-        area = (150 + slot * 280, 418, 150, 48)
-        if not self.find(screen, "completed", area):
-            return False
-        completed_marker = hero.get("completed_name")
-        if completed_marker and self.find(screen, completed_marker):
-            return True
-        return self.class_button(screen, hero) is None
+        # Each completed card has a small class symbol at its lower right.
+        # Its fixed slot separates it from list icons and unrecruited tickets.
+        role = self.config["classes"][hero["class"]]
+        return (self.find(screen, role["completed_icon"]) is not None
+                and self.class_button(screen, hero) is None)
+
+    def hero_selected(self, screen, portrait):
+        """Verify the gold outline on this card, independent of hero name/art.
+
+        Portrait crops end near the right edge of the shared 300x90 card.
+        Check three separate edges so gold stars or artwork cannot authorize
+        recruitment. Geometry uses the validated 1280x720 reference screen.
+        """
+        x, y, w, _ = map(int, portrait)
+        right = x + w + 8
+        left = right - 300
+        regions = ((left + 25, y - 16, right - 25, y + 2),
+                   (left + 25, y + 70, right - 25, y + 92),
+                   (left - 8, y + 8, left + 20, y + 65))
+        for index, (x1, y1, x2, y2) in enumerate(regions):
+            if x1 < 0 or y1 < 0 or x2 > screen.shape[1] or y2 > screen.shape[0]:
+                return False
+            hsv = cv2.cvtColor(screen[y1:y2, x1:x2], cv2.COLOR_BGR2HSV)
+            gold = cv2.inRange(hsv, np.array([10, 25, 150]), np.array([40, 255, 255]))
+            coverage = (gold > 0).any(axis=0 if index < 2 else 1).mean()
+            if coverage < 0.75:
+                return False
+        return True
 
     def completed(self, screen):
         return all(self.hero_completed(screen, hero) for hero in self.heroes)
