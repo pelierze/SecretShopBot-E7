@@ -65,20 +65,14 @@
       ]
     },
     "knight_header": {
-      "file": "raw/knight_full.png",
-      "crop": [
-        66,
-        16,
-        122,
-        33
-      ],
+      "file": "templates/classes/knight_list_icon.png",
       "region": [
-        55,
-        8,
-        155,
-        50
+        345,
+        80,
+        935,
+        515
       ],
-      "max_color_error": 0.035
+      "threshold": 0.9
     },
     "filter": {
       "file": "templates/controls/hero_filter.png",
@@ -214,20 +208,14 @@
       ]
     },
     "warrior_header": {
-      "file": "raw/warrier_wukong_full.png",
-      "crop": [
-        66,
-        16,
-        145,
-        33
-      ],
+      "file": "templates/classes/warrior_list_icon.png",
       "region": [
-        55,
-        8,
-        180,
-        50
+        345,
+        80,
+        935,
+        515
       ],
-      "max_color_error": 0.035
+      "threshold": 0.9
     },
     "wukong": {
       "file": "templates/heroes/warrier_wukong.png",
@@ -284,20 +272,14 @@
       ]
     },
     "soul_weaver_header": {
-      "file": "raw/soul_weaver_destina_full.png",
-      "crop": [
-        66,
-        16,
-        145,
-        33
-      ],
+      "file": "templates/classes/soul_weaver_list_icon.png",
       "region": [
-        55,
-        8,
-        180,
-        50
+        345,
+        80,
+        935,
+        515
       ],
-      "max_color_error": 0.035
+      "threshold": 0.9
     },
     "destina": {
       "file": "templates/heroes/soul_Weaver_destina.png",
@@ -395,20 +377,14 @@
       ]
     },
     "thief_header": {
-      "file": "raw/thief_jenua_full.png",
-      "crop": [
-        66,
-        16,
-        145,
-        33
-      ],
+      "file": "templates/classes/thief_list_icon.png",
       "region": [
-        55,
-        8,
-        180,
-        50
+        345,
+        80,
+        935,
+        515
       ],
-      "max_color_error": 0.035
+      "threshold": 0.9
     },
     "jenua": {
       "file": "templates/heroes/thief_Jenua.png",

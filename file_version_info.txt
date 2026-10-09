@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 5, 11, 0),
-    prodvers=(1, 5, 11, 0),
+    filevers=(1, 5, 12, 0),
+    prodvers=(1, 5, 12, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -16,11 +16,11 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName', u'pelierze'),
           StringStruct(u'FileDescription', u'Epic7 Assist Bot (EAB)'),
-          StringStruct(u'FileVersion', u'1.5.11'),
+          StringStruct(u'FileVersion', u'1.5.12'),
           StringStruct(u'InternalName', u'SecretShopBot-E7'),
           StringStruct(u'OriginalFilename', u'SecretShopBot-E7.exe'),
           StringStruct(u'ProductName', u'Epic7 Assist Bot'),
-          StringStruct(u'ProductVersion', u'1.5.11'),
+          StringStruct(u'ProductVersion', u'1.5.12'),
         ]
       )
     ]),

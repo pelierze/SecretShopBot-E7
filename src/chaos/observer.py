@@ -29,6 +29,7 @@ class RecruitmentObserver:
         self.assets = root / "images/chaos/hero_selection"
         self.theme = ThemeSelectionDetector(self.assets / "templates/themes")
         self.templates = {}
+        self.role_icon_markers = {role['header'] for role in self.config['classes'].values()}
         self.portrait_markers = {hero["portrait"] for hero in self.config["heroes"].values()}
         sources = {}
         needed = {"start", "unlock", "confirm_theme", "recruit_card", "filter", "filter_panel", "recruit_active", "completed"}
@@ -77,6 +78,11 @@ class RecruitmentObserver:
         sample = screen[y:y + h, x:x + w]
         result = cv2.matchTemplate(sample, template, cv2.TM_CCOEFF_NORMED)
         threshold = definition.get("threshold", 0.90)
+        if name in self.role_icon_markers:
+            # List icons identify the role, not a click target. Repeated icons
+            # are expected; background colors must not reject the same symbol.
+            _, score, _, (mx, my) = cv2.minMaxLoc(result)
+            return (x + mx, y + my, tw, th) if score >= threshold else None
         if name in self.portrait_markers:
             # Multiple owned copies of the requested hero are interchangeable.
             # Use screen order so minor score changes do not move the target.
