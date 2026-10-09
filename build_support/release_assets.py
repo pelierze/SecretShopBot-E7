@@ -29,7 +29,7 @@ def used_images(root):
     used.update(m['file'] for m in node['markers'].values())
     rec = json.loads((root/'src/chaos/recruitment_layout.json').read_text(encoding='utf-8'))
     needed = {'start', 'unlock', 'confirm_theme', 'recruit_card', 'filter',
-              'filter_panel', 'recruit_active', 'completed'}
+              'filter_panel', 'filter_element_label', 'recruit_active', 'completed'}
     needed.update(e+'_2' for e in ('dark','fire','ice','forest','light'))
     for hero in rec['heroes'].values():
         role = rec['classes'][hero['class']]

@@ -6,6 +6,7 @@
   "timeout_seconds": 30,
   "poll_seconds": 0.3,
   "stable_frames": 2,
+  "filter_panel_bounds": [65, 65, 870, 335],
   "filter_dismiss_point": [
     960,
     590
@@ -97,6 +98,11 @@
         275,
         65
       ]
+    },
+    "filter_element_label": {
+      "file": "raw/filter_element_label.png",
+      "region": [415, 75, 90, 50],
+      "threshold": 0.9
     },
     "dark_1": {
       "file": "templates/controls/dark_1.png",

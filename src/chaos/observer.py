@@ -32,7 +32,7 @@ class RecruitmentObserver:
         self.role_icon_markers = {role['header'] for role in self.config['classes'].values()}
         self.portrait_markers = {hero["portrait"] for hero in self.config["heroes"].values()}
         sources = {}
-        needed = {"start", "unlock", "confirm_theme", "recruit_card", "filter", "filter_panel", "recruit_active", "completed"}
+        needed = {"start", "unlock", "confirm_theme", "recruit_card", "filter", "filter_panel", "filter_element_label", "recruit_active", "completed"}
         for element in ("dark", "fire", "ice", "forest", "light"):
             needed.add(element + "_2")
         for hero in self.heroes:
@@ -64,6 +64,12 @@ class RecruitmentObserver:
             raise RuntimeError("자동 탐사는 1280×720 화면에서 실행해 주세요.")
 
     def find(self, screen, name, region=None):
+        if name == 'filter_panel' and region is None:
+            # Current menus use the compact element label; older captures still
+            # require the original set-label template below.
+            label = self.find(screen, 'filter_element_label')
+            if label is not None:
+                return label
         if name not in self.templates:
             return None
         definition = self.config["markers"][name]
@@ -81,6 +87,14 @@ class RecruitmentObserver:
         if name in self.role_icon_markers:
             # List icons identify the role, not a click target. Repeated icons
             # are expected; background colors must not reject the same symbol.
+            if self.find(screen, 'filter_panel') is not None:
+                # The popup itself contains every role's icon. Only the visible
+                # hero list outside the popup may identify the current role.
+                px, py, pw, ph = self.config['filter_panel_bounds']
+                left, top = max(0, px-x-tw+1), max(0, py-y-th+1)
+                right, bottom = min(result.shape[1], px+pw-x), min(result.shape[0], py+ph-y)
+                if right > left and bottom > top:
+                    result[top:bottom, left:right] = -1
             _, score, _, (mx, my) = cv2.minMaxLoc(result)
             return (x + mx, y + my, tw, th) if score >= threshold else None
         if name in self.portrait_markers:
