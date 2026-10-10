@@ -66,7 +66,7 @@ class EventModesTest(unittest.TestCase):
         self.assertEqual(observer.classify(choices), 'event')
         self.assertEqual(observer.event_choice(choices), (268,556,362,131))
         # Exercise saved choice -> retained heading/result -> next choices, also
-        # in random mode: the first selection must still use the saved rule.
+        # The registered page now uses the same verified random choices.
         with tempfile.TemporaryDirectory() as tmp:
             bot = NodeProgressionBot(Mock(), ROOT, tmp, observer, event_mode='random')
             bot.event_context = True
@@ -78,7 +78,8 @@ class EventModesTest(unittest.TestCase):
                 taps.append(tuple(bounds))
                 current[0] += 1
             bot._tap = tap
-            self.assertEqual(bot._event(), 'unknown_event_result')
+            with patch('src.chaos.exploration.random.choice', side_effect=lambda choices: choices[0]):
+                self.assertEqual(bot._event(), 'unknown_event_result')
             self.assertEqual(bot._event_result(), 'event')
             self.assertEqual(taps, [(268,556,362,131), tuple(observer.config['event_advance_bounds'])])
 
@@ -213,17 +214,12 @@ class EventModesTest(unittest.TestCase):
             self.assertFalse(hasattr(bot, 'event_reader'))
             bot._event_transition.assert_called_once_with(bot._event_signature(self.screen()))
 
-    def test_registered_event_bypasses_random_mode(self):
+    def test_registered_event_uses_common_random_handler(self):
         with tempfile.TemporaryDirectory() as tmp:
-            bot=NodeProgressionBot(Mock(),ROOT,tmp,self.observer,event_mode='random')
-            bot._capture=Mock(return_value=self.screen())
-            bot._wait=lambda phase,predicate: predicate(bot._capture())
-            bot._tap=Mock()
-            bot._event_transition=Mock(return_value='map')
-            bot._unknown_event=Mock()
-            bot._event()
-            bot._tap.assert_called_once_with((78,556,362,131))
-            bot._unknown_event.assert_not_called()
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer)
+            bot._unknown_event = Mock(return_value='map')
+            self.assertEqual(bot._event(), 'map')
+            bot._unknown_event.assert_called_once()
 
     def test_screen_changed_before_random_input_blocks_click(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(self.observer,'classify',return_value=None), patch.object(self.observer,'known_event_candidates',return_value=[]):

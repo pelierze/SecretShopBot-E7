@@ -41,12 +41,7 @@ class SmallWindowTest(unittest.TestCase):
                 session.mode_notebook.select(tab)
                 self.root.update()
                 area = session.frame.options
-                if tab == session.event_tab:
-                    self.assertEqual(session.event_notice_label.cget('text'), '현재 지원하는 이벤트가 없습니다')
-                    self.assertTrue(session.event_notice_label.winfo_viewable())
-                    self.assertEqual(session.event_tab.winfo_children(), [session.event_notice_label])
-                else:
-                    self.assertGreater(area.content.winfo_height(), area.canvas.winfo_height())
+                self.assertGreater(area.content.winfo_height(), area.canvas.winfo_height())
                 area.canvas.yview_moveto(1)
                 self.root.update()
                 self.assertAlmostEqual(area.canvas.yview()[1], 1, places=2)

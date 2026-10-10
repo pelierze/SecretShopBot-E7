@@ -169,6 +169,32 @@ class TestStoveBotCompatibility(unittest.TestCase):
         bot.nodes._tap((640, 360, 20, 20))
         self.assertEqual(self.mock_inp.last_click, (int(round(650 * 1.5)), int(round(370 * 1.5))))
 
+    def test_summer_event_bot_compatibility(self):
+        from src.event.registry import load_event_module
+        event_module = load_event_module("2026_summer_event")
+        SummerEventExecutor = event_module.SummerEventExecutor
+        SummerEventObserver = event_module.SummerEventObserver
+
+        layout_path = PROJECT_ROOT / "src" / "event" / "events" / "2026_summer_event" / "screen_layout.json"
+        layout = event_module.load_screen_layout(layout_path)
+
+        observer = SummerEventObserver(
+            adb=self.dev,
+            layout=layout,
+            screenshot_path=self.temp_dir / "event_screen.png",
+            template_dir=PROJECT_ROOT / "images" / "2026_summer_event",
+            screen_size=self.dev.get_screen_size(),
+        )
+        executor = SummerEventExecutor(
+            adb=self.dev,
+            layout=layout,
+            screen_size=self.dev.get_screen_size(),
+        )
+        # Executor tap sends basic tap
+        executor._tap("basic", delay=0.1)
+        # Basic tap is (640, 655) logical -> scaled by 1.5 -> (960, 982) physical
+        self.assertEqual(self.mock_inp.last_click, (960, 982))
+
 
 class TestProcessGuard(unittest.TestCase):
     def test_process_info_query(self):
@@ -185,5 +211,3 @@ class TestProcessGuard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-

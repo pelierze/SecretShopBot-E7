@@ -89,3 +89,52 @@ class RankResultTests(unittest.TestCase):
             self.assertEqual(taps, [tuple(self.observer.config['rank_result_close_bounds']),
                                    self.observer.find(frames[1], 'event_reward_continue')])
             bot._rankup.assert_not_called()
+
+
+class BattleRankCompletionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.observer = NodeObserver(ROOT)
+        cls.observer.config['poll_seconds'] = 0
+
+    def frame(self):
+        return read_image(str(RAW / 'battle/victory_rank_complete_warrior_local_live.png'))
+
+    def test_reported_completion_ignores_name_text_art_and_continue_prefix(self):
+        screen = self.frame()
+        screen[170:535, 525:750] = 0
+        screen[645:672, 582:625] = 0
+        self.assertEqual(self.observer.classify(screen), 'battle_rank_complete')
+        self.assertEqual(self.observer.find(screen, 'continue'), (625, 645, 75, 27))
+
+    def test_class_icon_victory_and_explore_label_are_all_required(self):
+        for bounds in ((704, 532, 48, 48), (480, 15, 350, 75), (625, 645, 75, 27)):
+            screen = self.frame()
+            x, y, w, h = bounds
+            screen[y:y+h, x:x+w] = 0
+            with self.subTest(bounds=bounds):
+                self.assertIsNone(self.observer.find(screen, 'battle_rank_complete'))
+                self.assertNotEqual(self.observer.classify(screen), 'battle_rank_complete')
+
+    def test_other_rewards_do_not_complete_rankup(self):
+        for name in ('battle/victory_live.png', 'battle/victory_rank_reward_live.png',
+                     'event_rank_reward_live.png', 'event_recruit_reward_live.png'):
+            with self.subTest(name=name):
+                screen = read_image(str(RAW / name))
+                self.assertIsNone(self.observer.find(screen, 'battle_rank_complete'))
+
+    def test_completion_returns_to_map_without_another_rankup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bot = NodeProgressionBot(Mock(), ROOT, tmp, self.observer)
+            screens = [self.frame(), read_image(str(RAW / 'boss_map_live.png'))]
+            position = [0]
+            taps = []
+            bot._capture = lambda: screens[position[0]]
+            def tap(bounds):
+                taps.append(tuple(bounds))
+                position[0] += 1
+            bot._tap = tap
+            bot._rankup = Mock()
+            self.assertEqual(bot._dispatch_event_screen(self.observer.classify(screens[0])), 'map')
+            self.assertEqual(taps, [(625, 645, 75, 27)])
+            bot._rankup.assert_not_called()

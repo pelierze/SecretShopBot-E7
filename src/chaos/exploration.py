@@ -681,39 +681,7 @@ class NodeProgressionBot(KnightRecruitmentBot):
             self.stats.update(status='round_failed', reason=f'미완주 정산 처리 및 초기 화면 복귀 완료 (보스 {bosses}/3)')
 
     def _event(self):
-        screen = self._capture()
-        known = self.observer.known_event(screen)
-        candidates = self.observer.known_event_candidates(screen)
-        if not known and not candidates and not self.pending_event_id:
-            return self._unknown_event()
-        if known:
-            self.pending_event_id = known
-        logger.info('이벤트 등록 규칙 우선: %s', self.pending_event_id or candidates)
-        def choose(frame):
-            state = self._classify(frame)
-            if state in EVENT_FOLLOWUPS - {'event', 'unknown_event'}:
-                return ('followup', state)
-            target = self.observer.event_choice(frame, excluded=self.rejected_event_choices)
-            return ('choice', target) if target else None
-        ready = self._wait('허용 이벤트 우선순위 확인', choose)
-        if ready[0] == 'followup':
-            self._accept_event_page(ready[1])
-            return ready[1]
-        if choose(self._capture()) != ready:
-            raise RuntimeError('이벤트 선택 직전 화면 변경')
-        target = ready[1]
-        self._last_event_choice_bounds = target
-        sig = self._event_signature(self._capture())
-        self._tap(target)
-        state = self._event_transition(sig)
-        while state in ('event_loot_consume', 'event_warning', 'unclaimed_reward'):
-            if state == 'event_loot_consume':
-                state = self._handle_loot_consume()
-            elif state in ('event_warning', 'unclaimed_reward'):
-                state = self._handle_event_confirm(target)
-        if state == 'map':
-            self.stats['nodes'] += 1
-        return state
+        return self._unknown_event()
 
     def _event_transition(self, previous_signature=None):
         def changed(screen):
@@ -843,18 +811,14 @@ class NodeProgressionBot(KnightRecruitmentBot):
                 return ('result', None)
             if st in EVENT_FOLLOWUPS - {'event', 'unknown_event'}:
                 return ('followup', st)
-            if self.pending_event_id or self.observer.known_event_candidates(screen):
-                return ('registered', None)
-            if st != 'unknown_event': return None
+            if st not in ('event', 'unknown_event'): return None
             cards = self.observer.event_cards(screen)
             return (tuple(cards),self._event_signature(screen)) if cards else None
 
-        ready_val = self._wait('미등록 이벤트 선택지 확인', ready)
+        ready_val = self._wait('이벤트 선택지 확인', ready)
         if ready_val[0] == 'followup':
             self._accept_event_page(ready_val[1])
             return ready_val[1]
-        if ready_val[0] == 'registered':
-            return self._event()
         if ready_val[0] == 'result':
             logger.info('자동 탐사 [미등록 이벤트]: 대기 중 결과/대화 화면 감지 — 결과 닫기 진행')
             return self._event_result()
@@ -862,9 +826,6 @@ class NodeProgressionBot(KnightRecruitmentBot):
 
         screen = self._capture()
         observed = ready(screen)
-        if observed and observed[0] == 'registered':
-            logger.info('미등록 이벤트 재확인 중 등록 규칙 발견 — 저장 규칙으로 전환')
-            return self._event()
         if observed != (cards,signature): raise RuntimeError('이벤트 선택지가 변경됐습니다.')
         self._start_report(screen,{'mode':self.event_mode,'cards':cards})
         available = [c for c in self.observer.available_event_cards(screen,cards)
@@ -873,13 +834,10 @@ class NodeProgressionBot(KnightRecruitmentBot):
         target = random.choice(available)
         fresh = self._capture()
         observed = ready(fresh)
-        if observed and observed[0] == 'registered':
-            logger.info('이벤트 입력 직전 등록 규칙 발견 — 무작위 후보 폐기')
-            return self._event()
         if observed != (cards,signature) or target not in self.observer.available_event_cards(fresh,cards):
             raise RuntimeError('이벤트 입력 직전 선택지 변경')
         self._report('selected',fresh,{'mode':self.event_mode,'target':target})
-        logger.info('미등록 이벤트 선택 확정: 방식=%s, 후보=%d개, 위치=%s', self.event_mode, len(available), target)
+        logger.info('이벤트 선택 확정: 방식=%s, 후보=%d개, 위치=%s', self.event_mode, len(available), target)
         self._last_event_choice_bounds = target
         self._tap(target)
         state = self._event_transition(signature)

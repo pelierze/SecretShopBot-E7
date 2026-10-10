@@ -70,6 +70,12 @@
         620,
         330,
         80
+      ],
+      "crop": [
+        43,
+        0,
+        75,
+        27
       ]
     },
     "leave": {
@@ -3105,23 +3111,6 @@
       "threshold": 0.92,
       "max_color_error": 0.055
     },
-    "battle_rank_complete": {
-      "file": "images/chaos/node_progression/raw/battle/victory_rank_complete_live.png",
-      "crop": [
-        598,
-        473,
-        91,
-        20
-      ],
-      "region": [
-        240,
-        450,
-        800,
-        55
-      ],
-      "threshold": 0.9,
-      "max_color_error": 0.1
-    },
     "event_rusted_bars": {
       "file": "images/chaos/node_progression/raw/event_rusted_bars_live.png",
       "crop": [
@@ -3169,6 +3158,74 @@
         502,
         44,
         44
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "battle_rank_complete_knight": {
+      "file": "images/chaos/hero_selection/raw/knight_select_finish.png",
+      "crop": [
+        300,
+        505,
+        28,
+        28
+      ],
+      "region": [
+        704,
+        532,
+        48,
+        48
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "battle_rank_complete_warrior": {
+      "file": "images/chaos/node_progression/raw/battle/victory_rank_complete_warrior_local_live.png",
+      "crop": [
+        715,
+        541,
+        28,
+        28
+      ],
+      "region": [
+        704,
+        532,
+        48,
+        48
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "battle_rank_complete_soul_weaver": {
+      "file": "images/chaos/hero_selection/raw/soul_weaver_destina_recruited_live.png",
+      "crop": [
+        860,
+        505,
+        28,
+        28
+      ],
+      "region": [
+        704,
+        532,
+        48,
+        48
+      ],
+      "threshold": 0.9,
+      "max_color_error": 0.1
+    },
+    "battle_rank_complete_thief": {
+      "file": "images/chaos/node_progression/raw/battle/victory_rank_complete_live.png",
+      "crop": [
+        715,
+        541,
+        28,
+        28
+      ],
+      "region": [
+        704,
+        532,
+        48,
+        48
       ],
       "threshold": 0.9,
       "max_color_error": 0.1

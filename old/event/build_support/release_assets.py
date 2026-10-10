@@ -45,6 +45,7 @@ def used_images(root):
         'images/buttons': ['src/secret_shop_bot.py','src/json_macro_engine.py'],
         'images/items': ['src/secret_shop_bot.py','src/json_macro_engine.py'],
         'images/penguin': ['src/penguin_bot.py'],
+        'images/2026_summer_event': ['src/event/events/2026_summer_event/observer.py'],
     }
     remote = json.loads((root/'remote_script.json').read_text(encoding='utf-8'))
     remote_names = {Path(s).name for s in strings(remote) if s.lower().endswith('.png')}

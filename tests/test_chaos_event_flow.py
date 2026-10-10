@@ -262,9 +262,9 @@ class EventRewardImagesTest(unittest.TestCase):
                 taps.append(bounds)
                 index[0] += 1
             bot._tap = tap
-            with patch('src.chaos.exploration.random.choice') as random_choice:
+            with patch('src.chaos.exploration.random.choice', side_effect=lambda choices: choices[0]) as random_choice:
                 result = bot.run()
-                random_choice.assert_not_called()
+                random_choice.assert_called_once()
             self.assertEqual(result['status'], 'completed', result)
             self.assertEqual(result['nodes'], 1)
             self.assertEqual(len(taps), len(frames)-1)

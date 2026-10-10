@@ -142,6 +142,16 @@ class NodeObserver:
         return results
 
     def find(self, screen, name, region=None):
+        if name == 'battle_rank_complete':
+            # A completed battle reward has its class icon at the card's lower
+            # right. Require the victory heading and the active continue label.
+            if not self.find(screen, 'victory') or not self.find(screen, 'continue'):
+                return None
+            for role in ('knight', 'warrior', 'soul_weaver', 'thief'):
+                bounds = self.find(screen, 'battle_rank_complete_' + role)
+                if bounds:
+                    return bounds
+            return None
         if name in ('levelup', 'level_close') and region is None:
             controls = self.levelup_controls(screen)
             return controls.get(name) if controls else None

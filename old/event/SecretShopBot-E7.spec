@@ -21,7 +21,17 @@ def collect_icons():
     return datas
 
 
-datas = collect_images() + collect_runtime_files(SPECPATH) + [
+def collect_event_data():
+    datas = []
+    event_root = os.path.join('src', 'event', 'events')
+    for root, dirs, files in os.walk(event_root):
+        for f in files:
+            if f.lower().endswith('.json'):
+                datas.append((os.path.join(root, f), root))
+    return datas
+
+
+datas = collect_images() + collect_event_data() + collect_runtime_files(SPECPATH) + [
     ('update_config.json', '.'),
     ('remote_script.json', '.'),
     ('src/chaos/recruitment_layout.json', 'src/chaos'),
@@ -38,7 +48,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=[
         'cv2', 'numpy', 'PIL', 'tkinter', 'rapidocr_onnxruntime',
-    ] + collect_submodules('src.backend') + collect_submodules('src.core') + collect_submodules('src.display') + collect_submodules('src.finder'),
+    ] + collect_submodules('src.event.events.2026_summer_event') + collect_submodules('src.backend') + collect_submodules('src.core') + collect_submodules('src.display') + collect_submodules('src.finder'),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
