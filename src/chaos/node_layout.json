@@ -2533,23 +2533,6 @@
       "threshold": 0.85,
       "max_color_error": 0.08
     },
-    "event_rank_reward_title": {
-      "file": "images/chaos/node_progression/raw/event_rank_reward_live.png",
-      "crop": [
-        588,
-        273,
-        111,
-        24
-      ],
-      "region": [
-        570,
-        260,
-        150,
-        50
-      ],
-      "threshold": 0.92,
-      "max_color_error": 0.055
-    },
     "event_rank_reward_button": {
       "file": "images/chaos/node_progression/raw/event_rank_reward_live.png",
       "crop": [
@@ -3229,6 +3212,23 @@
       ],
       "threshold": 0.9,
       "max_color_error": 0.1
+    },
+    "event_rank_reward_icon": {
+      "file": "images/chaos/node_progression/raw/event_rank_reward_live.png",
+      "crop": [
+        610,
+        160,
+        70,
+        76
+      ],
+      "region": [
+        590,
+        145,
+        110,
+        105
+      ],
+      "threshold": 0.92,
+      "max_color_error": 0.055
     }
   },
   "loot_cards": [

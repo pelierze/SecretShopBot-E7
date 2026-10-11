@@ -13,12 +13,15 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .version import APP_VERSION
+from .app_identity import SUPPORTED_RELEASE_REPOSITORIES
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SCRIPT_URL = (
     "https://raw.githubusercontent.com/pelierze/SecretShopBot-E7/master/remote_script.json"
 )
+SCRIPT_URLS = tuple(f"https://raw.githubusercontent.com/{repo}/master/remote_script.json"
+                   for repo in SUPPORTED_RELEASE_REPOSITORIES)
 
 SAFE_FILENAME = re.compile(r"^[A-Za-z0-9_. -]+$")
 SAFE_KEY = re.compile(r"^[A-Za-z0-9_]+$")
@@ -369,16 +372,17 @@ class RemoteScriptUpdater:
         self.bundled_script_path = get_resource_root() / "remote_script.json"
 
     def load(self) -> tuple[Optional[Dict[str, Any]], str]:
-        try:
-            remote_data = fetch_json(self.script_url)
-            script = validate_remote_script(remote_data)
+        urls = SCRIPT_URLS if self.script_url in SCRIPT_URLS else (self.script_url,)
+        for url in urls:
             try:
-                self.save_cache(script)
+                script = validate_remote_script(fetch_json(url))
+                try:
+                    self.save_cache(script)
+                except Exception as exc:
+                    logger.info("원격 스크립트 캐시 저장에 실패했습니다: %s", exc)
+                return script, "remote"
             except Exception as exc:
-                logger.info("원격 스크립트 캐시 저장에 실패했습니다: %s", exc)
-            return script, "remote"
-        except Exception as exc:
-            logger.info("원격 스크립트 동기화를 사용할 수 없습니다: %s", exc)
+                logger.info("원격 스크립트 동기화를 사용할 수 없습니다: %s; %s", url, exc)
 
         cached_data = read_json(self.cache_path)
         if cached_data:

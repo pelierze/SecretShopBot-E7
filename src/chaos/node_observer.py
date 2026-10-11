@@ -356,7 +356,7 @@ class NodeObserver:
         if self.find(screen, 'exploration_entry'): return 'exploration_entry'
         if self.find(screen, 'shop_exit_dialog') and self.find(screen, 'story_confirm'): return 'shop_exit_confirm'
         if self.find(screen, 'unclaimed_dialog'): return 'unclaimed_reward'
-        if self.find(screen, 'event_rank_reward_title') and self.find(screen, 'event_reward_continue'): return 'rank_reward'
+        if self.find(screen, 'event_rank_reward_icon') and self.find(screen, 'event_reward_continue'): return 'rank_reward'
         if self.find(screen, 'recruit_reward_title') and self.find(screen, 'recruit_continue'): return 'recruit_reward'
         if self.find(screen, 'story_dialog'): return 'story_confirm'
         if self.find(screen, 'story_confirm'): return 'event_warning'

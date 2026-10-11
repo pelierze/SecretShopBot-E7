@@ -13,13 +13,13 @@ import urllib.request
 from urllib.parse import urlparse
 import zipfile
 
-from .app_identity import UPDATE_PACKAGE_NAME, APP_EXECUTABLE, UPDATER_EXECUTABLE, RELEASE_REPOSITORY
+from .app_identity import (UPDATE_PACKAGE_NAME, SUPPORTED_RELEASE_REPOSITORIES,
+                           SUPPORTED_PACKAGE_NAMES, UPDATE_MANAGED_FILES,
+                           resolve_app_executable, resolve_updater_executable)
 from .runtime_diagnostics import diagnostic_logger
 
 APP = UPDATE_PACKAGE_NAME
-MANAGED = (APP_EXECUTABLE, UPDATER_EXECUTABLE, '_internal',
-           'README.md', 'DEPLOY.md', 'SECURITY.md', 'RELEASE_NOTES.md')
-REQUIRED = (APP_EXECUTABLE, UPDATER_EXECUTABLE, '_internal')
+MANAGED = UPDATE_MANAGED_FILES
 MAX_DOWNLOAD = 600 * 1024**2
 MAX_EXPANDED = 2 * 1024**3
 
@@ -28,18 +28,36 @@ def release_assets(release):
     if not re.fullmatch(r'v?\d+\.\d+\.\d+', release.version):
         raise ValueError('자동 업데이트는 정식 버전만 지원합니다.')
     version = release.version.lstrip('v')
-    name = f'{APP}-v{version}.zip'
+    # Prefer the legacy pair while both are published. Never mix checksums
+    # between package names or silently accept duplicate release assets.
+    candidates = []
+    for package_name in SUPPORTED_PACKAGE_NAMES:
+        candidate = f'{package_name}-v{version}.zip'
+        pair = [[a for a in release.assets if a.get('name') == expected]
+                for expected in (candidate, candidate + '.sha256.txt')]
+        if any(len(matches) > 1 for matches in pair):
+            raise ValueError('중복된 업데이트 배포 파일이 있습니다.')
+        if all(pair):
+            candidates.append(candidate)
+    if not candidates:
+        raise ValueError('릴리즈 ZIP 또는 SHA256 파일이 없습니다. 다운로드 페이지를 이용해 주세요.')
+    name = candidates[0]
     result = []
+    repositories = []
     for expected in (name, name + '.sha256.txt'):
         matches = [a for a in release.assets if a.get('name') == expected]
         if len(matches) != 1:
             raise ValueError('릴리즈 ZIP 또는 SHA256 파일이 없습니다. 다운로드 페이지를 이용해 주세요.')
         url = matches[0].get('browser_download_url', '')
         parsed = urlparse(url)
-        prefix = f'/{RELEASE_REPOSITORY}/releases/download/{release.version}/'
-        if parsed.scheme != 'https' or parsed.netloc != 'github.com' or not parsed.path.startswith(prefix) or parsed.path.rsplit('/', 1)[-1] != expected:
+        repository = next((repo for repo in SUPPORTED_RELEASE_REPOSITORIES
+                           if parsed.path == f'/{repo}/releases/download/{release.version}/{expected}'), None)
+        if parsed.scheme != 'https' or parsed.netloc != 'github.com' or repository is None or parsed.query or parsed.fragment:
             raise ValueError('공식 저장소의 배포 파일 주소가 아닙니다.')
+        repositories.append(repository)
         result.append(url)
+    if len(set(repositories)) != 1:
+        raise ValueError('ZIP과 SHA256 파일의 저장소가 일치하지 않습니다.')
     return name, *result
 
 
@@ -94,7 +112,9 @@ def extract_verified(archive, checksum, destination):
             raise ValueError('배포 폴더 이름이 버전과 일치하지 않습니다.')
         z.extractall(destination)
     package = destination / archive.stem
-    if not all((package / name).exists() for name in REQUIRED) or not list((package / '_internal').glob('python3*.dll')):
+    resolve_app_executable(package)
+    resolve_updater_executable(package)
+    if not (package / '_internal').is_dir() or not any(p.is_file() for p in (package / '_internal').glob('python3*.dll')):
         raise ValueError('필수 실행 파일 또는 업데이트 프로그램이 없습니다.')
     return package
 
@@ -118,7 +138,7 @@ def prepare_update(release, target, progress=lambda text: None):
         package = extract_verified(archive, checksum, workspace / 'payload')
         # Run the CURRENT trusted updater, never a helper from the downloaded ZIP.
         helper = workspace / 'updater.exe'
-        shutil.copy2(target / UPDATER_EXECUTABLE, helper)
+        shutil.copy2(resolve_updater_executable(target), helper)
         plan = {'target': str(target), 'package': str(package), 'parent_pid': os.getpid()}
         path = workspace / 'plan.json'
         path.write_text(json.dumps(plan), encoding='utf-8')

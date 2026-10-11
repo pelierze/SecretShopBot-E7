@@ -12,12 +12,15 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .version import APP_VERSION
+from .app_identity import SUPPORTED_RELEASE_REPOSITORIES
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_UPDATE_URL = (
     "https://raw.githubusercontent.com/pelierze/SecretShopBot-E7/master/update_config.json"
 )
+UPDATE_URLS = tuple(f"https://raw.githubusercontent.com/{repo}/master/update_config.json"
+                   for repo in SUPPORTED_RELEASE_REPOSITORIES)
 
 THRESHOLD_KEYS = {
     "mystic_medal",
@@ -148,16 +151,17 @@ class SettingsUpdater:
         self.bundled_config_path = get_resource_root() / "update_config.json"
 
     def load(self) -> tuple[Optional[Dict[str, Any]], str]:
-        try:
-            remote_data = fetch_json(self.update_url)
-            config = validate_config(remote_data)
+        urls = UPDATE_URLS if self.update_url in UPDATE_URLS else (self.update_url,)
+        for url in urls:
             try:
-                self.save_cache(config)
+                config = validate_config(fetch_json(url))
+                try:
+                    self.save_cache(config)
+                except Exception as exc:
+                    logger.info("원격 설정 캐시 저장에 실패했습니다: %s", exc)
+                return config, "remote"
             except Exception as exc:
-                logger.info("원격 설정 캐시 저장에 실패했습니다: %s", exc)
-            return config, "remote"
-        except Exception as exc:
-            logger.info("원격 설정 업데이트를 사용할 수 없습니다: %s", exc)
+                logger.info("원격 설정 업데이트를 사용할 수 없습니다: %s; %s", url, exc)
 
         cached_data = read_json(self.cache_path)
         if cached_data:

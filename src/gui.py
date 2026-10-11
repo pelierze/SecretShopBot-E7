@@ -55,7 +55,7 @@ if __package__ in (None, ""):
     from src.update_dialog import UpdateConfirmationDialog
     from src.remote_script import RemoteScriptUpdater
     from src.secret_shop_bot import SecretShopBot
-    from src.app_identity import APP_WINDOW_TITLE, UPDATER_EXECUTABLE, resolve_window_title
+    from src.app_identity import APP_WINDOW_TITLE, resolve_updater_executable, resolve_window_title
     from src.version import APP_VERSION
     from src.failure_report import save_failure_report
 else:
@@ -75,7 +75,7 @@ else:
     from .update_dialog import UpdateConfirmationDialog
     from .remote_script import RemoteScriptUpdater
     from .secret_shop_bot import SecretShopBot
-    from .app_identity import APP_WINDOW_TITLE, UPDATER_EXECUTABLE, resolve_window_title
+    from .app_identity import APP_WINDOW_TITLE, resolve_updater_executable, resolve_window_title
     from .version import APP_VERSION
     from .failure_report import save_failure_report
 
@@ -2555,7 +2555,9 @@ class SecretShopGUI:
             return
         try:
             release_assets(self.release_info)
-            if not (Path(sys.executable).parent / UPDATER_EXECUTABLE).is_file():
+            try:
+                resolve_updater_executable(Path(sys.executable).parent)
+            except ValueError:
                 raise ValueError('자동 업데이트 프로그램이 없습니다. 이번 버전은 수동 설치해 주세요.')
         except ValueError as exc:
             if messagebox.askyesno('자동 업데이트 안내', f'{exc}\n\n다운로드 페이지를 여시겠습니까?', parent=self.root):

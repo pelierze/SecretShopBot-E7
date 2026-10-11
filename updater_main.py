@@ -9,11 +9,11 @@ import subprocess
 import sys
 import time
 
-from src.app_identity import APP_EXECUTABLE, UPDATER_EXECUTABLE
+from src.app_identity import (SUPPORTED_APP_EXECUTABLES, UPDATE_MANAGED_FILES,
+                              resolve_app_executable, resolve_updater_executable)
 from src.runtime_diagnostics import diagnostic_logger, diagnostic_path
 
-MANAGED = (APP_EXECUTABLE, UPDATER_EXECUTABLE, '_internal',
-           'README.md', 'DEPLOY.md', 'SECURITY.md', 'RELEASE_NOTES.md')
+MANAGED = UPDATE_MANAGED_FILES
 
 
 def wait_parent(pid, ready, timeout=180):
@@ -36,7 +36,7 @@ def wait_parent(pid, ready, timeout=180):
 
 
 def start_app(target, ready=None):
-    args = [str(target / APP_EXECUTABLE)]
+    args = [str(resolve_app_executable(target))]
     if ready is not None:
         args += ['--update-ready', str(ready)]
     logger = diagnostic_logger('updater')
@@ -59,7 +59,8 @@ def icacls(*args):
 def log_permissions(target, logger):
     if os.name != 'nt':
         return
-    for path in (Path(target), Path(target) / APP_EXECUTABLE, Path(target) / '_internal'):
+    for path in (Path(target), *(Path(target) / name for name in SUPPORTED_APP_EXECUTABLES
+                                if (Path(target) / name).is_file()), Path(target) / '_internal'):
         try:
             result = icacls(path)
             logger.info('Permissions %s (exit=%s): %s %s', path, result.returncode,
@@ -105,6 +106,11 @@ def await_start(process, ready, timeout=90):
 
 def apply_update(target, package, workspace, launcher=start_app, health=await_start):
     target, package, workspace = map(Path, (target, package, workspace))
+    # Reject incomplete packages before touching the working installation.
+    resolve_app_executable(package)
+    resolve_updater_executable(package)
+    if not (package / '_internal').is_dir():
+        raise ValueError('필수 실행 파일 또는 업데이트 프로그램이 없습니다.')
     backup = workspace / 'backup'
     backup.mkdir()  # Never overwrite a previous recovery directory.
     moved, installed = [], []
@@ -205,8 +211,9 @@ def main():
         plan = json.loads(plan_path.read_text(encoding='utf-8'))
         target = Path(plan['target']).resolve()
         package = Path(plan['package']).resolve()
-        if not workspace.name.startswith('.e7-update-') or workspace.parent != target.parent or not package.is_relative_to(workspace / 'payload') or not (target / APP_EXECUTABLE).is_file():
+        if not workspace.name.startswith('.e7-update-') or workspace.parent != target.parent or not package.is_relative_to(workspace / 'payload'):
             raise ValueError('업데이트 작업 경로가 올바르지 않습니다.')
+        resolve_app_executable(target)
         if target.is_relative_to(workspace) or workspace.is_relative_to(target):
             raise ValueError('설치 및 임시 폴더가 겹칩니다.')
         wait_parent(int(plan['parent_pid']), workspace / 'worker-ready')

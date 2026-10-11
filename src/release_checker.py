@@ -4,16 +4,20 @@ Check whether a newer GitHub release is available.
 import json
 import logging
 import urllib.request
+import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Optional
 
-from .app_identity import RELEASE_REPOSITORY
+from .app_identity import RELEASE_REPOSITORY, SUPPORTED_RELEASE_REPOSITORIES
 from .version import APP_VERSION
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_RELEASE_API_URL = f"https://api.github.com/repos/{RELEASE_REPOSITORY}/releases/latest"
 DEFAULT_RELEASES_PAGE_URL = f"https://github.com/{RELEASE_REPOSITORY}/releases/latest"
+RELEASE_API_URLS = tuple(f"https://api.github.com/repos/{repo}/releases/latest"
+                        for repo in SUPPORTED_RELEASE_REPOSITORIES)
 
 
 def parse_version(version: str) -> tuple[int, ...]:
@@ -38,7 +42,7 @@ class ReleaseInfo:
     assets: tuple = ()
 
 
-def fetch_latest_release(api_url: str = DEFAULT_RELEASE_API_URL) -> ReleaseInfo:
+def _fetch_release_at(api_url: str) -> ReleaseInfo:
     request = urllib.request.Request(
         api_url,
         headers={
@@ -55,7 +59,8 @@ def fetch_latest_release(api_url: str = DEFAULT_RELEASE_API_URL) -> ReleaseInfo:
         raise ValueError("release response must be an object")
 
     version = str(payload.get("tag_name") or payload.get("name") or "").strip()
-    url = str(payload.get("html_url") or DEFAULT_RELEASES_PAGE_URL).strip()
+    fallback_page = api_url.replace("https://api.github.com/repos/", "https://github.com/")
+    url = str(payload.get("html_url") or fallback_page).strip()
     name = str(payload.get("name") or version or "새 릴리즈").strip()
     body = str(payload.get("body") or "").strip()
 
@@ -64,6 +69,28 @@ def fetch_latest_release(api_url: str = DEFAULT_RELEASE_API_URL) -> ReleaseInfo:
 
     assets = tuple(payload.get("assets") or ())
     return ReleaseInfo(version=version, url=url, name=name, body=body, assets=assets)
+
+
+def fetch_latest_release(api_url: str = DEFAULT_RELEASE_API_URL) -> ReleaseInfo:
+    # Explicit custom endpoints keep their previous single-address behavior.
+    if api_url not in RELEASE_API_URLS:
+        return _fetch_release_at(api_url)
+    releases = []
+    # Query both in parallel so the absent future repository does not add a
+    # second timeout. Retain legacy preference when both return the same tag.
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = [(url, executor.submit(_fetch_release_at, url)) for url in RELEASE_API_URLS]
+        for url, future in pending:
+            try:
+                release = future.result()
+                if not re.fullmatch(r'v?\d+\.\d+\.\d+', release.version):
+                    raise ValueError('release is not a stable version')
+                releases.append(release)
+            except Exception as exc:
+                logger.info('릴리즈 주소 조회 실패: %s; %s', url, exc)
+    if not releases:
+        raise RuntimeError('기존 주소와 새 주소에서 릴리즈를 확인할 수 없습니다.')
+    return max(releases, key=lambda release: parse_version(release.version))
 
 
 def get_available_update(

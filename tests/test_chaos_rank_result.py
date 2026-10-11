@@ -138,3 +138,34 @@ class BattleRankCompletionTests(unittest.TestCase):
             self.assertEqual(bot._dispatch_event_screen(self.observer.classify(screens[0])), 'map')
             self.assertEqual(taps, [(625, 645, 75, 27)])
             bot._rankup.assert_not_called()
+
+
+class EventRankRewardIconTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.observer = NodeObserver(ROOT)
+
+    def test_existing_issue_and_local_reports_are_rank_rewards(self):
+        for name in ('event_rank_reward_live.png', 'event_rank_reward_issue16.png',
+                     'event_rank_reward_local_live.png'):
+            with self.subTest(name=name):
+                screen = read_image(str(RAW / name))
+                self.assertEqual(self.observer.classify(screen), 'rank_reward')
+                self.assertIsNotNone(self.observer.find(screen, 'event_rank_reward_button'))
+
+    def test_title_and_description_are_not_required(self):
+        screen = read_image(str(RAW / 'event_rank_reward_local_live.png'))
+        screen[260:380, 540:745] = 0
+        self.assertEqual(self.observer.classify(screen), 'rank_reward')
+
+    def test_icon_and_continue_are_both_required(self):
+        for x, y, w, h in ((590,145,110,105), (480,615,330,85)):
+            screen = read_image(str(RAW / 'event_rank_reward_local_live.png'))
+            screen[y:y+h, x:x+w] = 0
+            self.assertNotEqual(self.observer.classify(screen), 'rank_reward')
+
+    def test_other_rewards_and_rankup_results_are_not_rank_rewards(self):
+        for name in ('event_recruit_reward_live.png', 'event_loot_popup_live.png',
+                     'rank_result_event_live.png', 'battle/victory_rank_complete_warrior_local_live.png'):
+            with self.subTest(name=name):
+                self.assertNotEqual(self.observer.classify(read_image(str(RAW / name))), 'rank_reward')
